@@ -1,3 +1,5 @@
+#include "ble_fido.h"
+#include "ble_kb.h"
 #include "console.h"
 #include "esp_log.h"
 #include "esp_ota_ops.h"
@@ -36,5 +38,7 @@ extern "C" void app_main() {
     ConfirmRunningApp();
     InitNvs();
     spiffs_fs::Init();  // not fatal: the console reports an unmounted fs
+    ble_kb::Register();  // BLE profiles; the stack itself stays off until `ble on`
+    ble_fido::Register();
     ESP_ERROR_CHECK(console::Init());
 }

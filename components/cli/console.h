@@ -6,7 +6,8 @@
 //   info       short hardware summary
 //   hwinfo     chip and IDs, flash, PSRAM, eFuse, NVS, partitions, temperature
 //   efuse      every eFuse field and raw blocks
-//   spiffs     ls | cat | catbase64 | format (see files.h)
+//   spiffs     info | ls | cat | catbase64 | write | rm | format (see files.h)
+//   ble        on | off | info | pair | unpair | kb (see ble_cmd.h)
 
 #include "esp_err.h"
 

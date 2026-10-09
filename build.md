@@ -64,4 +64,9 @@ Opening the port with RTS asserted resets the chip.
 | `spiffs write <file> [<length> <crc32>]` | prints `ready`, receives one base64 line (Enter ends the file), checks length/CRC32 (zlib), removes the file on error. Flow control: a `.` after every 192 base64 chars; send the next block only after it |
 | `spiffs rm <file>` | delete a file |
 | `spiffs format confirm` | erase the partition and create an empty fs (destroys stock data on the X4 Pro) |
+| `ble on` / `ble off` | start / stop the BLE stack (off at boot) |
+| `ble info` | state, address, advertising, pairing window, connection (MTU, security), bonds, keyboard/FIDO readiness |
+| `ble pair [seconds]` / `ble pair stop` | open (default 60 s) / close the pairing window; the passkey is printed as `PAIRING PASSKEY: nnnnnn` |
+| `ble unpair <addr>` / `ble unpair all` | delete a bond / all bonds |
+| `ble kb <text>` | type text on the paired host (US layout; `\n`, `\t` escapes) |
 | `efuse` | every eFuse field (list generated at build time from IDF `esp_efuse_table.csv`) and raw blocks BLK0..BLK10 |

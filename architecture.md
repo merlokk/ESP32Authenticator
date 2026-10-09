@@ -19,7 +19,22 @@ Reference ESP-IDF + LVGL project: `../../ai-remote/approver-esp32` ([GitHub](htt
 | `main/` | `app_main`: OTA self-confirm, NVS init, startup |
 | `components/` | app components (`cli`: USB command line) |
 | `utils/` | host-side Python tools over the USB console (`spiffs.py`: ls/info/rm/get/put) |
-| `drivers/` | hardware drivers, one component per device (`hardware`: SoC info; `spiffs_fs`: SPIFFS on `spiffs` at `/spiffs`, never formatted, it holds stock data on the X4 Pro) |
+| `drivers/` | hardware drivers, one component per device (`hardware`: SoC info; `spiffs_fs`: SPIFFS on `spiffs` at `/spiffs`, never formatted, it holds stock data on the X4 Pro; `ble`, `ble_kb`, `ble_fido`: see BLE) |
+
+## BLE
+
+NimBLE, peripheral, one connection. Stack is off at boot (`ble on`).
+
+| Driver | Role |
+|---|---|
+| `ble` | stack on/off, advertising (HID + FIDO UUIDs), bonding (NVS), DIS + Battery services; profile drivers register GATT services and GAP listeners before `ble on` |
+| `ble_kb` | HID over GATT keyboard; types ASCII with a US layout |
+| `ble_fido` | FIDO BLE transport (service 0xFFFD, CTAP 2.1 BLE framing, MTU fragmentation); CTAP is a pluggable handler, default answers "not supported" |
+
+Security:
+- IO capability DisplayOnly: the device shows a 6-digit passkey, the host types it (MITM-protected, LE Secure Connections).
+- New hosts pair only inside the pairing window (`ble pair`); other pairing attempts are rejected.
+- Unauthenticated (Just Works) links are dropped; HID reports and FIDO characteristics require an authenticated link.
 
 ## Flash layout
 

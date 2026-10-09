@@ -9,6 +9,7 @@
 #include "esp_idf_version.h"
 #include "esp_log.h"
 #include "esp_ota_ops.h"
+#include "ble_cmd.h"
 #include "files.h"
 #include "hardware.h"
 
@@ -62,6 +63,15 @@ const esp_console_cmd_t kCommands[] = {
         .help = "Short info: model, MACs, unique ID, flash size, CPU temperature, reset, uptime",
         .hint = nullptr,
         .func = &CmdInfo,
+        .argtable = nullptr,
+        .func_w_context = nullptr,
+        .context = nullptr,
+    },
+    {
+        .command = "ble",
+        .help = "BLE: on | off | info | pair [seconds|stop] | unpair <addr|all> | kb <text>",
+        .hint = "<on|off|info|pair|unpair|kb> [args]",
+        .func = &CmdBle,
         .argtable = nullptr,
         .func_w_context = nullptr,
         .context = nullptr,
