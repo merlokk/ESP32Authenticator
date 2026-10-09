@@ -44,6 +44,12 @@ python utils/spiffs.py -p COM6 info
 python utils/spiffs.py -p COM6 rm <remote>
 python utils/spiffs.py -p COM6 get <remote> [local]
 python utils/spiffs.py -p COM6 put <local> [remote]
+python utils/ble.py -p COM6 on | off | info | bonds | conns | disconnect
+python utils/ble.py -p COM6 pair [seconds]     # waits, prints the passkey
+python utils/ble.py -p COM6 use <#|addr|any>
+python utils/ble.py -p COM6 unpair <#|addr|all>
+python utils/ble.py -p COM6 kb "text"          # or kb --stdin; quoting and splitting
+                                                # into console lines is done for you
 ```
 
 ## CLI
@@ -74,5 +80,5 @@ Opening the port with RTS asserted resets the chip.
 | `ble use <#>` / `<addr>` / `any` | switch hosts: all keys released on the current host, link dropped, advertising filtered to the target bond (kept in NVS) so only it reconnects; `any` lifts the filter. A pairing window advertises to all; a newly paired host becomes the target |
 | `ble disconnect` | drop the link (keys released first); the host may reconnect |
 | `ble unpair <#>` / `<addr>` / `all` | delete a bond by number from `ble bonds`, by address, or all; a connected host is disconnected |
-| `ble kb <text>` | type text on the paired host (US layout; `\n`, `\t` escapes) |
+| `ble kb <text>` | type text on the connected host (US layout). esp_console drops single-backslash escapes: type `\\n` (Enter), `\\t` (Tab), `\\\\`; quote to keep spaces |
 | `efuse` | every eFuse field (list generated at build time from IDF `esp_efuse_table.csv`) and raw blocks BLK0..BLK10 |

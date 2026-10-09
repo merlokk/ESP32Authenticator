@@ -15,7 +15,9 @@
 //   ble disconnect             drop the link (keys released first)
 //   ble unpair <#|addr|all>    delete a bond (number from `ble bonds` or address)
 //                              or all bonds; a connected host is disconnected
-//   ble kb <text>              type text on the host (US layout; \n, \t escapes)
+//   ble kb <text>              type text on the host (US layout). The console drops
+//                              single-backslash escapes, so type \\n (Enter),
+//                              \\t (Tab), \\\\ (backslash); quote to keep spaces
 
 namespace console {
 

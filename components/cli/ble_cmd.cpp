@@ -166,10 +166,12 @@ int CmdUnpair(int argc, char **argv) {
     return rc;
 }
 
-// Joins argv[1..] with spaces and expands "\n", "\t", "\\".
+// Joins argv[1..] with spaces and expands "\n", "\t", "\\". esp_console has
+// already eaten one level of backslashes, so on the command line these are
+// typed \\n, \\t, \\\\ (utils/ble.py does the quoting).
 int CmdKb(int argc, char **argv) {
     if (argc < 2) {
-        printf("usage: ble kb <text>\n");
+        printf("usage: ble kb <text>   (\\\\n = Enter, \\\\t = Tab; quote to keep spaces)\n");
         return 1;
     }
     static char text[256];
