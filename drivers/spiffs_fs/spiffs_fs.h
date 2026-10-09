@@ -6,7 +6,8 @@
 
 // SPIFFS on the `spiffs` partition, mounted at kBasePath through the VFS, so
 // files are used with plain stdio (`fopen("/spiffs/x", ...)`).
-// Never formats: on the X4 Pro the partition holds stock firmware data.
+// Never formats on its own: on the X4 Pro the partition holds stock firmware
+// data. Only an explicit Format() does.
 
 namespace spiffs_fs {
 
@@ -15,6 +16,10 @@ constexpr const char *kPartitionLabel = "spiffs";
 
 esp_err_t Init();
 bool Mounted();
+
+// Erases the partition and creates an empty file system, then mounts it.
+// Destroys all files (on the X4 Pro: the stock firmware's data).
+esp_err_t Format();
 
 // Total and used bytes of the mounted file system.
 esp_err_t Info(size_t *total, size_t *used);

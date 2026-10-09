@@ -37,6 +37,19 @@ esp_err_t Init() {
 
 bool Mounted() { return esp_spiffs_mounted(kPartitionLabel); }
 
+esp_err_t Format() {
+    // Mounted: IDF unmounts, formats and remounts. Not mounted (mount failed):
+    // IDF formats and releases the partition, so it has to be mounted here.
+    const bool was_mounted = Mounted();
+    ESP_LOGW(TAG, "formatting '%s'", kPartitionLabel);
+    esp_err_t err = esp_spiffs_format(kPartitionLabel);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "format failed: %s", esp_err_to_name(err));
+        return err;
+    }
+    return was_mounted ? ESP_OK : Init();
+}
+
 esp_err_t Info(size_t *total, size_t *used) {
     return esp_spiffs_info(kPartitionLabel, total, used);
 }

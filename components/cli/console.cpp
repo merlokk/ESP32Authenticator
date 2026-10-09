@@ -53,28 +53,10 @@ int CmdEfuse(int, char **) {
 
 const esp_console_cmd_t kCommands[] = {
     {
-        .command = "ls",
-        .help = "List SPIFFS files: size, modification time, totals",
-        .hint = nullptr,
-        .func = &CmdLs,
-        .argtable = nullptr,
-        .func_w_context = nullptr,
-        .context = nullptr,
-    },
-    {
-        .command = "cat",
-        .help = "Print a SPIFFS file as text",
-        .hint = "<file>",
-        .func = &CmdCat,
-        .argtable = nullptr,
-        .func_w_context = nullptr,
-        .context = nullptr,
-    },
-    {
-        .command = "catbase64",
-        .help = "Print a SPIFFS file as base64 (76 chars per line)",
-        .hint = "<file>",
-        .func = &CmdCatBase64,
+        .command = "spiffs",
+        .help = "SPIFFS files: ls | cat <file> | catbase64 <file> | format confirm",
+        .hint = "<ls|cat|catbase64|format> [file]",
+        .func = &CmdSpiffs,
         .argtable = nullptr,
         .func_w_context = nullptr,
         .context = nullptr,

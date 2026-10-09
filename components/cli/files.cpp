@@ -29,7 +29,7 @@ bool CheckMounted() {
 
 FILE *OpenArg(int argc, char **argv, char *path) {
     if (argc != 2) {
-        printf("usage: %s <file>\n", argv[0]);
+        printf("usage: spiffs %s <file>\n", argv[0]);
         return nullptr;
     }
     if (!CheckMounted()) {
@@ -62,8 +62,6 @@ void PrintBase64(const uint8_t *data, size_t len) {
         fputs(out, stdout);
     }
 }
-
-}  // namespace
 
 int CmdLs(int, char **) {
     if (!CheckMounted()) {
@@ -141,6 +139,52 @@ int CmdCatBase64(int argc, char **argv) {
     }
     fclose(f);
     return 0;
+}
+
+int CmdFormat(int argc, char **argv) {
+    if (argc != 2 || strcmp(argv[1], "confirm") != 0) {
+        printf("erases every file on the '%s' partition (on the X4 Pro: stock data).\n"
+               "run 'spiffs format confirm' to proceed\n",
+               spiffs_fs::kPartitionLabel);
+        return 1;
+    }
+    const esp_err_t err = spiffs_fs::Format();
+    if (err != ESP_OK) {
+        printf("format failed: %s\n", esp_err_to_name(err));
+        return 1;
+    }
+    size_t total = 0;
+    size_t used = 0;
+    spiffs_fs::Info(&total, &used);
+    printf("formatted, %u of %u bytes used\n", static_cast<unsigned>(used),
+           static_cast<unsigned>(total));
+    return 0;
+}
+
+struct Subcommand {
+    const char *name;
+    int (*func)(int, char **);
+};
+
+constexpr Subcommand kSubcommands[] = {
+    {"ls", &CmdLs},
+    {"cat", &CmdCat},
+    {"catbase64", &CmdCatBase64},
+    {"format", &CmdFormat},
+};
+
+}  // namespace
+
+int CmdSpiffs(int argc, char **argv) {
+    if (argc >= 2) {
+        for (const Subcommand &sub : kSubcommands) {
+            if (strcmp(argv[1], sub.name) == 0) {
+                return sub.func(argc - 1, argv + 1);
+            }
+        }
+    }
+    printf("usage: spiffs ls | cat <file> | catbase64 <file> | format confirm\n");
+    return 1;
 }
 
 }  // namespace console
