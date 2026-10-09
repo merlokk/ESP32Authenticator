@@ -1,0 +1,14 @@
+#pragma once
+
+// Device command line on the native USB Serial/JTAG port (esp_console REPL).
+//
+//   version    firmware version, build date, IDF version, chip, running slot
+
+#include "esp_err.h"
+
+namespace console {
+
+// Registers the commands and starts the REPL task.
+esp_err_t Init();
+
+}  // namespace console

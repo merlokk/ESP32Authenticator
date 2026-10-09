@@ -15,6 +15,10 @@ Firmware: C/C++ on **ESP-IDF**.
 
 Stack (ESP-IDF, LVGL, BLE, Wi-Fi) and flash layout: [architecture.md](architecture.md).
 
+## Build
+
+ESP-IDF setup, build/flash, version, CLI: [build.md](build.md).
+
 ## Hardware
 
 Pinout, display controllers, devices: [hardware.md](hardware.md).

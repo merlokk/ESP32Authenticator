@@ -1,0 +1,22 @@
+# Committed configuration; `sdkconfig` is generated and not committed.
+
+CONFIG_IDF_TARGET="esp32s3"
+
+# 16 MB flash, stock X4 Pro partition table.
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+
+# 8 MB octal PSRAM.
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_OCT=y
+
+# Stock bootloader has rollback enabled; keep ours the same.
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
+
+# Console (logs + command line) on the native USB Serial/JTAG port.
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+
+# C++ without exceptions or RTTI.
+CONFIG_COMPILER_CXX_EXCEPTIONS=n
+CONFIG_COMPILER_CXX_RTTI=n
