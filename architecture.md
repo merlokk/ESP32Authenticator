@@ -30,4 +30,9 @@ own OTA path. Keep the stock X4 Pro partition table, 16 MB, dual OTA:
 - The stock bootloader has app rollback enabled. A new app must call
   `esp_ota_mark_app_valid_cancel_rollback()` after it boots, or the bootloader
   falls back to the old slot.
+- Stock X4 Pro Wi-Fi OTA accepts only an encrypted `.xota` package
+  (`encrypted_v1`): the image is AES-encrypted with a per-channel key and
+  checked against `plain_sha256` after decryption. We do not build `.xota`
+  ourselves: we ship a plain app `.bin`, and the CrossPoint unlocker-tool
+  packages and flashes it.
 - Source: [crosspoint-tools unlocker: Flash layout & OTA state](https://github.com/crosspoint-reader/crosspoint-tools/blob/master/unlocker-tool/README.md#flash-layout--ota-state), [FreeInk X4 Pro doc](https://github.com/Free-Ink/freeink-sdk/blob/main/docs/xteink-x4pro-support.md#partitions-16-mb-dual-ota).
