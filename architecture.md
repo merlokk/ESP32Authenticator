@@ -12,6 +12,14 @@
 
 Reference ESP-IDF + LVGL project: `../../ai-remote/approver-esp32` ([GitHub](https://github.com/merlokk/ai-remote/tree/main/approver-esp32)).
 
+## Code layout
+
+| Path | Contents |
+|---|---|
+| `main/` | `app_main`: OTA self-confirm, NVS init, startup |
+| `components/` | app components (`cli`: USB command line) |
+| `drivers/` | hardware drivers, one component per device (`hardware`: SoC info) |
+
 ## Flash layout
 
 The firmware `.bin` must be compatible with the stock reader firmware: some

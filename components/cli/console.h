@@ -3,6 +3,7 @@
 // Device command line on the native USB Serial/JTAG port (esp_console REPL).
 //
 //   version    firmware version, build date, IDF version, chip, running slot
+//   hwinfo     chip and IDs, flash, PSRAM, eFuse, NVS, partitions, temperature
 
 #include "esp_err.h"
 

@@ -9,6 +9,7 @@
 #include "esp_idf_version.h"
 #include "esp_log.h"
 #include "esp_ota_ops.h"
+#include "hardware.h"
 
 namespace console {
 
@@ -38,7 +39,21 @@ int CmdVersion(int, char **) {
     return 0;
 }
 
+int CmdHwInfo(int, char **) {
+    hardware::PrintInfo();
+    return 0;
+}
+
 const esp_console_cmd_t kCommands[] = {
+    {
+        .command = "hwinfo",
+        .help = "Print chip and IDs, flash, PSRAM, eFuse, NVS, partitions, temperature",
+        .hint = nullptr,
+        .func = &CmdHwInfo,
+        .argtable = nullptr,
+        .func_w_context = nullptr,
+        .context = nullptr,
+    },
     {
         .command = "version",
         .help = "Print firmware version, build date, IDF version, chip and running slot",

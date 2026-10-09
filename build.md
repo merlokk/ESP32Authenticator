@@ -42,3 +42,4 @@ Opening the port with RTS asserted resets the chip.
 |---|---|
 | `help` | command list |
 | `version` | firmware version, build date, IDF version, ELF SHA256, chip, running slot |
+| `hwinfo` | chip, MACs, eFuse unique ID, flash JEDEC/size, PSRAM, heap, eFuse security (secure boot, flash enc, JTAG, USB, key blocks), NVS stats, partitions + OTA state, CPU temperature, reset reason, uptime |
