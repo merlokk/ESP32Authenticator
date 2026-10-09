@@ -2,6 +2,7 @@
 #include "esp_log.h"
 #include "esp_ota_ops.h"
 #include "nvs_flash.h"
+#include "spiffs_fs.h"
 
 namespace {
 
@@ -34,5 +35,6 @@ void InitNvs() {
 extern "C" void app_main() {
     ConfirmRunningApp();
     InitNvs();
+    spiffs_fs::Init();  // not fatal: the console reports an unmounted fs
     ESP_ERROR_CHECK(console::Init());
 }

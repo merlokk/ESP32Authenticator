@@ -9,6 +9,7 @@
 #include "esp_idf_version.h"
 #include "esp_log.h"
 #include "esp_ota_ops.h"
+#include "files.h"
 #include "hardware.h"
 
 namespace console {
@@ -51,6 +52,33 @@ int CmdEfuse(int, char **) {
 }
 
 const esp_console_cmd_t kCommands[] = {
+    {
+        .command = "ls",
+        .help = "List SPIFFS files: size, modification time, totals",
+        .hint = nullptr,
+        .func = &CmdLs,
+        .argtable = nullptr,
+        .func_w_context = nullptr,
+        .context = nullptr,
+    },
+    {
+        .command = "cat",
+        .help = "Print a SPIFFS file as text",
+        .hint = "<file>",
+        .func = &CmdCat,
+        .argtable = nullptr,
+        .func_w_context = nullptr,
+        .context = nullptr,
+    },
+    {
+        .command = "catbase64",
+        .help = "Print a SPIFFS file as base64 (76 chars per line)",
+        .hint = "<file>",
+        .func = &CmdCatBase64,
+        .argtable = nullptr,
+        .func_w_context = nullptr,
+        .context = nullptr,
+    },
     {
         .command = "efuse",
         .help = "Print every eFuse field and the raw eFuse blocks",
