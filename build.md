@@ -36,7 +36,7 @@ idf.py -p COM6 flash
 ## Utils
 
 `utils/` (Python 3, `pip install -r utils/requirements.txt`): console helpers.
-Transfers are streamed in chunks, files are never loaded whole.
+Transfers are streamed in chunks, files are never loaded whole. `device.py` answers smart-mode cursor queries and switches the console to `term dumb` on connect.
 
 ```powershell
 python utils/spiffs.py -p COM6 ls
@@ -54,6 +54,7 @@ Opening the port with RTS asserted resets the chip.
 | Command | Output |
 |---|---|
 | `help` | command list |
+| `term` / `term smart` / `term dumb` | ask the terminal / force line editing + up-arrow history (32 commands) on / off. Off at boot: nobody answers the probe then. Smart mode needs a terminal that answers cursor queries (PuTTY does); if the console goes silent, reset the board |
 | `version` | firmware version, build date, IDF version, ELF SHA256, chip, running slot |
 | `info` | short: model, MACs, unique ID, flash size, CPU temperature, reset reason, uptime |
 | `hwinfo` | chip, MACs, eFuse unique ID, flash JEDEC/size, PSRAM, heap, eFuse security/download/USB bits, key blocks, NVS stats, flash layout (bootloader version, partitions, image sizes, gaps), OTA state (running/boot/next slot, rollback, raw otadata), CPU temperature, reset reason, uptime |

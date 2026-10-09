@@ -2,6 +2,7 @@
 
 // Device command line on the native USB Serial/JTAG port (esp_console REPL).
 //
+//   term       line editing / up-arrow history: smart, dumb, or probe
 //   version    firmware version, build date, IDF version, chip, running slot
 //   info       short hardware summary
 //   hwinfo     chip and IDs, flash, PSRAM, eFuse, NVS, partitions, temperature

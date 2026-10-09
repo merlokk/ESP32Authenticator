@@ -14,6 +14,8 @@ PROMPT = b"auth> "
 # empty command and print a second prompt.
 EOL = b"\r"
 ANSI = re.compile(rb"\x1b\[[0-9;]*[A-Za-z]")
+CURSOR_QUERY = b"\x1b[6n"
+CURSOR_REPLY = b"\x1b[24;80R"
 LOG_LINE = re.compile(r"^[IWEDV] \(\d+\) ")
 
 
@@ -26,8 +28,12 @@ class Device:
         self.ser.dtr = False
         self.ser.rts = False
         self.ser.open()
+        self._carry = b""
         self.timeout = timeout
         self.sync()
+        # Plain lines for scripting: smart mode (`term smart`) redraws the line
+        # with escape sequences. The user can run `term smart` again afterwards.
+        self.run("term dumb")
 
     def close(self) -> None:
         self.ser.close()
@@ -39,11 +45,31 @@ class Device:
         self.close()
 
     def sync(self) -> None:
-        """Gets a fresh prompt, dropping whatever was pending."""
+        """Gets a fresh prompt, dropping whatever was pending.
+
+        A smart-mode console may be stuck on a cursor query sent while the port
+        was closed: answer it blindly. In dumb mode the answer is just an
+        unknown command.
+        """
         self.ser.reset_input_buffer()
-        self.ser.write(EOL)
+        self.ser.write(CURSOR_REPLY + EOL)
         self.read_until(PROMPT)
-        self.ser.reset_input_buffer()
+        time.sleep(0.2)
+        while self.ser.in_waiting:
+            self._read()
+            time.sleep(0.05)
+
+    def _read(self) -> bytes:
+        """Reads what is available. In smart mode linenoise asks for the cursor
+        position (ESC[6n, twice per prompt) and blocks until each is answered."""
+        chunk = self.ser.read(self.ser.in_waiting or 1)
+        scan = self._carry + chunk
+        pos = 0
+        while (i := scan.find(CURSOR_QUERY, pos)) >= 0:
+            self.ser.write(CURSOR_REPLY)
+            pos = i + len(CURSOR_QUERY)
+        self._carry = scan[pos:][-(len(CURSOR_QUERY) - 1):]  # a query split across reads
+        return chunk
 
     def read_until(self, marker: bytes, timeout: float | None = None) -> bytes:
         deadline = time.monotonic() + (timeout or self.timeout)
@@ -51,7 +77,7 @@ class Device:
         while marker not in data:
             if time.monotonic() > deadline:
                 raise TimeoutError(f"no {marker!r} from device; got {data[-200:]!r}")
-            chunk = self.ser.read(self.ser.in_waiting or 1)
+            chunk = self._read()
             if chunk:
                 data += chunk
                 deadline = time.monotonic() + (timeout or self.timeout)
@@ -70,7 +96,7 @@ class Device:
         first = skip_echo
         deadline = time.monotonic() + self.timeout
         while True:
-            chunk = self.ser.read(self.ser.in_waiting or 1)
+            chunk = self._read()
             if chunk:
                 buf += chunk
                 deadline = time.monotonic() + self.timeout

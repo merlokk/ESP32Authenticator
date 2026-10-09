@@ -2,6 +2,7 @@
 
 #include <cinttypes>
 #include <cstdio>
+#include <cstring>
 
 #include "esp_app_desc.h"
 #include "esp_chip_info.h"
@@ -12,12 +13,16 @@
 #include "ble_cmd.h"
 #include "files.h"
 #include "hardware.h"
+#include "linenoise/linenoise.h"
 
 namespace console {
 
 namespace {
 
 constexpr const char *TAG = "cli";
+
+// Commands kept for the up-arrow (esp_console's default).
+constexpr int kHistoryLength = 32;
 
 int CmdVersion(int, char **) {
     const esp_app_desc_t *app = esp_app_get_description();
@@ -57,7 +62,57 @@ int CmdInfo(int, char **) {
     return 0;
 }
 
+// Line editing and up-arrow history. linenoise probes the terminal once at
+// boot; on USB Serial/JTAG nobody has the port open yet, so it times out and
+// stays in dumb mode. This re-probes or forces the mode. Smart mode asks for
+// the cursor position before every prompt and blocks until answered, so a
+// port whose other end ignores escape sequences goes silent until reset.
+// Ported from approver-esp32.
+int CmdTerm(int argc, char **argv) {
+    if (argc > 2) {
+        printf("usage: term          ask the terminal again, and follow its answer\n");
+        printf("       term smart    line editing and history on, regardless\n");
+        printf("       term dumb     back to plain lines\n");
+        return 1;
+    }
+    if (argc == 2) {
+        if (strcmp(argv[1], "smart") == 0) {
+            linenoiseSetDumbMode(0);
+            printf("line editing on, up-arrow walks the last %d commands.\n", kHistoryLength);
+            printf("if the console goes silent, the terminal does not answer escape\n");
+            printf("sequences; reset the board (or send ESC[24;80R, then 'term dumb').\n");
+            return 0;
+        }
+        if (strcmp(argv[1], "dumb") == 0) {
+            linenoiseSetDumbMode(1);
+            printf("plain lines: no history, no editing\n");
+            return 0;
+        }
+        printf("expected 'smart' or 'dumb', got '%s'\n", argv[1]);
+        return 1;
+    }
+    // Bounded probe (500 ms), safe to run from any terminal.
+    const bool answered = linenoiseProbe() == 0;
+    linenoiseSetDumbMode(!answered);
+    if (answered) {
+        printf("the terminal answered: line editing and history are on\n");
+    } else {
+        printf("no answer, staying on plain lines ('term smart' forces it on)\n");
+    }
+    return 0;
+}
+
 const esp_console_cmd_t kCommands[] = {
+    {
+        .command = "term",
+        .help = "Line editing and up-arrow history: 'term smart' on, 'term dumb' off, "
+                "'term' asks the terminal",
+        .hint = "[smart|dumb]",
+        .func = &CmdTerm,
+        .argtable = nullptr,
+        .func_w_context = nullptr,
+        .context = nullptr,
+    },
     {
         .command = "info",
         .help = "Short info: model, MACs, unique ID, flash size, CPU temperature, reset, uptime",
@@ -121,6 +176,7 @@ esp_err_t Init() {
     esp_console_repl_config_t repl_config = ESP_CONSOLE_REPL_CONFIG_DEFAULT();
     repl_config.prompt = "auth>";
     repl_config.max_cmdline_length = 256;
+    repl_config.max_history_len = kHistoryLength;
 
     const esp_console_dev_usb_serial_jtag_config_t dev_config =
         ESP_CONSOLE_DEV_USB_SERIAL_JTAG_CONFIG_DEFAULT();
