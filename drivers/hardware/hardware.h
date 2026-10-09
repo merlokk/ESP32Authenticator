@@ -10,6 +10,10 @@ namespace hardware {
 // Prints the full report to stdout (used by the `hwinfo` command).
 void PrintInfo();
 
+// Prints a short summary: model, MACs, unique ID, flash size, CPU temperature,
+// reset reason, uptime (used by the `info` command).
+void PrintShortInfo();
+
 // Prints every named eFuse field (list generated from the IDF eFuse table).
 void PrintEfuseFields();
 

@@ -51,7 +51,21 @@ int CmdEfuse(int, char **) {
     return 0;
 }
 
+int CmdInfo(int, char **) {
+    hardware::PrintShortInfo();
+    return 0;
+}
+
 const esp_console_cmd_t kCommands[] = {
+    {
+        .command = "info",
+        .help = "Short info: model, MACs, unique ID, flash size, CPU temperature, reset, uptime",
+        .hint = nullptr,
+        .func = &CmdInfo,
+        .argtable = nullptr,
+        .func_w_context = nullptr,
+        .context = nullptr,
+    },
     {
         .command = "spiffs",
         .help = "SPIFFS files: info | ls | cat <file> | catbase64 <file> | write <file> [<length> <crc32>] | rm <file> | format confirm",

@@ -109,22 +109,17 @@ void PrintMac(const char *label, esp_mac_type_t type) {
     }
 }
 
-void PrintChip() {
+void PrintModel() {
     esp_chip_info_t chip = {};
     esp_chip_info(&chip);
-    printf("[chip]\n");
     printf("model      %s rev v%" PRIu32 ".%" PRIu32 ", %d core(s), %d MHz\n", CONFIG_IDF_TARGET,
            efuse_hal_get_major_chip_version(), efuse_hal_get_minor_chip_version(), chip.cores,
            CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ);
-    printf("features  %s%s%s%s%s\n", (chip.features & CHIP_FEATURE_WIFI_BGN) ? " wifi" : "",
-           (chip.features & CHIP_FEATURE_BLE) ? " ble" : "",
-           (chip.features & CHIP_FEATURE_BT) ? " bt" : "",
-           (chip.features & CHIP_FEATURE_EMB_FLASH) ? " emb-flash" : "",
-           (chip.features & CHIP_FEATURE_EMB_PSRAM) ? " emb-psram" : "");
-    printf("package    %" PRIu32 "\n", ReadEfuse(ESP_EFUSE_PKG_VERSION));
+}
 
-    // ESP32-S3 has no dedicated chip ID: the factory base MAC serves as one, plus
-    // the optional 128-bit unique ID in eFuse.
+// ESP32-S3 has no dedicated chip ID: the factory base MAC serves as one, plus
+// the optional 128-bit unique ID in eFuse.
+void PrintIds() {
     PrintMac("base mac", ESP_MAC_BASE);
     PrintMac("wifi sta", ESP_MAC_WIFI_STA);
     PrintMac("wifi ap", ESP_MAC_WIFI_SOFTAP);
@@ -140,19 +135,37 @@ void PrintChip() {
     }
 }
 
+void PrintChip() {
+    esp_chip_info_t chip = {};
+    esp_chip_info(&chip);
+    printf("[chip]\n");
+    PrintModel();
+    printf("features  %s%s%s%s%s\n", (chip.features & CHIP_FEATURE_WIFI_BGN) ? " wifi" : "",
+           (chip.features & CHIP_FEATURE_BLE) ? " ble" : "",
+           (chip.features & CHIP_FEATURE_BT) ? " bt" : "",
+           (chip.features & CHIP_FEATURE_EMB_FLASH) ? " emb-flash" : "",
+           (chip.features & CHIP_FEATURE_EMB_PSRAM) ? " emb-psram" : "");
+    printf("package    %" PRIu32 "\n", ReadEfuse(ESP_EFUSE_PKG_VERSION));
+    PrintIds();
+}
+
+void PrintFlashSize(const char *label) {
+    uint32_t physical = 0;
+    uint32_t configured = 0;
+    if (esp_flash_get_physical_size(nullptr, &physical) == ESP_OK &&
+        esp_flash_get_size(nullptr, &configured) == ESP_OK) {
+        printf("%-11s%" PRIu32 " KB physical, %" PRIu32 " KB configured\n", label,
+               physical / 1024, configured / 1024);
+    }
+}
+
 void PrintFlash() {
     printf("[flash]\n");
     uint32_t jedec = 0;
     if (esp_flash_read_id(nullptr, &jedec) == ESP_OK) {
         printf("jedec id   %06" PRIx32 " (mfr 0x%02" PRIx32 ")\n", jedec, jedec >> 16);
     }
-    uint32_t physical = 0;
-    uint32_t configured = 0;
-    if (esp_flash_get_physical_size(nullptr, &physical) == ESP_OK &&
-        esp_flash_get_size(nullptr, &configured) == ESP_OK) {
-        printf("size       %" PRIu32 " KB physical, %" PRIu32 " KB configured\n", physical / 1024,
-               configured / 1024);
-    }
+    PrintFlashSize("size");
     uint64_t unique = 0;
     if (esp_flash_read_unique_chip_id(nullptr, &unique) == ESP_OK) {
         printf("unique id  %016" PRIx64 "\n", unique);
@@ -415,8 +428,7 @@ void PrintOta() {
     }
 }
 
-void PrintRuntime() {
-    printf("[runtime]\n");
+void PrintRuntimeLines() {
     float celsius = 0;
     if (CpuTemperature(&celsius) == ESP_OK) {
         printf("cpu temp   %.1f C\n", celsius);
@@ -426,6 +438,11 @@ void PrintRuntime() {
     const int64_t up = esp_timer_get_time() / 1000000;
     printf("uptime     %lldd %02lldh %02lldm %02llds\n", up / 86400, (up % 86400) / 3600,
            (up % 3600) / 60, up % 60);
+}
+
+void PrintRuntime() {
+    printf("[runtime]\n");
+    PrintRuntimeLines();
 }
 
 }  // namespace
@@ -457,6 +474,13 @@ void PrintInfo() {
     PrintFlashLayout();
     PrintOta();
     PrintRuntime();
+}
+
+void PrintShortInfo() {
+    PrintModel();
+    PrintIds();
+    PrintFlashSize("flash");
+    PrintRuntimeLines();
 }
 
 }  // namespace hardware
