@@ -40,6 +40,8 @@ Transfers are streamed in chunks, files are never loaded whole.
 
 ```powershell
 python utils/spiffs.py -p COM6 ls
+python utils/spiffs.py -p COM6 info
+python utils/spiffs.py -p COM6 rm <remote>
 python utils/spiffs.py -p COM6 get <remote> [local]
 python utils/spiffs.py -p COM6 put <local> [remote]
 ```
@@ -54,9 +56,11 @@ Opening the port with RTS asserted resets the chip.
 | `help` | command list |
 | `version` | firmware version, build date, IDF version, ELF SHA256, chip, running slot |
 | `hwinfo` | chip, MACs, eFuse unique ID, flash JEDEC/size, PSRAM, heap, eFuse security/download/USB bits, key blocks, NVS stats, flash layout (bootloader version, partitions, image sizes, gaps), OTA state (running/boot/next slot, rollback, raw otadata), CPU temperature, reset reason, uptime |
+| `spiffs info` | partition address/size, mount point, total/used/free (esp_spiffs_info), file count |
 | `spiffs ls` | SPIFFS files: size, modification time, file/fs totals |
 | `spiffs cat <file>` | print a SPIFFS file as text |
 | `spiffs catbase64 <file>` | print a SPIFFS file as base64, 76 chars per line |
 | `spiffs write <file> [<length> <crc32>]` | prints `ready`, receives one base64 line (Enter ends the file), checks length/CRC32 (zlib), removes the file on error. Flow control: a `.` after every 192 base64 chars; send the next block only after it |
+| `spiffs rm <file>` | delete a file |
 | `spiffs format confirm` | erase the partition and create an empty fs (destroys stock data on the X4 Pro) |
 | `efuse` | every eFuse field (list generated at build time from IDF `esp_efuse_table.csv`) and raw blocks BLK0..BLK10 |

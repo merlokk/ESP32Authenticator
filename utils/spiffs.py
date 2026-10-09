@@ -1,6 +1,8 @@
 """SPIFFS files on the device over the USB console.
 
   python utils/spiffs.py -p COM6 ls
+  python utils/spiffs.py -p COM6 info
+  python utils/spiffs.py -p COM6 rm <remote>
   python utils/spiffs.py -p COM6 get <remote> [local]
   python utils/spiffs.py -p COM6 put <local> [remote]
 
@@ -25,10 +27,22 @@ ACK_BLOCK = 192
 B64_LINE = re.compile(r"^[A-Za-z0-9+/]+={0,2}$")
 
 
+def run_and_print(dev: Device, command: str) -> int:
+    lines = dev.run(command)
+    print("\n".join(lines))
+    return 1 if any("error code" in line for line in lines) else 0
+
+
 def cmd_ls(dev: Device, args) -> int:
-    for line in dev.run("spiffs ls"):
-        print(line)
-    return 0
+    return run_and_print(dev, "spiffs ls")
+
+
+def cmd_info(dev: Device, args) -> int:
+    return run_and_print(dev, "spiffs info")
+
+
+def cmd_rm(dev: Device, args) -> int:
+    return run_and_print(dev, f"spiffs rm {args.remote}")
 
 
 def cmd_get(dev: Device, args) -> int:
@@ -90,6 +104,9 @@ def main() -> int:
     parser.add_argument("-p", "--port", required=True, help="serial port, e.g. COM6")
     sub = parser.add_subparsers(dest="cmd", required=True)
     sub.add_parser("ls", help="list files")
+    sub.add_parser("info", help="partition and usage")
+    p = sub.add_parser("rm", help="delete a file on the device")
+    p.add_argument("remote")
     p = sub.add_parser("get", help="read a file from the device")
     p.add_argument("remote")
     p.add_argument("local", nargs="?")
@@ -99,7 +116,8 @@ def main() -> int:
     args = parser.parse_args()
 
     with Device(args.port) as dev:
-        return {"ls": cmd_ls, "get": cmd_get, "put": cmd_put}[args.cmd](dev, args)
+        commands = {"ls": cmd_ls, "info": cmd_info, "rm": cmd_rm, "get": cmd_get, "put": cmd_put}
+        return commands[args.cmd](dev, args)
 
 
 if __name__ == "__main__":

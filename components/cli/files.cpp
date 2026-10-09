@@ -10,6 +10,7 @@
 #include <ctime>
 
 #include "driver/usb_serial_jtag.h"
+#include "esp_partition.h"
 #include "esp_rom_crc.h"
 #include "freertos/FreeRTOS.h"
 #include "spiffs_fs.h"
@@ -343,6 +344,61 @@ int CmdWrite(int argc, char **argv) {
     return 0;
 }
 
+int CmdRm(int argc, char **argv) {
+    if (argc != 2) {
+        printf("usage: spiffs rm <file>\n");
+        return 1;
+    }
+    if (!CheckMounted()) {
+        return 1;
+    }
+    char path[kPathSize];
+    if (!spiffs_fs::FullPath(argv[1], path, sizeof path)) {
+        printf("path too long\n");
+        return 1;
+    }
+    if (remove(path) != 0) {
+        printf("cannot remove %s\n", path);
+        return 1;
+    }
+    printf("removed %s\n", path);
+    return 0;
+}
+
+int CmdInfo(int, char **) {
+    const esp_partition_t *part = esp_partition_find_first(
+        ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_SPIFFS, spiffs_fs::kPartitionLabel);
+    if (part == nullptr) {
+        printf("no '%s' partition\n", spiffs_fs::kPartitionLabel);
+        return 1;
+    }
+    printf("partition  %s at 0x%06" PRIx32 ", %" PRIu32 " bytes\n", part->label, part->address,
+           part->size);
+    printf("mounted    %s\n", spiffs_fs::Mounted() ? spiffs_fs::kBasePath : "no");
+    size_t total = 0;
+    size_t used = 0;
+    if (!spiffs_fs::Mounted() || spiffs_fs::Info(&total, &used) != ESP_OK) {
+        return spiffs_fs::Mounted() ? 1 : 0;
+    }
+    // esp_spiffs_info(): total is the usable space, less than the partition
+    // (SPIFFS keeps spare blocks and page headers).
+    printf("total      %u bytes\n", static_cast<unsigned>(total));
+    printf("used       %u bytes (%u%%)\n", static_cast<unsigned>(used),
+           static_cast<unsigned>(total ? used * 100 / total : 0));
+    printf("free       %u bytes\n", static_cast<unsigned>(total - used));
+
+    unsigned count = 0;
+    DIR *dir = opendir(spiffs_fs::kBasePath);
+    if (dir != nullptr) {
+        while (readdir(dir) != nullptr) {
+            ++count;
+        }
+        closedir(dir);
+    }
+    printf("files      %u\n", count);
+    return 0;
+}
+
 struct Subcommand {
     const char *name;
     int (*func)(int, char **);
@@ -353,6 +409,8 @@ constexpr Subcommand kSubcommands[] = {
     {"cat", &CmdCat},
     {"catbase64", &CmdCatBase64},
     {"write", &CmdWrite},
+    {"rm", &CmdRm},
+    {"info", &CmdInfo},
     {"format", &CmdFormat},
 };
 
@@ -366,8 +424,8 @@ int CmdSpiffs(int argc, char **argv) {
             }
         }
     }
-    printf("usage: spiffs ls | cat <file> | catbase64 <file> |"
-           " write <file> [<length> <crc32>] | format confirm\n");
+    printf("usage: spiffs info | ls | cat <file> | catbase64 <file> |"
+           " write <file> [<length> <crc32>] | rm <file> | format confirm\n");
     return 1;
 }
 

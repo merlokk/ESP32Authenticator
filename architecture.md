@@ -18,7 +18,7 @@ Reference ESP-IDF + LVGL project: `../../ai-remote/approver-esp32` ([GitHub](htt
 |---|---|
 | `main/` | `app_main`: OTA self-confirm, NVS init, startup |
 | `components/` | app components (`cli`: USB command line) |
-| `utils/` | host-side Python tools over the USB console (`spiffs.py`: ls/get/put) |
+| `utils/` | host-side Python tools over the USB console (`spiffs.py`: ls/info/rm/get/put) |
 | `drivers/` | hardware drivers, one component per device (`hardware`: SoC info; `spiffs_fs`: SPIFFS on `spiffs` at `/spiffs`, never formatted, it holds stock data on the X4 Pro) |
 
 ## Flash layout
