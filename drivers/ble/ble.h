@@ -13,6 +13,11 @@
 // any new pairing is rejected and only bonded hosts get a link. Links must be
 // encrypted and authenticated (MITM-protected).
 //
+// Switching hosts: UseBond() picks the target bond. The current link is
+// dropped (after drop listeners released held keys) and advertising is
+// filtered to the target (controller filter accept list), so only it
+// reconnects. The target is kept in NVS. A pairing window advertises to all.
+//
 // Profile drivers (ble_kb, ble_fido) add their GATT services and event
 // listeners before On(). The stack is off at boot.
 
@@ -27,6 +32,11 @@ void AddServices(const ble_gatt_svc_def *services);
 // Called from the NimBLE host task for every GAP event.
 using Listener = void (*)(const ble_gap_event *event);
 void AddListener(Listener listener);
+
+// Called right before the device drops a link on purpose (switch, disconnect,
+// unpair, off), from the task doing it. ble_kb releases held keys here.
+using DropListener = void (*)(uint16_t conn);
+void AddDropListener(DropListener listener);
 
 esp_err_t On();
 esp_err_t Off();
@@ -50,8 +60,18 @@ struct PairingEvent {
 // Returns false on timeout.
 bool WaitPairingEvent(PairingEvent *event, uint32_t timeout_ms);
 
-// Deletes one bond ("aa:bb:cc:dd:ee:ff") or all of them (`addr` == nullptr).
-esp_err_t Unpair(const char *addr);
+// Deletes one bond, by number from PrintBonds() ("1") or by address
+// ("aa:bb:cc:dd:ee:ff"), or all of them (`which` == nullptr). A connected host
+// is disconnected.
+esp_err_t Unpair(const char *which);
+
+// Makes a bond the target host (number from PrintBonds() or address), or
+// clears the target (`which` == nullptr: any bonded host may connect).
+// Drops the current link if it is not the target.
+esp_err_t UseBond(const char *which);
+
+// Drops the current link (keys released first). The host may reconnect.
+esp_err_t Disconnect();
 
 // Current connection, BLE_HS_CONN_HANDLE_NONE if none.
 uint16_t ConnHandle();
@@ -62,7 +82,15 @@ bool LinkSecure();
 // Usable ATT payload for notifications on the current link (MTU - 3).
 uint16_t NotifyPayload();
 
-// State, address, connection, pairing window, bonds.
+// State, address, advertising, pairing window, target, connection and bonds
+// summary.
 void PrintInfo();
+
+// Numbered bond list (numbers are what Unpair/UseBond take); marks the
+// connected and the target host.
+void PrintBonds();
+
+// Current connection: peer, security, MTU, parameters, RSSI.
+void PrintConnection();
 
 }  // namespace ble

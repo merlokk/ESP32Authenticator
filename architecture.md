@@ -34,6 +34,7 @@ NimBLE, peripheral, one connection. Stack is off at boot (`ble on`).
 Security:
 - IO capability DisplayOnly: the device shows a 6-digit passkey, the host types it (MITM-protected, LE Secure Connections).
 - New hosts pair only inside the pairing window (`ble pair`); other pairing attempts are rejected.
+- One connection at a time. `ble use` picks the target bond: keys released on the old host, link dropped, advertising filtered (accept list) to the target; a non-target bonded host that still gets through is dropped after encryption.
 - Unauthenticated (Just Works) links are dropped; HID reports and FIDO characteristics require an authenticated link.
 
 ## Flash layout

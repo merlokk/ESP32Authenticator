@@ -8,7 +8,13 @@
 //                              when the window closes
 //   ble pair <seconds> bg      open the window and return (passkey in the log)
 //   ble pair stop              close it
-//   ble unpair <addr> | all    delete a bond / all bonds
+//   ble bonds                  numbered bond list, marks the connected and target host
+//   ble conns                  the connection: peer, security, MTU, params, RSSI
+//   ble use <#|addr|any>       switch hosts: target one bond (keys released, link
+//                              dropped, only the target may reconnect) or any
+//   ble disconnect             drop the link (keys released first)
+//   ble unpair <#|addr|all>    delete a bond (number from `ble bonds` or address)
+//                              or all bonds; a connected host is disconnected
 //   ble kb <text>              type text on the host (US layout; \n, \t escapes)
 
 namespace console {

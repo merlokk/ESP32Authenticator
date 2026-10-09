@@ -8,6 +8,7 @@
 #include "ble.h"
 #include "ble_fido.h"
 #include "ble_kb.h"
+#include "host/ble_hs.h"
 
 namespace console {
 
@@ -106,9 +107,52 @@ int CmdPair(int argc, char **argv) {
     return 1;
 }
 
+int CmdBonds(int, char **) {
+    ble::PrintBonds();
+    return 0;
+}
+
+int CmdConns(int, char **) {
+    ble::PrintConnection();
+    if (ble::ConnHandle() != BLE_HS_CONN_HANDLE_NONE) {
+        printf("keyboard   %s\n", ble_kb::Ready() ? "ready" : "not subscribed");
+        printf("fido       %s\n", ble_fido::Ready() ? "ready" : "not subscribed");
+    }
+    return 0;
+}
+
+int CmdUse(int argc, char **argv) {
+    if (argc != 2) {
+        printf("usage: ble use <#> | <aa:bb:cc:dd:ee:ff> | any   (# from 'ble bonds')\n");
+        return 1;
+    }
+    if (!RequireOn()) {
+        return 1;
+    }
+    const bool any = strcmp(argv[1], "any") == 0;
+    const int rc = Result(ble::UseBond(any ? nullptr : argv[1]), "use");
+    if (rc == 0) {
+        printf(any ? "any bonded host may connect\n"
+                   : "target set: keys released and link dropped if another host was "
+                     "connected; waiting for the target to reconnect\n");
+    }
+    return rc;
+}
+
+int CmdDisconnect(int, char **) {
+    if (!RequireOn()) {
+        return 1;
+    }
+    const int rc = Result(ble::Disconnect(), "disconnect");
+    if (rc == 0) {
+        printf("disconnected (keys released first)\n");
+    }
+    return rc;
+}
+
 int CmdUnpair(int argc, char **argv) {
     if (argc != 2) {
-        printf("usage: ble unpair <aa:bb:cc:dd:ee:ff> | all\n");
+        printf("usage: ble unpair <#> | <aa:bb:cc:dd:ee:ff> | all   (# from 'ble bonds')\n");
         return 1;
     }
     if (!RequireOn()) {
@@ -170,7 +214,9 @@ struct Subcommand {
 
 constexpr Subcommand kSubcommands[] = {
     {"on", &CmdOn},         {"off", &CmdOff},       {"info", &CmdInfo},
-    {"pair", &CmdPair},     {"unpair", &CmdUnpair}, {"kb", &CmdKb},
+    {"pair", &CmdPair},     {"bonds", &CmdBonds},   {"conns", &CmdConns},
+    {"use", &CmdUse},       {"disconnect", &CmdDisconnect},
+    {"unpair", &CmdUnpair}, {"kb", &CmdKb},
 };
 
 }  // namespace
@@ -183,7 +229,8 @@ int CmdBle(int argc, char **argv) {
             }
         }
     }
-    printf("usage: ble on | off | info | pair [seconds [bg]|stop] | unpair <addr|all> | kb <text>\n");
+    printf("usage: ble on | off | info | pair [seconds [bg]|stop] | bonds | conns |"
+           " use <#|addr|any> | disconnect | unpair <#|addr|all> | kb <text>\n");
     return 1;
 }
 

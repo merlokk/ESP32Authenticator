@@ -2,6 +2,7 @@
 
 #include <cinttypes>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 #include "esp_app_desc.h"
@@ -14,6 +15,7 @@
 #include "host/ble_hs.h"
 #include "host/ble_store.h"
 #include "host/util/util.h"
+#include "nvs.h"
 #include "nimble/nimble_port.h"
 #include "nimble/nimble_port_freertos.h"
 #include "services/gap/ble_svc_gap.h"
@@ -29,7 +31,7 @@ constexpr const char *TAG = "ble";
 
 constexpr size_t kMaxServiceTables = 4;
 constexpr size_t kMaxListeners = 4;
-constexpr size_t kMaxBonds = 8;
+constexpr size_t kMaxBonds = CONFIG_BT_NIMBLE_MAX_BONDS;
 
 // Appearance: generic keyboard (Bluetooth assigned numbers).
 constexpr uint16_t kAppearanceKeyboard = 0x03C1;
@@ -40,6 +42,8 @@ const ble_gatt_svc_def *service_tables[kMaxServiceTables];
 size_t service_table_count = 0;
 Listener listeners[kMaxListeners];
 size_t listener_count = 0;
+DropListener drop_listeners[kMaxListeners];
+size_t drop_listener_count = 0;
 
 bool on = false;
 bool synced = false;
@@ -48,7 +52,50 @@ uint8_t own_addr_type = 0;
 uint16_t conn_handle = BLE_HS_CONN_HANDLE_NONE;
 uint16_t mtu = BLE_ATT_MTU_DFLT;
 int64_t pairing_until_us = 0;
+esp_timer_handle_t pairing_timer = nullptr;
 bool pairing_in_progress = false;
+
+// Target host: only it may connect (filter accept list) unless a pairing
+// window is open. Persisted in NVS.
+constexpr const char *kNvsNamespace = "ble";
+constexpr const char *kNvsTarget = "target";
+bool has_target = false;
+ble_addr_t target = {};
+
+void LoadTarget() {
+    nvs_handle_t nvs;
+    if (nvs_open(kNvsNamespace, NVS_READONLY, &nvs) != ESP_OK) {
+        return;
+    }
+    size_t len = sizeof target;
+    has_target = nvs_get_blob(nvs, kNvsTarget, &target, &len) == ESP_OK && len == sizeof target;
+    nvs_close(nvs);
+}
+
+void SaveTarget() {
+    nvs_handle_t nvs;
+    if (nvs_open(kNvsNamespace, NVS_READWRITE, &nvs) != ESP_OK) {
+        return;
+    }
+    if (has_target) {
+        nvs_set_blob(nvs, kNvsTarget, &target, sizeof target);
+    } else {
+        nvs_erase_key(nvs, kNvsTarget);
+    }
+    nvs_commit(nvs);
+    nvs_close(nvs);
+}
+
+// Drops the current link on purpose: drop listeners first (key release).
+void Drop() {
+    if (conn_handle == BLE_HS_CONN_HANDLE_NONE) {
+        return;
+    }
+    for (size_t i = 0; i < drop_listener_count; ++i) {
+        drop_listeners[i](conn_handle);
+    }
+    ble_gap_terminate(conn_handle, BLE_ERR_REM_USER_CONN_TERM);
+}
 QueueHandle_t pairing_events = nullptr;
 
 void PostPairing(PairingEvent::Type type, uint32_t passkey, const char *peer,
@@ -141,6 +188,16 @@ void FormatAddr(const uint8_t *val, char *out) {
 
 int GapEvent(ble_gap_event *event, void *arg);
 
+const char *AddrTypeName(uint8_t type) {
+    switch (type) {
+        case BLE_ADDR_PUBLIC: return "public";
+        case BLE_ADDR_RANDOM: return "random";
+        case BLE_ADDR_PUBLIC_ID: return "public-id";
+        case BLE_ADDR_RANDOM_ID: return "random-id";
+        default: return "?";
+    }
+}
+
 void Advertise() {
     ble_hs_adv_fields fields = {};
     fields.flags = BLE_HS_ADV_F_DISC_GEN | BLE_HS_ADV_F_BREDR_UNSUP;
@@ -169,11 +226,31 @@ void Advertise() {
     ble_gap_adv_params params = {};
     params.conn_mode = BLE_GAP_CONN_MODE_UND;
     params.disc_mode = BLE_GAP_DISC_MODE_GEN;
+    if (has_target && !PairingOpen()) {
+        // Only the target may scan and connect.
+        rc = ble_gap_wl_set(&target, 1);
+        if (rc == 0) {
+            params.filter_policy = BLE_HCI_ADV_FILT_BOTH;
+        } else {
+            ESP_LOGE(TAG, "filter accept list: %d", rc);
+        }
+    }
     rc = ble_gap_adv_start(own_addr_type, nullptr, BLE_HS_FOREVER, &params, GapEvent, nullptr);
     if (rc != 0 && rc != BLE_HS_EALREADY) {
         ESP_LOGE(TAG, "adv start: %d", rc);
     }
 }
+
+// Re-applies the advertising filter while idle (target or window changed).
+void RestartAdvertising() {
+    if (!on || !synced || conn_handle != BLE_HS_CONN_HANDLE_NONE) {
+        return;
+    }
+    ble_gap_adv_stop();
+    Advertise();
+}
+
+void OnPairingTimer(void *) { RestartAdvertising(); }
 
 void OnPasskeyAction(const ble_gap_event *event) {
     const uint16_t conn = event->passkey.conn_handle;
@@ -231,7 +308,17 @@ void OnEncChange(const ble_gap_event *event) {
         FormatAddr(desc.peer_id_addr.val, addr);
         ESP_LOGI(TAG, "paired with %s", addr);
         pairing_until_us = 0;  // one new bond per window
+        if (has_target) {
+            target = desc.peer_id_addr;  // the new host is the one wanted now
+            SaveTarget();
+        }
         PostPairing(PairingEvent::kPaired, 0, addr, nullptr);
+        return;
+    }
+    if (has_target && ble_addr_cmp(&desc.peer_id_addr, &target) != 0) {
+        // Backstop for the accept list (e.g. a host on a resolvable address).
+        ESP_LOGW(TAG, "not the target host, dropping");
+        ble_gap_terminate(desc.conn_handle, BLE_ERR_REM_USER_CONN_TERM);
     }
 }
 
@@ -323,13 +410,22 @@ void AddListener(Listener listener) {
     }
 }
 
+void AddDropListener(DropListener listener) {
+    if (drop_listener_count < kMaxListeners) {
+        drop_listeners[drop_listener_count++] = listener;
+    }
+}
+
 esp_err_t On() {
     if (on) {
         return ESP_OK;
     }
     if (synced_sem == nullptr) {
         synced_sem = xSemaphoreCreateBinary();
+        const esp_timer_create_args_t args = {.callback = OnPairingTimer, .name = "ble_pair"};
+        esp_timer_create(&args, &pairing_timer);
     }
+    LoadTarget();
     esp_err_t err = nimble_port_init();
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "nimble init: %s", esp_err_to_name(err));
@@ -376,12 +472,12 @@ esp_err_t Off() {
     if (!on) {
         return ESP_OK;
     }
-    on = false;
     pairing_until_us = 0;
     if (conn_handle != BLE_HS_CONN_HANDLE_NONE) {
-        ble_gap_terminate(conn_handle, BLE_ERR_REM_USER_CONN_TERM);
+        Drop();
         vTaskDelay(pdMS_TO_TICKS(100));
     }
+    on = false;
     ble_gap_adv_stop();
     if (nimble_port_stop() != 0) {
         ESP_LOGE(TAG, "nimble stop failed");
@@ -404,6 +500,9 @@ esp_err_t StartPairing(uint32_t seconds) {
     }
     xQueueReset(pairing_events);
     pairing_until_us = esp_timer_get_time() + static_cast<int64_t>(seconds) * 1000000;
+    RestartAdvertising();  // open to everyone for the window
+    esp_timer_stop(pairing_timer);
+    esp_timer_start_once(pairing_timer, static_cast<uint64_t>(seconds) * 1000000 + 100000);
     return ESP_OK;
 }
 
@@ -412,37 +511,114 @@ bool WaitPairingEvent(PairingEvent *event, uint32_t timeout_ms) {
            xQueueReceive(pairing_events, event, pdMS_TO_TICKS(timeout_ms)) == pdTRUE;
 }
 
-void StopPairing() { pairing_until_us = 0; }
+void StopPairing() {
+    pairing_until_us = 0;
+    esp_timer_stop(pairing_timer);
+    RestartAdvertising();
+}
 
 uint32_t PairingSecondsLeft() {
     const int64_t left = pairing_until_us - esp_timer_get_time();
     return left > 0 ? static_cast<uint32_t>((left + 999999) / 1000000) : 0;
 }
 
-esp_err_t Unpair(const char *addr) {
-    if (!on) {
-        return ESP_ERR_INVALID_STATE;  // the bond store lives in the host
-    }
-    if (addr == nullptr) {
-        return ble_store_clear() == 0 ? ESP_OK : ESP_FAIL;
-    }
-    unsigned b[6];
-    if (sscanf(addr, "%x:%x:%x:%x:%x:%x", &b[5], &b[4], &b[3], &b[2], &b[1], &b[0]) != 6) {
-        return ESP_ERR_INVALID_ARG;
-    }
+namespace {
+
+// Bond by number from PrintBonds() (1-based) or by address.
+esp_err_t FindBond(const char *which, ble_addr_t *out) {
     ble_addr_t peers[kMaxBonds];
     int count = 0;
     ble_store_util_bonded_peers(peers, &count, kMaxBonds);
+    char *end = nullptr;
+    const long index = strtol(which, &end, 10);
+    if (end != which && *end == '\0') {
+        if (index < 1 || index > count) {
+            return ESP_ERR_NOT_FOUND;
+        }
+        *out = peers[index - 1];
+        return ESP_OK;
+    }
+    unsigned b[6];
+    if (sscanf(which, "%x:%x:%x:%x:%x:%x", &b[5], &b[4], &b[3], &b[2], &b[1], &b[0]) != 6) {
+        return ESP_ERR_INVALID_ARG;
+    }
     for (int i = 0; i < count; ++i) {
         bool match = true;
         for (int j = 0; j < 6; ++j) {
             match = match && peers[i].val[j] == b[j];
         }
         if (match) {
-            return ble_gap_unpair(&peers[i]) == 0 ? ESP_OK : ESP_FAIL;
+            *out = peers[i];
+            return ESP_OK;
         }
     }
     return ESP_ERR_NOT_FOUND;
+}
+
+bool IsConnectedTo(const ble_addr_t &addr) {
+    ble_gap_conn_desc desc = {};
+    return conn_handle != BLE_HS_CONN_HANDLE_NONE && ble_gap_conn_find(conn_handle, &desc) == 0 &&
+           ble_addr_cmp(&desc.peer_id_addr, &addr) == 0;
+}
+
+}  // namespace
+
+esp_err_t Unpair(const char *which) {
+    if (!on) {
+        return ESP_ERR_INVALID_STATE;  // the bond store lives in the host
+    }
+    if (which == nullptr) {
+        Drop();
+        has_target = false;
+        SaveTarget();
+        return ble_store_clear() == 0 ? ESP_OK : ESP_FAIL;
+    }
+    ble_addr_t addr;
+    const esp_err_t err = FindBond(which, &addr);
+    if (err != ESP_OK) {
+        return err;
+    }
+    if (IsConnectedTo(addr)) {
+        Drop();
+    }
+    if (has_target && ble_addr_cmp(&addr, &target) == 0) {
+        has_target = false;
+        SaveTarget();
+        RestartAdvertising();
+    }
+    return ble_gap_unpair(&addr) == 0 ? ESP_OK : ESP_FAIL;
+}
+
+esp_err_t UseBond(const char *which) {
+    if (!on) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (which == nullptr) {
+        has_target = false;
+    } else {
+        ble_addr_t addr;
+        const esp_err_t err = FindBond(which, &addr);
+        if (err != ESP_OK) {
+            return err;
+        }
+        target = addr;
+        has_target = true;
+    }
+    SaveTarget();
+    if (has_target && conn_handle != BLE_HS_CONN_HANDLE_NONE && !IsConnectedTo(target)) {
+        Drop();  // advertising restarts with the filter on disconnect
+    } else {
+        RestartAdvertising();
+    }
+    return ESP_OK;
+}
+
+esp_err_t Disconnect() {
+    if (!on || conn_handle == BLE_HS_CONN_HANDLE_NONE) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    Drop();
+    return ESP_OK;
 }
 
 uint16_t ConnHandle() { return conn_handle; }
@@ -475,24 +651,78 @@ void PrintInfo() {
         printf("pairing    closed\n");
     }
 
+    if (has_target) {
+        FormatAddr(target.val, addr);
+        printf("target     %s (only it may connect)\n", addr);
+    } else {
+        printf("target     any bonded host\n");
+    }
     ble_gap_conn_desc desc = {};
     if (conn_handle != BLE_HS_CONN_HANDLE_NONE && ble_gap_conn_find(conn_handle, &desc) == 0) {
         FormatAddr(desc.peer_id_addr.val, addr);
-        printf("connected  %s, mtu %u, %s%s%s\n", addr, mtu,
-               desc.sec_state.encrypted ? "encrypted" : "not encrypted",
-               desc.sec_state.authenticated ? ", authenticated" : "",
-               desc.sec_state.bonded ? ", bonded" : "");
+        printf("connected  %s ('ble conns' for details)\n", addr);
     } else {
         printf("connected  no\n");
     }
+    int count = 0;
+    ble_store_util_count(BLE_STORE_OBJ_TYPE_PEER_SEC, &count);
+    printf("bonds      %d ('ble bonds' to list)\n", count);
+}
 
+void PrintBonds() {
+    if (!on) {
+        printf("ble is off\n");
+        return;
+    }
     ble_addr_t peers[kMaxBonds];
     int count = 0;
     ble_store_util_bonded_peers(peers, &count, kMaxBonds);
-    printf("bonds      %d\n", count);
+    if (count == 0) {
+        printf("no bonds ('ble pair' to add one)\n");
+        return;
+    }
+    ble_gap_conn_desc desc = {};
+    const bool connected =
+        conn_handle != BLE_HS_CONN_HANDLE_NONE && ble_gap_conn_find(conn_handle, &desc) == 0;
+    printf(" #  address            type\n");
     for (int i = 0; i < count; ++i) {
+        char addr[18];
         FormatAddr(peers[i].val, addr);
-        printf("  %s\n", addr);
+        const bool here = connected && ble_addr_cmp(&peers[i], &desc.peer_id_addr) == 0;
+        const bool wanted = has_target && ble_addr_cmp(&peers[i], &target) == 0;
+        printf("%2d  %s  %-9s%s%s\n", i + 1, addr, AddrTypeName(peers[i].type),
+               here ? "  connected" : "", wanted ? "  target" : "");
+    }
+    printf("%d bond(s), max %d\n", count, CONFIG_BT_NIMBLE_MAX_BONDS);
+}
+
+void PrintConnection() {
+    if (!on) {
+        printf("ble is off\n");
+        return;
+    }
+    ble_gap_conn_desc desc = {};
+    if (conn_handle == BLE_HS_CONN_HANDLE_NONE || ble_gap_conn_find(conn_handle, &desc) != 0) {
+        printf("no connections\n");
+        return;
+    }
+    char addr[18];
+    printf("handle     %u\n", desc.conn_handle);
+    FormatAddr(desc.peer_id_addr.val, addr);
+    printf("peer       %s (%s)\n", addr, AddrTypeName(desc.peer_id_addr.type));
+    FormatAddr(desc.peer_ota_addr.val, addr);
+    printf("peer ota   %s (%s)\n", addr, AddrTypeName(desc.peer_ota_addr.type));
+    printf("security   %s%s%s, key %u bytes\n",
+           desc.sec_state.encrypted ? "encrypted" : "not encrypted",
+           desc.sec_state.authenticated ? ", authenticated" : "",
+           desc.sec_state.bonded ? ", bonded" : "", desc.sec_state.key_size);
+    printf("mtu        %u\n", mtu);
+    // Interval in 1.25 ms units, supervision timeout in 10 ms units.
+    printf("interval   %u.%02u ms, latency %u, timeout %u ms\n", desc.conn_itvl * 125 / 100,
+           desc.conn_itvl * 125 % 100, desc.conn_latency, desc.supervision_timeout * 10);
+    int8_t rssi = 0;
+    if (ble_gap_conn_rssi(desc.conn_handle, &rssi) == 0) {
+        printf("rssi       %d dBm\n", rssi);
     }
 }
 

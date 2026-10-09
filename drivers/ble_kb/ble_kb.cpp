@@ -194,11 +194,20 @@ esp_err_t SendReport(uint8_t modifiers, uint8_t usage) {
     return ESP_ERR_TIMEOUT;
 }
 
+// Before the device drops a link on purpose (host switch, disconnect): an
+// all-keys-up report, so no Ctrl/Shift/key stays held on the old host.
+void OnDrop(uint16_t) {
+    if (Ready()) {
+        SendReport(0, 0);
+    }
+}
+
 }  // namespace
 
 void Register() {
     ble::AddServices(kServices);
     ble::AddListener(OnEvent);
+    ble::AddDropListener(OnDrop);
 }
 
 bool Ready() { return subscribed && ble::LinkSecure(); }
