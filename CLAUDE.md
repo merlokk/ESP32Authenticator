@@ -15,5 +15,6 @@ Firmware: C/C++ on **ESP-IDF**.
 
 - All docs and code comments are in English.
 - Docs are as compact as possible.
+- Commit directly to `main` and push right after committing.
 - Commits and MRs: append ` +ai` to the subject/title; no `Co-Authored-By` or similar trailers.
 - Reply in the language of the request.
