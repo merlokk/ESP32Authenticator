@@ -72,6 +72,17 @@ Power-up order: GPIO1 HIGH → GPIO2 LOW (touch) → GPIO5 pulse (SD).
 | 0x63 | CW2017 fuel gauge | Reports 0% until the 80-byte BATINFO profile is loaded (regs `0x10`–`0x5F`). SoC is reg `0x04`, VCELL is regs `0x02`/`0x03`. |
 | 0x51 | BM8563 RTC | PCF8563-compatible. |
 
+## eFuse: flashing switches
+
+Burned bits cannot be cleared. Some X4 Pro units ship with flashing disabled;
+check with `hwinfo` / `efuse`.
+
+| eFuse = 1 | Effect |
+|---|---|
+| `DIS_USB_SERIAL_JTAG` | USB Serial/JTAG controller off; cannot be re-enabled in software |
+| `DIS_USB_SERIAL_JTAG_DOWNLOAD_MODE` | no ROM flashing over USB Serial/JTAG; the app console still works |
+| `DIS_DOWNLOAD_MODE` | ROM download mode off entirely (all interfaces) |
+
 ## Notes
 
 - SD works only in native SDMMC mode; SPI-mode CMD0 gets no response.

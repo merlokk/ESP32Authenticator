@@ -10,12 +10,16 @@
 #include "esp_efuse_table.h"
 #include "esp_flash.h"
 #include "esp_flash_encrypt.h"
+#include "esp_flash_partitions.h"
 #include "esp_heap_caps.h"
+#include "esp_image_format.h"
 #include "esp_log.h"
 #include "esp_mac.h"
 #include "esp_ota_ops.h"
 #include "esp_partition.h"
+#include "spi_flash_mmap.h"
 #include "esp_psram.h"
+#include "esp_rom_crc.h"
 #include "esp_secure_boot.h"
 #include "esp_system.h"
 #include "esp_timer.h"
@@ -91,8 +95,10 @@ uint32_t ReadEfuse(const esp_efuse_desc_t *field[]) {
     return value;
 }
 
-const char *Disabled(const esp_efuse_desc_t *field[]) {
-    return ReadEfuse(field) ? "DISABLED" : "enabled";
+// One eFuse bit: name, value, and what it means when burned.
+void PrintFuse(const char *name, const esp_efuse_desc_t *field[], const char *meaning) {
+    const uint32_t value = ReadEfuse(field);
+    printf("%-34s %" PRIu32 "%s%s\n", name, value, value ? "  " : "", value ? meaning : "");
 }
 
 void PrintMac(const char *label, esp_mac_type_t type) {
@@ -184,14 +190,31 @@ void PrintEfuse() {
     printf("flash enc  %s (SPI_BOOT_CRYPT_CNT=%" PRIu32 ")\n",
            FlashEncModeName(esp_get_flash_encryption_mode()),
            ReadEfuse(ESP_EFUSE_SPI_BOOT_CRYPT_CNT));
-    printf("download   %s%s\n", Disabled(ESP_EFUSE_DIS_DOWNLOAD_MODE),
-           ReadEfuse(ESP_EFUSE_ENABLE_SECURITY_DOWNLOAD) ? " (secure only)" : "");
-    printf("jtag       pad %s, usb %s, soft-dis %" PRIu32 "\n", Disabled(ESP_EFUSE_DIS_PAD_JTAG),
-           Disabled(ESP_EFUSE_DIS_USB_JTAG), ReadEfuse(ESP_EFUSE_SOFT_DIS_JTAG));
-    printf("usb        serial-jtag %s, otg %s, phy-sel %" PRIu32 "\n",
-           Disabled(ESP_EFUSE_DIS_USB_SERIAL_JTAG), Disabled(ESP_EFUSE_DIS_USB_OTG),
-           ReadEfuse(ESP_EFUSE_USB_PHY_SEL));
-    printf("direct boot %s\n", Disabled(ESP_EFUSE_DIS_DIRECT_BOOT));
+    printf("enable_security_download %" PRIu32 "%s\n",
+           ReadEfuse(ESP_EFUSE_ENABLE_SECURITY_DOWNLOAD),
+           ReadEfuse(ESP_EFUSE_ENABLE_SECURITY_DOWNLOAD) ? "  ROM download limited to secure mode" : "");
+    // Flashing and USB switches. A burned (1) bit cannot be cleared.
+    PrintFuse("dis_download_mode", ESP_EFUSE_DIS_DOWNLOAD_MODE, "ROM download mode off entirely");
+    PrintFuse("dis_usb_serial_jtag_download_mode", ESP_EFUSE_DIS_USB_SERIAL_JTAG_DOWNLOAD_MODE,
+              "no ROM flashing over USB Serial/JTAG; app console still works");
+    PrintFuse("dis_usb_otg_download_mode", ESP_EFUSE_DIS_USB_OTG_DOWNLOAD_MODE,
+              "no ROM flashing over USB-OTG");
+    PrintFuse("dis_force_download", ESP_EFUSE_DIS_FORCE_DOWNLOAD,
+              "app cannot reboot into download mode");
+    PrintFuse("dis_download_manual_encrypt", ESP_EFUSE_DIS_DOWNLOAD_MANUAL_ENCRYPT,
+              "no flash encryption in download mode");
+    PrintFuse("dis_usb_serial_jtag", ESP_EFUSE_DIS_USB_SERIAL_JTAG,
+              "USB Serial/JTAG controller off, cannot be re-enabled");
+    PrintFuse("dis_usb_otg", ESP_EFUSE_DIS_USB_OTG, "USB-OTG controller off");
+    PrintFuse("dis_usb_jtag", ESP_EFUSE_DIS_USB_JTAG, "JTAG over USB off");
+    PrintFuse("dis_pad_jtag", ESP_EFUSE_DIS_PAD_JTAG, "JTAG on pins off");
+    PrintFuse("dis_usb_serial_jtag_rom_print", ESP_EFUSE_DIS_USB_SERIAL_JTAG_ROM_PRINT,
+              "no ROM boot log over USB Serial/JTAG");
+    PrintFuse("dis_legacy_spi_boot", ESP_EFUSE_DIS_LEGACY_SPI_BOOT, "legacy SPI boot off");
+    PrintFuse("dis_direct_boot", ESP_EFUSE_DIS_DIRECT_BOOT, "direct boot off");
+    printf("soft_dis_jtag %" PRIu32 ", usb_phy_sel %" PRIu32 ", uart_print_control %" PRIu32 "\n",
+           ReadEfuse(ESP_EFUSE_SOFT_DIS_JTAG), ReadEfuse(ESP_EFUSE_USB_PHY_SEL),
+           ReadEfuse(ESP_EFUSE_UART_PRINT_CONTROL));
     printf("rd_dis     0x%02" PRIx32 ", wr_dis 0x%08" PRIx32 "\n", ReadEfuse(ESP_EFUSE_RD_DIS),
            ReadEfuse(ESP_EFUSE_WR_DIS));
     for (int i = 0; i < 6; ++i) {
@@ -249,32 +272,147 @@ void PrintNvs() {
     }
 }
 
-void PrintPartitions() {
-    printf("[partitions]\n");
-    const esp_partition_t *running = esp_ota_get_running_partition();
-    const esp_partition_t *boot = esp_ota_get_boot_partition();
+// Size of the app image actually written to a partition, 0 if none.
+uint32_t ImageSize(const esp_partition_t *p) {
+    const esp_partition_pos_t pos = {.offset = p->address, .size = p->size};
+    esp_image_metadata_t meta = {};
+    return esp_image_get_metadata(&pos, &meta) == ESP_OK ? meta.image_len : 0;
+}
+
+void PrintRegion(const char *label, const char *type, uint32_t address, uint32_t size,
+                 uint32_t used) {
+    printf("  0x%06" PRIx32 "-0x%06" PRIx32 " %-10s %-13s %5" PRIu32 " KB", address,
+           address + size - 1, label, type, size / 1024);
+    if (used != 0) {
+        printf(", image %" PRIu32 " KB (%" PRIu32 "%%)", used / 1024, used * 100 / size);
+    }
+}
+
+const char *PartitionTypeName(const esp_partition_t *p) {
+    static char text[24];
+    if (p->type == ESP_PARTITION_TYPE_APP) {
+        if (p->subtype == ESP_PARTITION_SUBTYPE_APP_FACTORY) {
+            return "app/factory";
+        }
+        snprintf(text, sizeof text, "app/ota_%d", p->subtype - ESP_PARTITION_SUBTYPE_APP_OTA_MIN);
+        return text;
+    }
+    switch (p->subtype) {
+        case ESP_PARTITION_SUBTYPE_DATA_OTA: return "data/ota";
+        case ESP_PARTITION_SUBTYPE_DATA_PHY: return "data/phy";
+        case ESP_PARTITION_SUBTYPE_DATA_NVS: return "data/nvs";
+        case ESP_PARTITION_SUBTYPE_DATA_COREDUMP: return "data/coredump";
+        case ESP_PARTITION_SUBTYPE_DATA_NVS_KEYS: return "data/nvs_keys";
+        case ESP_PARTITION_SUBTYPE_DATA_FAT: return "data/fat";
+        case ESP_PARTITION_SUBTYPE_DATA_SPIFFS: return "data/spiffs";
+        case ESP_PARTITION_SUBTYPE_DATA_LITTLEFS: return "data/littlefs";
+        default:
+            snprintf(text, sizeof text, "%02x/%02x", p->type, p->subtype);
+            return text;
+    }
+}
+
+// Whole flash map: bootloader, partition table, partitions, and unused gaps.
+void PrintFlashLayout() {
+    printf("[flash layout]\n");
+    uint32_t flash_size = 0;
+    esp_flash_get_physical_size(nullptr, &flash_size);
+
+    // On the X4 Pro this is the stock bootloader, not the one built here.
+    PrintRegion("bootloader", "", CONFIG_BOOTLOADER_OFFSET_IN_FLASH,
+                CONFIG_PARTITION_TABLE_OFFSET - CONFIG_BOOTLOADER_OFFSET_IN_FLASH, 0);
+    esp_bootloader_desc_t boot_desc = {};
+    if (esp_ota_get_bootloader_description(nullptr, &boot_desc) == ESP_OK) {
+        printf(", v%" PRIu32 " idf %s, %s", boot_desc.version, boot_desc.idf_ver,
+               boot_desc.date_time);
+    }
+    printf("\n");
+    PrintRegion("ptable", "", CONFIG_PARTITION_TABLE_OFFSET, SPI_FLASH_SEC_SIZE, 0);
+    printf("\n");
+
+    uint32_t next = CONFIG_PARTITION_TABLE_OFFSET + SPI_FLASH_SEC_SIZE;
+    uint32_t mapped = next;
     esp_partition_iterator_t it =
         esp_partition_find(ESP_PARTITION_TYPE_ANY, ESP_PARTITION_SUBTYPE_ANY, nullptr);
     for (; it != nullptr; it = esp_partition_next(it)) {
         const esp_partition_t *p = esp_partition_get(it);
-        printf("  %-9s %02x/%02x 0x%06" PRIx32 " %5" PRIu32 " KB", p->label, p->type, p->subtype,
-               p->address, p->size / 1024);
-        if (p->type == ESP_PARTITION_TYPE_APP) {
-            esp_app_desc_t desc = {};
-            if (esp_ota_get_partition_description(p, &desc) == ESP_OK) {
-                printf(" %s %s", desc.project_name, desc.version);
-            } else {
-                printf(" empty");
-            }
-            esp_ota_img_states_t state;
-            if (esp_ota_get_state_partition(p, &state) == ESP_OK) {
-                printf(" (%s)", OtaStateName(state));
-            }
-            printf("%s%s", p == running ? " [running]" : "", p == boot ? " [boot]" : "");
+        if (p->address > next) {
+            PrintRegion("<free>", "", next, p->address - next, 0);
+            printf("\n");
+        }
+        PrintRegion(p->label, PartitionTypeName(p), p->address, p->size,
+                    p->type == ESP_PARTITION_TYPE_APP ? ImageSize(p) : 0);
+        printf("\n");
+        next = p->address + p->size;
+        mapped += p->size;
+    }
+    esp_partition_iterator_release(it);
+    if (flash_size > next) {
+        PrintRegion("<free>", "", next, flash_size - next, 0);
+        printf("\n");
+    }
+    printf("  total %" PRIu32 " KB, mapped %" PRIu32 " KB\n", flash_size / 1024, mapped / 1024);
+}
+
+// Raw otadata: two sectors, each with a sequence number. The valid entry with
+// the higher seq selects the boot slot: (seq - 1) % number of OTA slots.
+void PrintOtaData(const esp_partition_t *otadata) {
+    for (int i = 0; i < 2; ++i) {
+        esp_ota_select_entry_t entry = {};
+        if (esp_partition_read(otadata, i * SPI_FLASH_SEC_SIZE, &entry, sizeof entry) != ESP_OK) {
+            continue;
+        }
+        if (entry.ota_seq == UINT32_MAX) {
+            printf("otadata[%d] empty\n", i);
+            continue;
+        }
+        const bool crc_ok =
+            esp_rom_crc32_le(UINT32_MAX, reinterpret_cast<const uint8_t *>(&entry.ota_seq),
+                             sizeof entry.ota_seq) == entry.crc;
+        printf("otadata[%d] seq %" PRIu32 ", state %s, crc %s\n", i, entry.ota_seq,
+               OtaStateName(static_cast<esp_ota_img_states_t>(entry.ota_state)),
+               crc_ok ? "ok" : "BAD");
+    }
+}
+
+void PrintOta() {
+    printf("[ota]\n");
+    const esp_partition_t *running = esp_ota_get_running_partition();
+    const esp_partition_t *boot = esp_ota_get_boot_partition();
+    const esp_partition_t *next = esp_ota_get_next_update_partition(nullptr);
+    const esp_partition_t *invalid = esp_ota_get_last_invalid_partition();
+    printf("slots      %u\n", esp_ota_get_app_partition_count());
+    printf("running    %s\n", running != nullptr ? running->label : "-");
+    printf("boot       %s\n", boot != nullptr ? boot->label : "-");
+    printf("next       %s\n", next != nullptr ? next->label : "-");
+    printf("invalid    %s\n", invalid != nullptr ? invalid->label : "-");
+    printf("rollback   %s\n", esp_ota_check_rollback_is_possible() ? "possible" : "not possible");
+
+    esp_partition_iterator_t it =
+        esp_partition_find(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_ANY, nullptr);
+    for (; it != nullptr; it = esp_partition_next(it)) {
+        const esp_partition_t *p = esp_partition_get(it);
+        printf("  %-9s", p->label);
+        esp_app_desc_t desc = {};
+        if (esp_ota_get_partition_description(p, &desc) == ESP_OK) {
+            printf(" %s %s (idf %s, %s %s)", desc.project_name, desc.version, desc.idf_ver,
+                   desc.date, desc.time);
+        } else {
+            printf(" empty");
+        }
+        esp_ota_img_states_t state;
+        if (esp_ota_get_state_partition(p, &state) == ESP_OK) {
+            printf(" [%s]", OtaStateName(state));
         }
         printf("\n");
     }
     esp_partition_iterator_release(it);
+
+    const esp_partition_t *otadata =
+        esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_OTA, nullptr);
+    if (otadata != nullptr) {
+        PrintOtaData(otadata);
+    }
 }
 
 void PrintRuntime() {
@@ -316,7 +454,8 @@ void PrintInfo() {
     PrintMemory();
     PrintEfuse();
     PrintNvs();
-    PrintPartitions();
+    PrintFlashLayout();
+    PrintOta();
     PrintRuntime();
 }
 

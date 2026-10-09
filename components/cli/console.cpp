@@ -44,7 +44,22 @@ int CmdHwInfo(int, char **) {
     return 0;
 }
 
+int CmdEfuse(int, char **) {
+    hardware::PrintEfuseFields();
+    hardware::PrintEfuseRaw();
+    return 0;
+}
+
 const esp_console_cmd_t kCommands[] = {
+    {
+        .command = "efuse",
+        .help = "Print every eFuse field and the raw eFuse blocks",
+        .hint = nullptr,
+        .func = &CmdEfuse,
+        .argtable = nullptr,
+        .func_w_context = nullptr,
+        .context = nullptr,
+    },
     {
         .command = "hwinfo",
         .help = "Print chip and IDs, flash, PSRAM, eFuse, NVS, partitions, temperature",

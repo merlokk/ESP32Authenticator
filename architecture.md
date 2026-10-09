@@ -35,6 +35,9 @@ own OTA path. Keep the stock X4 Pro partition table, 16 MB, dual OTA:
 | spiffs | data/spiffs | 0xFD0000 | 0x014000 |
 | coredump | data/coredump | 0xFE4000 | 0x01C000 |
 
+- On the X4 Pro only the app `.bin` is replaced: it runs on the **stock
+  bootloader** (ESP-IDF 6.0.1). Bootloader settings in our `sdkconfig` do not
+  apply there, so the app must not depend on them.
 - The stock bootloader has app rollback enabled. A new app must call
   `esp_ota_mark_app_valid_cancel_rollback()` after it boots, or the bootloader
   falls back to the old slot.
