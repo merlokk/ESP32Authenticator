@@ -54,8 +54,8 @@ int CmdEfuse(int, char **) {
 const esp_console_cmd_t kCommands[] = {
     {
         .command = "spiffs",
-        .help = "SPIFFS files: ls | cat <file> | catbase64 <file> | format confirm",
-        .hint = "<ls|cat|catbase64|format> [file]",
+        .help = "SPIFFS files: ls | cat <file> | catbase64 <file> | write <file> [<length> <crc32>] | format confirm",
+        .hint = "<ls|cat|catbase64|write|format> [file]",
         .func = &CmdSpiffs,
         .argtable = nullptr,
         .func_w_context = nullptr,

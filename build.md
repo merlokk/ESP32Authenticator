@@ -33,6 +33,17 @@ idf.py -p COM6 flash
 (`cmake/version.cmake`). It is computed at configure time: run
 `idf.py reconfigure` to pick up a new commit.
 
+## Utils
+
+`utils/` (Python 3, `pip install -r utils/requirements.txt`): console helpers.
+Transfers are streamed in chunks, files are never loaded whole.
+
+```powershell
+python utils/spiffs.py -p COM6 ls
+python utils/spiffs.py -p COM6 get <remote> [local]
+python utils/spiffs.py -p COM6 put <local> [remote]
+```
+
 ## CLI
 
 `esp_console` REPL on USB Serial/JTAG (same port as the monitor), prompt `auth>`.
@@ -46,5 +57,6 @@ Opening the port with RTS asserted resets the chip.
 | `spiffs ls` | SPIFFS files: size, modification time, file/fs totals |
 | `spiffs cat <file>` | print a SPIFFS file as text |
 | `spiffs catbase64 <file>` | print a SPIFFS file as base64, 76 chars per line |
+| `spiffs write <file> [<length> <crc32>]` | prints `ready`, receives one base64 line (Enter ends the file), checks length/CRC32 (zlib), removes the file on error. Flow control: a `.` after every 192 base64 chars; send the next block only after it |
 | `spiffs format confirm` | erase the partition and create an empty fs (destroys stock data on the X4 Pro) |
 | `efuse` | every eFuse field (list generated at build time from IDF `esp_efuse_table.csv`) and raw blocks BLK0..BLK10 |
