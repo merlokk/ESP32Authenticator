@@ -66,7 +66,8 @@ Opening the port with RTS asserted resets the chip.
 | `spiffs format confirm` | erase the partition and create an empty fs (destroys stock data on the X4 Pro) |
 | `ble on` / `ble off` | start / stop the BLE stack (off at boot) |
 | `ble info` | state, address, advertising, pairing window, connection (MTU, security), bonds, keyboard/FIDO readiness |
-| `ble pair [seconds]` / `ble pair stop` | open (default 60 s) / close the pairing window; the passkey is printed as `PAIRING PASSKEY: nnnnnn` |
+| `ble pair [seconds]` | open the pairing window (default 60 s) and wait: prints `passkey nnnnnn`, returns `paired with <addr>` or an error when the window closes |
+| `ble pair <seconds> bg` / `ble pair stop` | open the window and return (passkey only in the log) / close it |
 | `ble unpair <addr>` / `ble unpair all` | delete a bond / all bonds |
 | `ble kb <text>` | type text on the paired host (US layout; `\n`, `\t` escapes) |
 | `efuse` | every eFuse field (list generated at build time from IDF `esp_efuse_table.csv`) and raw blocks BLK0..BLK10 |

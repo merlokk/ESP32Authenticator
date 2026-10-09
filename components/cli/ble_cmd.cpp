@@ -69,16 +69,41 @@ int CmdPair(int argc, char **argv) {
         printf("pairing closed\n");
         return 0;
     }
-    const uint32_t seconds = argc == 2 ? strtoul(argv[1], nullptr, 10) : kDefaultPairingSeconds;
-    if (argc > 2 || seconds == 0) {
-        printf("usage: ble pair [seconds] | ble pair stop\n");
+    const bool background = argc == 3 && strcmp(argv[2], "bg") == 0;
+    const uint32_t seconds = argc >= 2 ? strtoul(argv[1], nullptr, 10) : kDefaultPairingSeconds;
+    if (argc > 3 || (argc == 3 && !background) || seconds == 0) {
+        printf("usage: ble pair [seconds [bg]] | ble pair stop\n");
         return 1;
     }
     ble::StartPairing(seconds);
-    printf("pairing open for %" PRIu32 " s: pair '%s' on the host and enter the passkey "
-           "printed here\n",
-           seconds, ble::kDeviceName);
-    return 0;
+    printf("pairing open for %" PRIu32 " s: add '%s' on the host\n", seconds, ble::kDeviceName);
+    if (background) {
+        return 0;  // the passkey goes to the log only
+    }
+    fflush(stdout);
+
+    // Blocks the console until a new bond or the end of the window. A failed
+    // attempt keeps waiting: the host may retry inside the window.
+    ble::PairingEvent event = {};
+    while (ble::PairingSecondsLeft() > 0) {
+        if (!ble::WaitPairingEvent(&event, 500)) {
+            continue;
+        }
+        switch (event.type) {
+            case ble::PairingEvent::kPasskey:
+                printf("passkey %06" PRIu32 "\n", event.passkey);
+                break;
+            case ble::PairingEvent::kPaired:
+                printf("paired with %s\n", event.peer);
+                return 0;
+            case ble::PairingEvent::kFailed:
+                printf("attempt failed: %s\n", event.reason);
+                break;
+        }
+        fflush(stdout);
+    }
+    printf("pairing window closed, no new bond\n");
+    return 1;
 }
 
 int CmdUnpair(int argc, char **argv) {
@@ -158,7 +183,7 @@ int CmdBle(int argc, char **argv) {
             }
         }
     }
-    printf("usage: ble on | off | info | pair [seconds|stop] | unpair <addr|all> | kb <text>\n");
+    printf("usage: ble on | off | info | pair [seconds [bg]|stop] | unpair <addr|all> | kb <text>\n");
     return 1;
 }
 

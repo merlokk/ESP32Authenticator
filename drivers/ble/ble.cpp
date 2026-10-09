@@ -9,6 +9,7 @@
 #include "esp_random.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
 #include "freertos/semphr.h"
 #include "host/ble_hs.h"
 #include "host/ble_store.h"
@@ -48,7 +49,19 @@ uint16_t conn_handle = BLE_HS_CONN_HANDLE_NONE;
 uint16_t mtu = BLE_ATT_MTU_DFLT;
 int64_t pairing_until_us = 0;
 bool pairing_in_progress = false;
-uint32_t last_passkey = 0;
+QueueHandle_t pairing_events = nullptr;
+
+void PostPairing(PairingEvent::Type type, uint32_t passkey, const char *peer,
+                 const char *reason) {
+    if (pairing_events == nullptr) {
+        return;
+    }
+    PairingEvent event = {.type = type, .passkey = passkey, .peer = {}, .reason = reason};
+    if (peer != nullptr) {
+        strlcpy(event.peer, peer, sizeof event.peer);
+    }
+    xQueueSend(pairing_events, &event, 0);  // drop if nobody is reading
+}
 
 // --- Device Information and Battery services ---------------------------------
 
@@ -173,10 +186,10 @@ void OnPasskeyAction(const ble_gap_event *event) {
     io.action = event->passkey.params.action;
     if (io.action == BLE_SM_IOACT_DISP) {
         io.passkey = esp_random() % 1000000;
-        last_passkey = io.passkey;
         pairing_in_progress = true;
         // TODO: show the passkey on the e-ink screen.
-        ESP_LOGW(TAG, "PAIRING PASSKEY: %06" PRIu32 " (enter it on the host)", io.passkey);
+        ESP_LOGI(TAG, "pairing passkey: %06" PRIu32, io.passkey);
+        PostPairing(PairingEvent::kPasskey, io.passkey, nullptr, nullptr);
     } else {
         // Only DisplayOnly is configured; anything else is unexpected.
         ESP_LOGW(TAG, "unsupported pairing action %d", io.action);
@@ -195,11 +208,18 @@ void OnEncChange(const ble_gap_event *event) {
     pairing_in_progress = false;
     if (event->enc_change.status != 0) {
         ESP_LOGW(TAG, "encryption failed: %d", event->enc_change.status);
+        if (was_pairing) {
+            PostPairing(PairingEvent::kFailed, 0, nullptr, "wrong passkey or host cancelled");
+        }
         return;
     }
     if (!desc.sec_state.authenticated) {
         // Just Works fallback (host without a keyboard/display): no MITM protection.
         ESP_LOGW(TAG, "unauthenticated link rejected");
+        if (PairingOpen()) {
+            PostPairing(PairingEvent::kFailed, 0, nullptr,
+                        "host paired without passkey (Just Works), rejected");
+        }
         if (desc.sec_state.bonded) {
             ble_gap_unpair(&desc.peer_id_addr);
         }
@@ -209,8 +229,9 @@ void OnEncChange(const ble_gap_event *event) {
     if (was_pairing) {
         char addr[18];
         FormatAddr(desc.peer_id_addr.val, addr);
-        ESP_LOGW(TAG, "paired with %s", addr);
+        ESP_LOGI(TAG, "paired with %s", addr);
         pairing_until_us = 0;  // one new bond per window
+        PostPairing(PairingEvent::kPaired, 0, addr, nullptr);
     }
 }
 
@@ -228,6 +249,9 @@ int GapEvent(ble_gap_event *event, void *) {
             break;
         case BLE_GAP_EVENT_DISCONNECT:
             conn_handle = BLE_HS_CONN_HANDLE_NONE;
+            if (pairing_in_progress) {
+                PostPairing(PairingEvent::kFailed, 0, nullptr, "host disconnected during pairing");
+            }
             pairing_in_progress = false;
             if (on) {
                 Advertise();
@@ -375,8 +399,17 @@ esp_err_t StartPairing(uint32_t seconds) {
     if (!on) {
         return ESP_ERR_INVALID_STATE;
     }
+    if (pairing_events == nullptr) {
+        pairing_events = xQueueCreate(4, sizeof(PairingEvent));
+    }
+    xQueueReset(pairing_events);
     pairing_until_us = esp_timer_get_time() + static_cast<int64_t>(seconds) * 1000000;
     return ESP_OK;
+}
+
+bool WaitPairingEvent(PairingEvent *event, uint32_t timeout_ms) {
+    return pairing_events != nullptr &&
+           xQueueReceive(pairing_events, event, pdMS_TO_TICKS(timeout_ms)) == pdTRUE;
 }
 
 void StopPairing() { pairing_until_us = 0; }

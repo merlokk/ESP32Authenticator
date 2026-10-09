@@ -37,6 +37,19 @@ esp_err_t StartPairing(uint32_t seconds);
 void StopPairing();
 uint32_t PairingSecondsLeft();
 
+// What happens inside the pairing window, in order: kPasskey (show it to the
+// user), then kPaired or kFailed. The host may retry after kFailed.
+struct PairingEvent {
+    enum Type { kPasskey, kPaired, kFailed } type;
+    uint32_t passkey;    // kPasskey
+    char peer[18];       // kPaired: host identity address
+    const char *reason;  // kFailed
+};
+
+// Waits for the next pairing event since the last StartPairing().
+// Returns false on timeout.
+bool WaitPairingEvent(PairingEvent *event, uint32_t timeout_ms);
+
 // Deletes one bond ("aa:bb:cc:dd:ee:ff") or all of them (`addr` == nullptr).
 esp_err_t Unpair(const char *addr);
 

@@ -69,7 +69,7 @@ const esp_console_cmd_t kCommands[] = {
     },
     {
         .command = "ble",
-        .help = "BLE: on | off | info | pair [seconds|stop] | unpair <addr|all> | kb <text>",
+        .help = "BLE: on | off | info | pair [seconds [bg]|stop] | unpair <addr|all> | kb <text>",
         .hint = "<on|off|info|pair|unpair|kb> [args]",
         .func = &CmdBle,
         .argtable = nullptr,
