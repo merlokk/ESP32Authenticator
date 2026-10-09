@@ -11,6 +11,10 @@ Firmware: C/C++ on **ESP-IDF**.
   - **BLE keyboard** (HID): types login/password/TOTP code;
   - **BLE FIDO2** authenticator.
 
+## Hardware
+
+Pinout, display controllers, devices: [hardware.md](hardware.md).
+
 ## Sources
 
 Reference projects (local paths + git): [sources.md](sources.md).
