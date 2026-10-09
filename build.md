@@ -52,6 +52,12 @@ python utils/ble.py -p COM6 kb "text"          # or kb --stdin; quoting and spli
                                                 # into console lines is done for you
 ```
 
+## Tests
+
+```powershell
+host_test\run.cmd [suite...]   # host tests, no board (MSVC); see architecture.md
+```
+
 ## CLI
 
 `esp_console` REPL on USB Serial/JTAG (same port as the monitor), prompt `auth>`.
@@ -81,4 +87,12 @@ Opening the port with RTS asserted resets the chip.
 | `ble disconnect` | drop the link (keys released first); the host may reconnect |
 | `ble unpair <#>` / `<addr>` / `all` | delete a bond by number from `ble bonds`, by address, or all; a connected host is disconnected |
 | `ble kb <text>` | type text on the connected host (US layout). esp_console drops single-backslash escapes: type `\\n` (Enter), `\\t` (Tab), `\\\\`; quote to keep spaces |
+| `wifi on` / `wifi off` | start the station (tries the configured networks in order, retries every 2 s) / stop and unload the driver |
+| `wifi info` | state, network being tried/joined, last error (wrong password / network not found / signal lost + code), MAC, hostname, BSSID, channel, RSSI, IP, netmask, gateway, DNS |
+| `wifi scan` | access points: RSSI, channel, auth, SSID (radio must be on) |
+| `wifi networks` | configured networks, in try order |
+| `wifi set <ssid> [password]` / `wifi forget <ssid\|all>` | add/update / remove a network in config.json and save (quote an SSID with spaces; no password = open) |
+| `config show` | current config as JSON, passwords masked |
+| `config info` | file path, source (file / built-in defaults), why the file was not used |
+| `config reload` / `config save` | re-read config.json (keeps values on error) and apply Wi-Fi settings / write current values |
 | `efuse` | every eFuse field (list generated at build time from IDF `esp_efuse_table.csv`) and raw blocks BLK0..BLK10 |

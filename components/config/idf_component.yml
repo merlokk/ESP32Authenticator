@@ -1,0 +1,3 @@
+## cJSON for config.json. Not in-tree in ESP-IDF 6: a managed component.
+dependencies:
+  espressif/cjson: "^1.7.18"

@@ -136,9 +136,19 @@ const esp_console_cmd_t kCommands[] = {
     },
     {
         .command = "wifi",
-        .help = "Wi-Fi station: on | off | info | scan | set <ssid> [password] | forget",
-        .hint = "<on|off|info|scan|set|forget> [args]",
+        .help = "Wi-Fi station: on | off | info | scan | networks | set <ssid> [password] | "
+                "forget <ssid|all>",
+        .hint = "<on|off|info|scan|networks|set|forget> [args]",
         .func = &CmdWifi,
+        .argtable = nullptr,
+        .func_w_context = nullptr,
+        .context = nullptr,
+    },
+    {
+        .command = "config",
+        .help = "config.json: show (passwords masked) | info | reload | save",
+        .hint = "<show|info|reload|save>",
+        .func = &CmdConfig,
         .argtable = nullptr,
         .func_w_context = nullptr,
         .context = nullptr,

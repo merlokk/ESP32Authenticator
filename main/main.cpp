@@ -1,10 +1,13 @@
 #include "ble_fido.h"
 #include "ble_kb.h"
+#include "ble.h"
+#include "config.h"
 #include "console.h"
 #include "esp_log.h"
 #include "esp_ota_ops.h"
 #include "nvs_flash.h"
 #include "spiffs_fs.h"
+#include "wifimgr.h"
 
 namespace {
 
@@ -38,7 +41,16 @@ extern "C" void app_main() {
     ConfirmRunningApp();
     InitNvs();
     spiffs_fs::Init();  // not fatal: the console reports an unmounted fs
-    ble_kb::Register();  // BLE profiles; the stack itself stays off until `ble on`
+    // config.json from SPIFFS; built-in defaults if missing/invalid or unmounted.
+    // TODO: look on the microSD card first.
+    config::Init(spiffs_fs::kBasePath);
+
+    ble_kb::Register();  // BLE profiles, before the stack starts
     ble_fido::Register();
     ESP_ERROR_CHECK(console::Init());
+
+    wifimgr::Start();  // starts the radio if wifi.active
+    if (config::Get().ble.active) {
+        ble::On();
+    }
 }

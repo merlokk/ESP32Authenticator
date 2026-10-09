@@ -16,10 +16,50 @@ Reference ESP-IDF + LVGL project: `../../ai-remote/approver-esp32` ([GitHub](htt
 
 | Path | Contents |
 |---|---|
-| `main/` | `app_main`: OTA self-confirm, NVS init, startup |
-| `components/` | app components (`cli`: USB command line) |
+| `main/` | `app_main`: OTA self-confirm, NVS, SPIFFS, config, autostart of Wi-Fi/BLE, console |
+| `components/` | app components (`cli`: USB command line; `config`: config.json; `wifimgr`: config to the Wi-Fi driver) |
+| `host_test/` | host tests (Unity, MSVC), no board: see Tests |
 | `utils/` | host-side Python tools over the USB console (`spiffs.py`: ls/info/rm/get/put; `ble.py`: ble commands, `kb` text quoting) |
-| `drivers/` | hardware drivers, one component per device (`hardware`: SoC info; `spiffs_fs`: SPIFFS on `spiffs` at `/spiffs`, never formatted, it holds stock data on the X4 Pro; `ble`, `ble_kb`, `ble_fido`: see BLE) |
+| `drivers/` | hardware drivers, one component per device (`hardware`: SoC info; `spiffs_fs`: SPIFFS on `spiffs` at `/spiffs`, never formatted, it holds stock data on the X4 Pro; `ble`, `ble_kb`, `ble_fido`: see BLE; `wifi`: station, tries the networks it is given in order, stores nothing) |
+
+## Config
+
+`components/config`: `config.json` parsed into one fixed struct (cJSON).
+
+- Search: `/spiffs/config.json` (TODO: microSD first). Missing, too big (> 4 KB)
+  or invalid: built-in default config (`kDefaultJson`), reason in `config info`.
+  Nothing is written at boot.
+- Missing fields take defaults, unknown fields are ignored (lost on save), an
+  invalid value rejects the whole file.
+- Save is atomic: `config.json.new`, remove, rename; boot finishes an
+  interrupted write.
+- Plain text, Wi-Fi passwords included, until the encrypted storage exists.
+
+```json
+{
+  "wifi": {
+    "active": false,
+    "hostname": "esp32-auth",
+    "networks": [{"ssid": "Home", "password": "password123"}]
+  },
+  "ble": {"active": false}
+}
+```
+
+`wifi.active` / `ble.active` start the radio at boot. Up to 4 networks, tried
+in order. Password: empty (open), 8..63 chars, or 64 hex digits.
+
+## Tests
+
+`host_test/`: plain CMake project built by MSVC (ESP-IDF's `linux` target
+cannot link on Windows), Unity from ESP-IDF, cJSON from `managed_components/`
+(run `idf.py build` once). `fakes/` shadows the few ESP-IDF headers used.
+Pattern from approver-esp32.
+
+```powershell
+host_test\run.cmd            # all suites
+host_test\run.cmd config     # suites whose name contains "config"
+```
 
 ## BLE
 

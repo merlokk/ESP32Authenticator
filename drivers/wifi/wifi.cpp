@@ -10,38 +10,37 @@
 #include "esp_netif.h"
 #include "esp_timer.h"
 #include "esp_wifi.h"
-#include "nvs.h"
 
 namespace wifi {
 
 namespace {
 
 constexpr const char *TAG = "wifi";
-constexpr const char *kNvsNamespace = "wifi";
-constexpr const char *kNvsSsid = "ssid";
-constexpr const char *kNvsPassword = "pass";
 constexpr uint16_t kMaxScanResults = 20;
 constexpr uint64_t kRetryDelayUs = 2000000;
+constexpr size_t kHostnameSize = 33;
 
 enum class State { kOff, kIdle, kConnecting, kConnected, kFailed };
 
 esp_netif_t *netif = nullptr;
 esp_timer_handle_t retry_timer = nullptr;
-bool handlers_registered = false;
 volatile State state = State::kOff;
-volatile uint8_t last_reason = 0;    // wifi_err_reason_t of the last disconnect
-volatile bool stopping = false;      // Off() in progress
+volatile uint8_t last_reason = 0;  // wifi_err_reason_t of the last failure
+volatile bool stopping = false;    // Off() in progress
 // Our own disconnects report asynchronously (reason STA_LEAVING); events
 // until this time are ours and not failures.
 volatile int64_t own_disconnect_until_us = 0;
-volatile uint32_t reconnects = 0;
-char ssid[kSsidSize] = {};
-char password[kPasswordSize] = {};
+volatile uint32_t failures = 0;
+
+Network networks[kMaxNetworks] = {};
+size_t network_count = 0;
+volatile size_t current = 0;  // index of the network being tried / joined
+char hostname[kHostnameSize] = "esp32-auth";
 
 const char *StateName(State s) {
     switch (s) {
         case State::kOff: return "off";
-        case State::kIdle: return "on, no network saved";
+        case State::kIdle: return "on, no networks configured";
         case State::kConnecting: return "connecting";
         case State::kConnected: return "connected";
         case State::kFailed: return "failed, retrying";
@@ -83,42 +82,38 @@ const char *AuthName(wifi_auth_mode_t mode) {
     }
 }
 
-void LoadCredentials() {
-    ssid[0] = '\0';
-    password[0] = '\0';
-    nvs_handle_t nvs;
-    if (nvs_open(kNvsNamespace, NVS_READONLY, &nvs) != ESP_OK) {
-        return;
-    }
-    size_t len = sizeof ssid;
-    if (nvs_get_str(nvs, kNvsSsid, ssid, &len) != ESP_OK) {
-        ssid[0] = '\0';
-    }
-    len = sizeof password;
-    if (nvs_get_str(nvs, kNvsPassword, password, &len) != ESP_OK) {
-        password[0] = '\0';
-    }
-    nvs_close(nvs);
-}
-
-// Applies the saved network to the driver and starts connecting.
+// Starts an attempt on networks[current].
 void Connect() {
-    if (ssid[0] == '\0') {
+    if (network_count == 0) {
         state = State::kIdle;
         return;
     }
+    const Network &n = networks[current % network_count];
     wifi_config_t config = {};
-    strlcpy(reinterpret_cast<char *>(config.sta.ssid), ssid, sizeof config.sta.ssid);
-    strlcpy(reinterpret_cast<char *>(config.sta.password), password,
+    strlcpy(reinterpret_cast<char *>(config.sta.ssid), n.ssid, sizeof config.sta.ssid);
+    strlcpy(reinterpret_cast<char *>(config.sta.password), n.password,
             sizeof config.sta.password);
-    // Accept WPA2 and newer when a password is set; open only without one.
-    config.sta.threshold.authmode = password[0] != '\0' ? WIFI_AUTH_WPA2_PSK : WIFI_AUTH_OPEN;
+    // WPA2 or newer when a password is set; open only without one.
+    config.sta.threshold.authmode = n.password[0] != '\0' ? WIFI_AUTH_WPA2_PSK : WIFI_AUTH_OPEN;
     config.sta.pmf_cfg.capable = true;
     config.sta.scan_method = WIFI_ALL_CHANNEL_SCAN;
     config.sta.sort_method = WIFI_CONNECT_AP_BY_SIGNAL;
     esp_wifi_set_config(WIFI_IF_STA, &config);
     state = State::kConnecting;
     esp_wifi_connect();
+}
+
+// Disconnects on purpose: the resulting event is not a failure.
+void OwnDisconnect() {
+    own_disconnect_until_us = esp_timer_get_time() + 1000000;
+    esp_timer_stop(retry_timer);
+    esp_wifi_disconnect();
+}
+
+void OnRetry(void *) {
+    if (!stopping && state == State::kFailed) {
+        Connect();
+    }
 }
 
 void OnEvent(void *, esp_event_base_t base, int32_t id, void *data) {
@@ -130,37 +125,29 @@ void OnEvent(void *, esp_event_base_t base, int32_t id, void *data) {
             esp_timer_get_time() < own_disconnect_until_us) {
             return;
         }
-        last_reason = event->reason;
-        ESP_LOGW(TAG, "disconnected: %s (%u)", ReasonName(event->reason), event->reason);
-        if (ssid[0] == '\0') {
+        if (network_count == 0) {
             state = State::kIdle;
             return;
         }
-        // Keep trying, the network may come back; a timer, not a sleep, so
-        // the shared event loop is not blocked.
+        last_reason = event->reason;
+        ESP_LOGW(TAG, "'%s': %s (%u)", networks[current % network_count].ssid,
+                 ReasonName(event->reason), event->reason);
+        // A failed attempt moves to the next network; a lost link retries the
+        // same one first. A timer, not a sleep: the event loop is shared.
+        if (state == State::kConnecting || state == State::kFailed) {
+            current = (current + 1) % network_count;
+        }
         state = State::kFailed;
-        reconnects = reconnects + 1;
+        failures = failures + 1;
         esp_timer_stop(retry_timer);
         esp_timer_start_once(retry_timer, kRetryDelayUs);
     } else if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
         const auto *event = static_cast<ip_event_got_ip_t *>(data);
         state = State::kConnected;
         last_reason = 0;
-        ESP_LOGI(TAG, "connected, ip " IPSTR, IP2STR(&event->ip_info.ip));
+        ESP_LOGI(TAG, "connected to '%s', ip " IPSTR, networks[current % network_count].ssid,
+                 IP2STR(&event->ip_info.ip));
     }
-}
-
-void OnRetry(void *) {
-    if (!stopping && state == State::kFailed) {
-        esp_wifi_connect();
-    }
-}
-
-// Disconnects on purpose: the resulting event is not a failure.
-void OwnDisconnect() {
-    own_disconnect_until_us = esp_timer_get_time() + 1000000;
-    esp_timer_stop(retry_timer);
-    esp_wifi_disconnect();
 }
 
 esp_err_t InitOnce() {
@@ -179,24 +166,41 @@ esp_err_t InitOnce() {
     if (netif == nullptr) {
         return ESP_FAIL;
     }
-    esp_netif_set_hostname(netif, "esp32-auth");
     const esp_timer_create_args_t args = {.callback = OnRetry,
                                           .arg = nullptr,
                                           .dispatch_method = ESP_TIMER_TASK,
                                           .name = "wifi_retry",
                                           .skip_unhandled_events = true};
     esp_timer_create(&args, &retry_timer);
-    if (!handlers_registered) {
-        esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID, OnEvent, nullptr,
-                                            nullptr);
-        esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_GOT_IP, OnEvent, nullptr,
-                                            nullptr);
-        handlers_registered = true;
-    }
+    esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID, OnEvent, nullptr, nullptr);
+    esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_GOT_IP, OnEvent, nullptr,
+                                        nullptr);
     return ESP_OK;
 }
 
 }  // namespace
+
+void SetNetworks(const Network *list, size_t count) {
+    if (count > kMaxNetworks) {
+        count = kMaxNetworks;
+    }
+    if (state != State::kOff) {
+        OwnDisconnect();
+    }
+    memset(networks, 0, sizeof networks);
+    for (size_t i = 0; i < count; ++i) {
+        networks[i] = list[i];
+    }
+    network_count = count;
+    current = 0;
+    last_reason = 0;
+    failures = 0;
+    if (state != State::kOff) {
+        Connect();
+    }
+}
+
+void SetHostname(const char *name) { strlcpy(hostname, name, sizeof hostname); }
 
 esp_err_t On() {
     if (state != State::kOff) {
@@ -207,20 +211,21 @@ esp_err_t On() {
         ESP_LOGE(TAG, "netif init: %s", esp_err_to_name(err));
         return err;
     }
+    esp_netif_set_hostname(netif, hostname);
     wifi_init_config_t init = WIFI_INIT_CONFIG_DEFAULT();
     err = esp_wifi_init(&init);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "init: %s", esp_err_to_name(err));
         return err;
     }
-    esp_wifi_set_storage(WIFI_STORAGE_RAM);
+    esp_wifi_set_storage(WIFI_STORAGE_RAM);  // networks come from the caller
     esp_wifi_set_mode(WIFI_MODE_STA);
-    LoadCredentials();
     stopping = false;
-    reconnects = 0;
+    current = 0;
+    failures = 0;
     last_reason = 0;
     state = State::kIdle;
-    err = esp_wifi_start();  // STA_START connects to the saved network
+    err = esp_wifi_start();  // STA_START connects
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "start: %s", esp_err_to_name(err));
         esp_wifi_deinit();
@@ -247,85 +252,34 @@ bool IsOn() { return state != State::kOff; }
 
 bool Connected() { return state == State::kConnected; }
 
-bool HasNetwork() {
-    if (state == State::kOff) {
-        LoadCredentials();
-    }
-    return ssid[0] != '\0';
-}
-
-esp_err_t SetCredentials(const char *new_ssid, const char *new_password) {
-    if (new_ssid == nullptr || new_ssid[0] == '\0' || strlen(new_ssid) >= kSsidSize) {
-        return ESP_ERR_INVALID_ARG;
-    }
-    const size_t pass_len = new_password != nullptr ? strlen(new_password) : 0;
-    if (pass_len != 0 && (pass_len < 8 || pass_len >= kPasswordSize)) {
-        return ESP_ERR_INVALID_ARG;  // WPA passphrase: 8..63 chars, or 64 hex
-    }
-    nvs_handle_t nvs;
-    esp_err_t err = nvs_open(kNvsNamespace, NVS_READWRITE, &nvs);
-    if (err != ESP_OK) {
-        return err;
-    }
-    err = nvs_set_str(nvs, kNvsSsid, new_ssid);
-    if (err == ESP_OK) {
-        err = nvs_set_str(nvs, kNvsPassword, pass_len != 0 ? new_password : "");
-    }
-    if (err == ESP_OK) {
-        err = nvs_commit(nvs);
-    }
-    nvs_close(nvs);
-    if (err != ESP_OK || state == State::kOff) {
-        return err;
-    }
-    // Reconnect with the new network.
-    OwnDisconnect();
-    LoadCredentials();
-    last_reason = 0;
-    reconnects = 0;
-    Connect();
-    return ESP_OK;
-}
-
-esp_err_t ForgetCredentials() {
-    nvs_handle_t nvs;
-    esp_err_t err = nvs_open(kNvsNamespace, NVS_READWRITE, &nvs);
-    if (err != ESP_OK) {
-        return err;
-    }
-    nvs_erase_key(nvs, kNvsSsid);
-    nvs_erase_key(nvs, kNvsPassword);
-    err = nvs_commit(nvs);
-    nvs_close(nvs);
-    ssid[0] = '\0';
-    password[0] = '\0';
-    if (state != State::kOff) {
-        OwnDisconnect();
-        state = State::kIdle;
-    }
-    return err;
-}
-
 void PrintInfo() {
     printf("state      %s\n", StateName(state));
-    if (state == State::kOff) {
-        LoadCredentials();
+    printf("networks   %u configured", static_cast<unsigned>(network_count));
+    if (network_count > 0 && state != State::kOff && state != State::kIdle) {
+        printf(", %s '%s' (%u of %u)", state == State::kConnected ? "joined" : "trying",
+               networks[current % network_count].ssid,
+               static_cast<unsigned>(current % network_count + 1),
+               static_cast<unsigned>(network_count));
     }
-    printf("network    %s\n", ssid[0] != '\0' ? ssid : "(none saved, 'wifi set <ssid> <pass>')");
+    printf("\n");
     uint8_t mac[6] = {};
     if (esp_read_mac(mac, ESP_MAC_WIFI_STA) == ESP_OK) {
         printf("mac        %02x:%02x:%02x:%02x:%02x:%02x\n", mac[0], mac[1], mac[2], mac[3],
                mac[4], mac[5]);
     }
+    printf("hostname   %s\n", hostname);
     if (state == State::kOff) {
         return;
     }
     if (last_reason != 0) {
-        printf("last error %s (reason %u), %" PRIu32 " retr%s\n", ReasonName(last_reason),
-               last_reason, reconnects, reconnects == 1 ? "y" : "ies");
+        printf("last error %s (reason %u), %" PRIu32 " failure(s)\n", ReasonName(last_reason),
+               last_reason, failures);
+    }
+    if (state != State::kConnected) {
+        return;
     }
     wifi_ap_record_t ap = {};
-    if (state == State::kConnected && esp_wifi_sta_get_ap_info(&ap) == ESP_OK) {
+    if (esp_wifi_sta_get_ap_info(&ap) == ESP_OK) {
         printf("bssid      %02x:%02x:%02x:%02x:%02x:%02x\n", ap.bssid[0], ap.bssid[1],
                ap.bssid[2], ap.bssid[3], ap.bssid[4], ap.bssid[5]);
         printf("channel    %u\n", ap.primary);
@@ -333,7 +287,7 @@ void PrintInfo() {
         printf("auth       %s\n", AuthName(ap.authmode));
     }
     esp_netif_ip_info_t ip = {};
-    if (state == State::kConnected && esp_netif_get_ip_info(netif, &ip) == ESP_OK) {
+    if (esp_netif_get_ip_info(netif, &ip) == ESP_OK) {
         printf("ip         " IPSTR "\n", IP2STR(&ip.ip));
         printf("netmask    " IPSTR "\n", IP2STR(&ip.netmask));
         printf("gateway    " IPSTR "\n", IP2STR(&ip.gw));
@@ -342,23 +296,19 @@ void PrintInfo() {
             printf("dns        " IPSTR "\n", IP2STR(&dns.ip.u_addr.ip4));
         }
     }
-    const char *hostname = nullptr;
-    if (esp_netif_get_hostname(netif, &hostname) == ESP_OK && hostname != nullptr) {
-        printf("hostname   %s\n", hostname);
-    }
 }
 
 esp_err_t Scan() {
     if (state == State::kOff) {
         return ESP_ERR_INVALID_STATE;
     }
-    // A scan while a connect attempt is scanning too fails; pause retries.
-    const bool was_retrying = state == State::kConnecting || state == State::kFailed;
-    if (was_retrying) {
+    // A scan collides with a connect attempt's own scan: pause the attempts.
+    const bool was_trying = state == State::kConnecting || state == State::kFailed;
+    if (was_trying) {
         OwnDisconnect();
     }
     esp_err_t err = esp_wifi_scan_start(nullptr, true);
-    if (was_retrying) {
+    if (was_trying) {
         Connect();
     }
     if (err != ESP_OK) {
