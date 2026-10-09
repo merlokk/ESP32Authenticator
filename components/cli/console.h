@@ -8,7 +8,8 @@
 //   hwinfo     chip and IDs, flash, PSRAM, eFuse, NVS, partitions, temperature
 //   efuse      every eFuse field and raw blocks
 //   spiffs     info | ls | cat | catbase64 | write | rm | format (see files.h)
-//   ble        on | off | info | pair | unpair | kb (see ble_cmd.h)
+//   ble        on | off | info | pair | bonds | conns | use | unpair | kb (see ble_cmd.h)
+//   wifi       on | off | info | scan | set | forget (see wifi_cmd.h)
 
 #include "esp_err.h"
 

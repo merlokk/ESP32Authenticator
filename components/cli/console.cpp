@@ -11,6 +11,7 @@
 #include "esp_log.h"
 #include "esp_ota_ops.h"
 #include "ble_cmd.h"
+#include "wifi_cmd.h"
 #include "files.h"
 #include "hardware.h"
 #include "linenoise/linenoise.h"
@@ -129,6 +130,15 @@ const esp_console_cmd_t kCommands[] = {
                 "kb <text>",
         .hint = "<on|off|info|pair|bonds|conns|use|disconnect|unpair|kb> [args]",
         .func = &CmdBle,
+        .argtable = nullptr,
+        .func_w_context = nullptr,
+        .context = nullptr,
+    },
+    {
+        .command = "wifi",
+        .help = "Wi-Fi station: on | off | info | scan | set <ssid> [password] | forget",
+        .hint = "<on|off|info|scan|set|forget> [args]",
+        .func = &CmdWifi,
         .argtable = nullptr,
         .func_w_context = nullptr,
         .context = nullptr,
