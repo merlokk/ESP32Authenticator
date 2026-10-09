@@ -11,6 +11,10 @@ Firmware: C/C++ on **ESP-IDF**.
   - **BLE keyboard** (HID): types login/password/TOTP code;
   - **BLE FIDO2** authenticator.
 
+## Architecture
+
+Stack (ESP-IDF, LVGL, BLE, Wi-Fi) and flash layout: [architecture.md](architecture.md).
+
 ## Hardware
 
 Pinout, display controllers, devices: [hardware.md](hardware.md).

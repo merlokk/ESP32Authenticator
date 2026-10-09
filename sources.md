@@ -10,3 +10,4 @@ Reference projects. Local paths are relative to the repo root.
 | FreeInk X4 Pro doc | `../crosspoint-reader/freeink-sdk/docs/xteink-x4pro-support.md` | https://github.com/Free-Ink/freeink-sdk/blob/main/docs/xteink-x4pro-support.md | X4 Pro hardware RE, confirmed on hardware: pinout, display variants, touch, SD, gauge, partitions. |
 | TuyaOpen XTEINK_X4_PRO | — | https://github.com/tuya/TuyaOpen/tree/master/boards/ESP32/XTEINK_X4_PRO | Board support for XTEINK X4 Pro (ESP32-S3): pins, peripherals. |
 | CrossPoint unlocker-tool | — | https://github.com/crosspoint-reader/crosspoint-tools/blob/master/unlocker-tool/README.md#flash-layout--ota-state | XTEINK X4 flash layout (partitions) and OTA state. |
+| approver-esp32 | `../../ai-remote/approver-esp32` | https://github.com/merlokk/ai-remote/tree/main/approver-esp32 | Reference ESP-IDF + LVGL device project (own repo). |
