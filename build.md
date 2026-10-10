@@ -77,7 +77,8 @@ python -m pytest [-k name] [--device YubiKey] [--pin 1234] [--set-pin] [--destru
 - `--destructive`: one wrong PIN (retries restored by the right PIN); 3 wrong
   in a row must give PIN_AUTH_BLOCKED even for the right PIN, then replug and
   the right PIN restores the retries (needs >= 6 left).
-  Also the empty CBOR request: YubiKey 5.8 stays CHANNEL_BUSY until replugged.
+  Also the empty CBOR request (runs late): YubiKey 5.8 never answers and stays
+  CHANNEL_BUSY, the test asks for a replug and fails (expected on YubiKey).
 - `--reset` (asks to type RESET): authenticatorReset tests, run last. Make
   credentials, replug, reset at once with a touch (YubiKey: within 10 s of
   plug-in), check PIN and credentials are gone; then a reset 12 s after
