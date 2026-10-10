@@ -58,6 +58,24 @@ python utils/ble.py -p COM6 kb "text"          # or kb --stdin; quoting and spli
 host_test\run.cmd [suite...]   # host tests, no board (MSVC); see architecture.md
 ```
 
+`tests/fido2/`: CTAP2 authenticator suite (pytest + python-fido2,
+`pip install -r tests/fido2/requirements.txt`). Transport-agnostic; checked
+against a reference USB key (YubiKey) over `hid`, `ble` is next.
+On Windows, raw FIDO HID access needs an administrator terminal.
+
+```powershell
+cd tests/fido2
+python -m pytest [-k name] [--device YubiKey] [--pin 1234] [--destructive]
+```
+
+- Never sets, changes or resets the PIN, never resets the key.
+- PIN: asked at start when the key has one (or `--pin` / `FIDO_PIN`); empty
+  skips the PIN, UV and discoverable-credential tests. These use only the test
+  RPs `ctap-test*.example` and delete their credentials.
+- `--destructive`: one wrong PIN attempt (retries restored by the right PIN).
+- Touches: one for the shared credential, one each for `exclude_list` and
+  `assertion_with_touch`, one for the discoverable credential.
+
 ## CLI
 
 `esp_console` REPL on USB Serial/JTAG (same port as the monitor), prompt `auth>`.
