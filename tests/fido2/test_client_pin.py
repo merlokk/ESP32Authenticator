@@ -95,9 +95,8 @@ def test_pin_auth_blocked(request, auth):
     expect_error(ERR.PIN_AUTH_BLOCKED, cp.get_pin_token, auth.pin)
     assert cp.get_pin_retries()[0] == before - 3
 
-    auth.say("\n" + "=" * 60 + "\n  PIN auth blocked: unplug the authenticator and plug it back in."
-             "\n" + "=" * 60)
-    auth.attach(transports.wait_replug(auth.device, request.config.getoption("--device")))
+    auth.say("\n  PIN auth blocked: power cycle")
+    auth.attach(transports.wait_replug(auth.device, request.config, auth.say))
     cp = ClientPin(auth.ctap2)
     assert cp.get_pin_retries()[0] == before - 3
     cp.get_pin_token(auth.pin)

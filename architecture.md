@@ -95,7 +95,7 @@ submodule) behind `ble_fido`. API: `fido_ctap_init(hooks, store)`,
 - User presence: a fresh press of the Left button (GPIO0, BOOT on the dev
   board) within 30 s; KEEPALIVE every 300 ms; CANCEL aborts the wait.
 - Reset only within 10 s after boot (lionkey). No U2F/CTAP1.
-- Tests: `tests/fido2` over BLE (see build.md).
+- Tests: `tests/fido2` over BLE, all 67 pass on the dev board (see build.md).
 
 ## Flash layout
 

@@ -125,13 +125,12 @@ def _hid_descriptors(name_filter):
             if not name_filter or name_filter.lower() in (d.product_name or "").lower()]
 
 
-def wait_replug(device, name_filter=None, timeout=60.0):
-    """Closes `device`, waits until it is unplugged and plugged back in, and
-    returns the reopened device. Raises TimeoutError."""
+def _replug_hid(device, name_filter, say, timeout):
     import time
 
     from fido2.hid import CtapHidDevice
 
+    say(">>> unplug the authenticator and plug it back in")
     path = device.descriptor.path
     device.close()
     deadline = time.monotonic() + timeout
@@ -149,6 +148,66 @@ def wait_replug(device, name_filter=None, timeout=60.0):
         if time.monotonic() > deadline:
             raise TimeoutError("the device did not come back")
         time.sleep(0.05)
+
+
+def _replug_ble(device, console_port, say, timeout):
+    """Power cycle of our firmware: `reboot` on the USB console, `ble on`, and
+    a new BLE connection (the bonded host reconnects to the advertising)."""
+    import time
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "utils"))
+    from device import Device
+
+    from ble_transport import BleCtapDevice
+
+    say(f">>> rebooting the authenticator over {console_port}")
+    address = device.address
+    device.close()
+    with Device(console_port) as console:
+        console.send_command("reboot")
+    start = time.monotonic()
+    time.sleep(1.0)  # the USB console drops while the chip restarts
+    deadline = start + timeout
+    last = None
+    while True:
+        # Right after boot the console may drop a command (the REPL is not up
+        # yet): check `ble info` until BLE is really on.
+        try:
+            with Device(console_port, timeout=3) as console:
+                console.run("ble on")  # an error if BLE autostarted: ignored
+                info = console.run("ble info")
+            if any(line.split()[:2] == ["state", "on"] for line in info if line.strip()):
+                break
+            last = f"ble info: {info[:1]}"
+        except Exception as e:
+            last = e
+        if time.monotonic() > deadline:
+            raise TimeoutError(f"BLE did not come back on: {last!r}") from None
+        time.sleep(0.3)
+    say(f"    console back after {time.monotonic() - start:.1f} s, BLE on")
+    while True:
+        try:
+            dev = BleCtapDevice(address)
+            say(f"    BLE connected after {time.monotonic() - start:.1f} s")
+            return dev
+        except Exception as e:
+            say(f"    BLE connect failed: {e!r}")
+            if time.monotonic() > deadline:
+                raise TimeoutError(f"BLE did not reconnect: {e!r}") from None
+            time.sleep(0.5)
+
+
+def can_replug(config) -> bool:
+    return config.getoption("--transport") == "hid" or bool(config.getoption("--console"))
+
+
+def wait_replug(device, config, say, timeout=60.0):
+    """Power-cycles the authenticator and returns it reopened: on USB the user
+    replugs it, over BLE (needs --console) the firmware reboots."""
+    if config.getoption("--transport") == "hid":
+        return _replug_hid(device, config.getoption("--device"), say, timeout)
+    return _replug_ble(device, config.getoption("--console"), say, timeout)
 
 
 def _open_ble(which):

@@ -44,13 +44,13 @@ def before(auth):
 def plugged_at(request, auth, before):
     """Replug, reset at once; returns the plug-in time (monotonic)."""
     auth.say("\n" + "=" * 60 +
-             "\n  RESET: unplug the authenticator and plug it back in,"
-             "\n  then touch it as soon as it blinks (YubiKey: within 10 s)."
+             "\n  RESET: power cycle, then touch the authenticator as soon as it is"
+             "\n  back (within 10 s of power-up)."
              "\n" + "=" * 60)
-    device = transports.wait_replug(auth.device, request.config.getoption("--device"))
+    device = transports.wait_replug(auth.device, request.config, auth.say)
     t = time.monotonic()
     auth.attach(device)
-    auth.say(">>> plugged in: touch the authenticator now")
+    auth.say(">>> back: touch the authenticator now")
     auth._prompted = True  # the prompt above replaces the keepalive one
     try:
         auth.ctap2.reset(on_keepalive=auth.on_keepalive)

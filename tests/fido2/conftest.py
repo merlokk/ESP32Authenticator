@@ -28,6 +28,9 @@ def pytest_addoption(parser):
                 help="authenticator transport (default: hid)")
     g.addoption("--device", default=None,
                 help="pick the device whose name contains this text")
+    g.addoption("--console", default=None,
+                help="serial port of our firmware's console (e.g. COM6): power "
+                     "cycles over BLE by `reboot`")
     g.addoption("--pin", default=os.environ.get("FIDO_PIN"),
                 help="authenticator PIN (or FIDO_PIN env); asked if the key has one")
     g.addoption("--destructive", action="store_true",
@@ -110,8 +113,9 @@ def pytest_collection_modifyitems(config, items):
             item.add_marker(pytest.mark.skip(reason="needs --destructive"))
         if "pin" in item.keywords and auth and not auth.pin:
             item.add_marker(pytest.mark.skip(reason="needs a PIN"))
-        if "replug" in item.keywords and config.getoption("--transport") != "hid":
-            item.add_marker(pytest.mark.skip(reason="replug: hid only"))
+        if (("replug" in item.keywords or "reset" in item.keywords)
+                and not transports.can_replug(config)):
+            item.add_marker(pytest.mark.skip(reason="power cycle over BLE needs --console"))
         if auth and auth.info is None and "transport" not in item.keywords:
             item.add_marker(pytest.mark.skip(reason="no CTAP2 (getInfo failed)"))
 

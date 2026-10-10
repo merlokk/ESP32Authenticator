@@ -75,12 +75,16 @@ administrator terminal (FIDO HID and the GATT FIDO service are hidden otherwise)
   bleak). Pair the device with the PC first (`ble pair`, passkey in Windows
   Bluetooth settings). A bonded device already connected to the PC does not
   advertise: pass its address, the scan is skipped.
+- Power cycle (replug, reset tests): on USB the user replugs the key; over BLE
+  `--console COM6` sends `reboot` to our firmware, waits for `ble info` to say
+  `state on` (the console drops commands right after boot), reconnects.
+  Without `--console` these tests are skipped on BLE.
 - `test_transport.py` (marker `transport`): PING on both transports, BLE
   framing errors. If getInfo fails (no CTAP2 core yet), only these run.
 
 ```powershell
 cd tests/fido2
-python -m pytest [-k name] [--transport ble] [--device YubiKey|<address>] [--pin 1234] [--set-pin] [--destructive] [--reset]
+python -m pytest [-k name] [--transport ble] [--device YubiKey|<address>] [--console COM6] [--pin 1234] [--set-pin] [--destructive] [--reset]
 ```
 
 - Never changes the PIN; sets one only with `--set-pin`, resets only with `--reset`.
@@ -90,13 +94,14 @@ python -m pytest [-k name] [--transport ble] [--device YubiKey|<address>] [--pin
 - `--set-pin`: on a key without a PIN, asks for a new one twice and sets it
   (only a FIDO reset removes it); refuses if a PIN is already set.
 - `--destructive`: one wrong PIN (retries restored by the right PIN); 3 wrong
-  in a row must give PIN_AUTH_BLOCKED even for the right PIN, then replug and
-  the right PIN restores the retries (needs >= 6 left).
+  in a row must give PIN_AUTH_BLOCKED even for the right PIN, then a power
+  cycle and the right PIN restores the retries (needs >= 6 left; if the power
+  cycle fails, enter the right PIN in the next run to restore them).
   Also the empty CBOR request (runs late): YubiKey 5.8 never answers and stays
-  CHANNEL_BUSY, the test asks for a replug and fails (expected on YubiKey).
+  CHANNEL_BUSY, the test power-cycles it and fails (expected on YubiKey).
 - `--reset` (asks to type RESET): authenticatorReset tests, run last. Make
-  credentials, replug, reset at once with a touch (YubiKey: within 10 s of
-  plug-in), check PIN and credentials are gone; then a reset 12 s after
+  credentials, power cycle, reset at once with a touch (within 10 s of
+  power-up: YubiKey, our firmware), check PIN and credentials are gone; then a reset 12 s after
   plug-in must be refused (cancelled if the key asks for a touch instead).
 - Hang guards: 5 s per HID report, 40 s per request (then CANCEL), 180 s per
   test (stack dump and exit). Run Python with `-u` when piping the output.
@@ -114,6 +119,7 @@ Opening the port with RTS asserted resets the chip.
 | `term` / `term smart` / `term dumb` | ask the terminal / force line editing + up-arrow history (32 commands) on / off. Off at boot: nobody answers the probe then. Smart mode needs a terminal that answers cursor queries (PuTTY does); if the console goes silent, reset the board |
 | `version` | firmware version, build date, IDF version, ELF SHA256, chip, running slot |
 | `info` | short: model, MACs, unique ID, flash size, CPU temperature, reset reason, uptime |
+| `reboot` | software reset (the USB console reconnects) |
 | `hwinfo` | chip, MACs, eFuse unique ID, flash JEDEC/size, PSRAM, heap, eFuse security/download/USB bits, key blocks, NVS stats, flash layout (bootloader version, partitions, image sizes, gaps), OTA state (running/boot/next slot, rollback, raw otadata), CPU temperature, reset reason, uptime |
 | `spiffs info` | partition address/size, mount point, total/used/free (esp_spiffs_info), file count |
 | `spiffs ls` | SPIFFS files: size, modification time, file/fs totals |

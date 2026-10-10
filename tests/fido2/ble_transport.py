@@ -27,6 +27,7 @@ REVISION_FIDO2 = 0x20
 
 FRAME_TIMEOUT = 5.0  # max silence between frames (keepalives keep it alive)
 CALL_DEADLINE = 40.0  # one request, including the wait for a touch
+RUN_TIMEOUT = 60.0  # any single BLE operation (connect, write, read)
 MAC = re.compile(r"^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$")
 
 # fido2 (CTAPHID) command -> BLE frame command
@@ -43,22 +44,37 @@ class BleCtapDevice(CtapDevice):
         self._thread = threading.Thread(target=self._loop.run_forever, daemon=True)
         self._thread.start()
         self._frames: asyncio.Queue | None = None
-        self._client = BleakClient(address, timeout=20)
+        # Uncached GATT discovery: after the authenticator reboots, WinRT keeps
+        # handing out the service list of the old link (no FIDO service).
+        self._client = BleakClient(address, timeout=20, winrt={"use_cached_services": False})
         if MAC.match(address):
             # A bonded peripheral connected to the OS (e.g. as a keyboard) does
             # not advertise: give WinRT the address and skip bleak's scan.
             backend = self._client._backend
             if hasattr(backend, "_device_info"):
                 backend._device_info = int(address.replace(":", ""), 16)
-        self._run(self._connect())
+        try:
+            self._run(self._connect())
+        except BaseException:
+            self._stop_loop()
+            raise
 
     def __repr__(self):
         return f"BleCtapDevice({' '.join(filter(None, (self.name, self.address)))})"
 
     # --- sync <-> async
 
-    def _run(self, coro, timeout=None):
-        return asyncio.run_coroutine_threadsafe(coro, self._loop).result(timeout)
+    def _run(self, coro, timeout=RUN_TIMEOUT):
+        """Runs a coroutine on the device loop; never blocks forever."""
+        if not self._loop.is_running():
+            coro.close()
+            raise ConnectionError("BLE device is closed")
+        future = asyncio.run_coroutine_threadsafe(coro, self._loop)
+        try:
+            return future.result(timeout)
+        except TimeoutError:
+            future.cancel()
+            raise TimeoutError(f"BLE operation took more than {timeout} s") from None
 
     async def _connect(self):
         self._frames = asyncio.Queue()
@@ -164,13 +180,18 @@ class BleCtapDevice(CtapDevice):
             raise CtapError(CtapError.ERR.INVALID_COMMAND)
         return payload
 
+    def _stop_loop(self) -> None:
+        self._loop.call_soon_threadsafe(self._loop.stop)
+        self._thread.join(5)
+
     def close(self) -> None:
         if self._loop.is_running():
             try:
                 self._run(self._client.disconnect(), timeout=10)
+            except Exception:
+                pass  # already gone
             finally:
-                self._loop.call_soon_threadsafe(self._loop.stop)
-                self._thread.join(5)
+                self._stop_loop()
 
     @classmethod
     def list_devices(cls):

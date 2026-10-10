@@ -10,6 +10,10 @@
 #include "esp_idf_version.h"
 #include "esp_log.h"
 #include "esp_ota_ops.h"
+#include "esp_system.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "ble.h"
 #include "ble_cmd.h"
 #include "wifi_cmd.h"
 #include "files.h"
@@ -60,6 +64,19 @@ int CmdEfuse(int, char **) {
 
 int CmdInfo(int, char **) {
     hardware::PrintShortInfo();
+    return 0;
+}
+
+int CmdReboot(int, char **) {
+    // Drop the BLE link cleanly: otherwise the host keeps it until the
+    // supervision timeout and the device cannot be reached meanwhile.
+    if (ble::IsOn()) {
+        ble::Off();
+    }
+    printf("rebooting\n");
+    fflush(stdout);
+    vTaskDelay(pdMS_TO_TICKS(100));  // let the line reach the host
+    esp_restart();
     return 0;
 }
 
@@ -119,6 +136,15 @@ const esp_console_cmd_t kCommands[] = {
         .help = "Short info: model, MACs, unique ID, flash size, CPU temperature, reset, uptime",
         .hint = nullptr,
         .func = &CmdInfo,
+        .argtable = nullptr,
+        .func_w_context = nullptr,
+        .context = nullptr,
+    },
+    {
+        .command = "reboot",
+        .help = "Restart the chip (software reset)",
+        .hint = nullptr,
+        .func = &CmdReboot,
         .argtable = nullptr,
         .func_w_context = nullptr,
         .context = nullptr,

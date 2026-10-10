@@ -61,12 +61,10 @@ def test_empty_request(request, auth):
     except TimeoutError:
         s = None
     if s is None or not responsive(auth.device):
-        if not hasattr(auth.device, "descriptor"):  # not USB: cannot wait for a replug
+        if not transports.can_replug(request.config):
             pytest.fail("no answer to an empty CBOR request; power-cycle the authenticator")
-        auth.say("\n" + "=" * 60 +
-                 "\n  The authenticator is wedged: unplug it and plug it back in."
-                 "\n" + "=" * 60)
-        auth.attach(transports.wait_replug(auth.device, request.config.getoption("--device")))
+        auth.say("\n  The authenticator is wedged: power cycle")
+        auth.attach(transports.wait_replug(auth.device, request.config, auth.say))
         pytest.fail("no answer to an empty CBOR request (got "
                     f"{'nothing' if s is None else err_name(s)}); wedged until replug")
     assert s in (ERR.INVALID_LENGTH, ERR.INVALID_COMMAND), err_name(s)
