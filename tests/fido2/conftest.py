@@ -36,12 +36,16 @@ def pytest_addoption(parser):
     g.addoption("--set-pin", action="store_true",
                 help="set a PIN on an authenticator that has none (asked twice); "
                      "only a FIDO reset removes it")
+    g.addoption("--reset", action="store_true",
+                help="run the authenticatorReset tests (last): erase ALL FIDO "
+                     "credentials and the PIN; asks to type RESET")
 
 
 def pytest_configure(config):
     config.addinivalue_line("markers", "touch: needs a touch on the authenticator")
     config.addinivalue_line("markers", "pin: needs a PIN")
     config.addinivalue_line("markers", "destructive: needs --destructive")
+    config.addinivalue_line("markers", "reset: needs --reset, runs last")
 
 
 def pytest_sessionstart(session):
@@ -60,6 +64,8 @@ def pytest_sessionstart(session):
             pytest.exit("the authenticator stays busy: replug it", returncode=2)
         raise
     with capman.global_and_fixture_disabled():
+        if config.getoption("--reset"):
+            confirm_reset()
         print(f"\nauthenticator: {info.versions}, firmware {info.firmware_version:#x}, "
               f"aaguid {info.aaguid}\noptions: {info.options}")
         if config.getoption("--set-pin"):
@@ -84,7 +90,10 @@ def pytest_sessionfinish(session):
 
 def pytest_collection_modifyitems(config, items):
     auth = getattr(config, "fido_auth", None)
+    items.sort(key=lambda item: "reset" in item.keywords)  # stable: reset last
     for item in items:
+        if "reset" in item.keywords and not config.getoption("--reset"):
+            item.add_marker(pytest.mark.skip(reason="needs --reset"))
         if "destructive" in item.keywords and not config.getoption("--destructive"):
             item.add_marker(pytest.mark.skip(reason="needs --destructive"))
         if "pin" in item.keywords and auth and not auth.pin:
@@ -106,8 +115,8 @@ def err_name(code: int) -> str:
         return hex(code)
 
 
-def read_secret(prompt: str) -> str:
-    """Reads a line from the console, echoing '*'.
+def read_secret(prompt: str, echo: bool = False) -> str:
+    """Reads a line from the console, echoing '*' (or the text with `echo`).
 
     Talks to the console directly: pytest owns stdin, and stdout may be piped
     (Tee-Object), which would hide a prompt without a newline.
@@ -133,7 +142,7 @@ def read_secret(prompt: str) -> str:
                     put("\b \b")
             else:
                 chars.append(c)
-                put("*")
+                put(c if echo else "*")
         put("\r\n")
         return "".join(chars)
     import termios
@@ -142,7 +151,8 @@ def read_secret(prompt: str) -> str:
         tty.flush()
         old = termios.tcgetattr(tty)
         new = termios.tcgetattr(tty)
-        new[3] &= ~termios.ECHO
+        if not echo:
+            new[3] &= ~termios.ECHO
         try:
             termios.tcsetattr(tty, termios.TCSADRAIN, new)
             line = tty.readline().rstrip("\n")
@@ -155,6 +165,15 @@ def read_secret(prompt: str) -> str:
 PIN_FATAL = (CtapError.ERR.PIN_INVALID, CtapError.ERR.PIN_AUTH_BLOCKED,
              CtapError.ERR.PIN_BLOCKED)
 MIN_PIN_RETRIES = 4  # do not ask for the PIN below this
+
+
+def confirm_reset():
+    print("\n" + "=" * 60)
+    print("  --reset: the reset tests ERASE ALL FIDO credentials and the PIN")
+    print("  on the authenticator (other applets are not touched).")
+    print("=" * 60)
+    if read_secret("Type RESET to continue: ", echo=True) != "RESET":
+        pytest.exit("--reset not confirmed", returncode=2)
 
 
 def set_pin(ctap2, min_len):
@@ -212,11 +231,19 @@ class Authenticator:
     """Ctap2 plus PIN handling and a touch prompt."""
 
     def __init__(self, device, pin, capman):
+        self.attach(device)
+        self.pin = pin
+        self._capman = capman
+
+    def attach(self, device):
+        """Switches to `device` (e.g. reopened after a replug), re-reads getInfo."""
         self.device = device
         self.ctap2 = Ctap2(device)
         self.info = self.ctap2.info
-        self.pin = pin
-        self._capman = capman
+
+    def say(self, text):
+        with self._capman.global_and_fixture_disabled():
+            print(text, flush=True)
 
     def on_keepalive(self, status):
         if status == STATUS_UPNEEDED and not getattr(self, "_prompted", False):

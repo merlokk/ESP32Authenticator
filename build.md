@@ -65,10 +65,10 @@ On Windows, raw FIDO HID access needs an administrator terminal.
 
 ```powershell
 cd tests/fido2
-python -m pytest [-k name] [--device YubiKey] [--pin 1234] [--set-pin] [--destructive]
+python -m pytest [-k name] [--device YubiKey] [--pin 1234] [--set-pin] [--destructive] [--reset]
 ```
 
-- Never changes the PIN or resets the key; sets one only with `--set-pin`.
+- Never changes the PIN; sets one only with `--set-pin`, resets only with `--reset`.
 - PIN: asked at start when the key has one (or `--pin` / `FIDO_PIN`); empty
   skips the PIN, UV and discoverable-credential tests. These use only the test
   RPs `ctap-test*.example` and delete their credentials.
@@ -76,7 +76,11 @@ python -m pytest [-k name] [--device YubiKey] [--pin 1234] [--set-pin] [--destru
   (only a FIDO reset removes it); refuses if a PIN is already set.
 - `--destructive`: one wrong PIN attempt (retries restored by the right PIN).
   Also the empty CBOR request: YubiKey 5.8 stays CHANNEL_BUSY until replugged.
-- Hang guards: 5 s per HID report, 40 s per request (then CANCEL), 60 s per
+- `--reset` (asks to type RESET): authenticatorReset tests, run last. Make
+  credentials, replug, reset at once with a touch (YubiKey: within 10 s of
+  plug-in), check PIN and credentials are gone; then a reset 12 s after
+  plug-in must be refused (cancelled if the key asks for a touch instead).
+- Hang guards: 5 s per HID report, 40 s per request (then CANCEL), 180 s per
   test (stack dump and exit). Run Python with `-u` when piping the output.
 - Touches: one for the shared credential, one each for `exclude_list` and
   `assertion_with_touch`, one for the discoverable credential.

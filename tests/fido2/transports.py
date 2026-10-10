@@ -118,6 +118,39 @@ def _open_hid(name_filter):
         pytest.exit("the device does not answer CTAPHID INIT: replug it", returncode=2)
 
 
+def _hid_descriptors(name_filter):
+    from fido2.hid import list_descriptors
+
+    return [d for d in list_descriptors()
+            if not name_filter or name_filter.lower() in (d.product_name or "").lower()]
+
+
+def wait_replug(device, name_filter=None, timeout=60.0):
+    """Closes `device`, waits until it is unplugged and plugged back in, and
+    returns the reopened device. Raises TimeoutError."""
+    import time
+
+    from fido2.hid import CtapHidDevice
+
+    path = device.descriptor.path
+    device.close()
+    deadline = time.monotonic() + timeout
+    while any(d.path == path for d in _hid_descriptors(name_filter)):
+        if time.monotonic() > deadline:
+            raise TimeoutError("the device was not unplugged")
+        time.sleep(0.1)
+    while True:
+        descs = _hid_descriptors(name_filter)
+        if len(descs) == 1:
+            try:
+                return _with_deadline(CtapHidDevice)(descs[0], TimeoutConnection(descs[0]))
+            except (OSError, TimeoutError):
+                pass  # just enumerated, not ready yet
+        if time.monotonic() > deadline:
+            raise TimeoutError("the device did not come back")
+        time.sleep(0.05)
+
+
 def open_device(transport, name_filter=None):
     if transport == "hid":
         return _open_hid(name_filter)
