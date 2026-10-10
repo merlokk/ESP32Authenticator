@@ -1,8 +1,8 @@
 """Transports: each returns a fido2 CtapDevice.
 
-hid: USB CTAPHID (reference keys such as YubiKey). On Windows raw FIDO HID
-     access needs an elevated (administrator) process.
-ble: FIDO over BLE (CTAP 2.1 section 11.4), not implemented yet.
+hid: USB CTAPHID (reference keys such as YubiKey).
+ble: FIDO over BLE (CTAP 2.1 section 11.4), see ble_transport.py.
+On Windows both need an elevated (administrator) process.
 """
 
 import sys
@@ -151,7 +151,18 @@ def wait_replug(device, name_filter=None, timeout=60.0):
         time.sleep(0.05)
 
 
+def _open_ble(which):
+    from ble_transport import open_ble
+
+    try:
+        return open_ble(which)
+    except (LookupError, RuntimeError) as e:
+        hint = (" (Windows: run from an administrator terminal)"
+                if sys.platform == "win32" else "")
+        pytest.exit(f"BLE: {e}{hint}", returncode=2)
+
+
 def open_device(transport, name_filter=None):
     if transport == "hid":
         return _open_hid(name_filter)
-    pytest.exit(f"transport {transport} is not implemented yet", returncode=2)
+    return _open_ble(name_filter)

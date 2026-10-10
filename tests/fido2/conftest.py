@@ -47,6 +47,7 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "destructive: needs --destructive")
     config.addinivalue_line("markers", "reset: needs --reset, runs last")
     config.addinivalue_line("markers", "replug: asks to replug the authenticator, runs late")
+    config.addinivalue_line("markers", "transport: transport level, runs without CTAP2")
 
 
 def pytest_sessionstart(session):
@@ -64,7 +65,13 @@ def pytest_sessionstart(session):
     except CtapError as e:
         if e.code == CtapError.ERR.CHANNEL_BUSY:
             pytest.exit("the authenticator stays busy: replug it", returncode=2)
-        raise
+        # No working CTAP2 (e.g. our firmware without a CTAP core yet): only
+        # the transport tests run.
+        with capman.global_and_fixture_disabled():
+            print(f"\nauthenticator: {device}\ngetInfo failed: {e}; "
+                  "running transport tests only")
+        config.fido_auth = Authenticator(device, None, capman)
+        return
     with capman.global_and_fixture_disabled():
         if config.getoption("--reset"):
             confirm_reset()
@@ -101,6 +108,10 @@ def pytest_collection_modifyitems(config, items):
             item.add_marker(pytest.mark.skip(reason="needs --destructive"))
         if "pin" in item.keywords and auth and not auth.pin:
             item.add_marker(pytest.mark.skip(reason="needs a PIN"))
+        if "replug" in item.keywords and config.getoption("--transport") != "hid":
+            item.add_marker(pytest.mark.skip(reason="replug: hid only"))
+        if auth and auth.info is None and "transport" not in item.keywords:
+            item.add_marker(pytest.mark.skip(reason="no CTAP2 (getInfo failed)"))
 
 
 def client_data_hash(tag: str) -> bytes:
@@ -254,8 +265,11 @@ class Authenticator:
     def attach(self, device):
         """Switches to `device` (e.g. reopened after a replug), re-reads getInfo."""
         self.device = device
-        self.ctap2 = Ctap2(device)
-        self.info = self.ctap2.info
+        try:
+            self.ctap2 = Ctap2(device)
+            self.info = self.ctap2.info
+        except CtapError:  # no CTAP2: transport tests only
+            self.ctap2 = self.info = None
 
     def say(self, text):
         with self._capman.global_and_fixture_disabled():

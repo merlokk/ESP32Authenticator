@@ -59,13 +59,21 @@ host_test\run.cmd [suite...]   # host tests, no board (MSVC); see architecture.m
 ```
 
 `tests/fido2/`: CTAP2 authenticator suite (pytest + python-fido2,
-`pip install -r tests/fido2/requirements.txt`). Transport-agnostic; checked
-against a reference USB key (YubiKey) over `hid`, `ble` is next.
-On Windows, raw FIDO HID access needs an administrator terminal.
+`pip install -r tests/fido2/requirements.txt`). Transport-agnostic, checked
+against a reference USB key (YubiKey). On Windows both transports need an
+administrator terminal (FIDO HID and the GATT FIDO service are hidden otherwise).
+
+- `--transport hid` (default): USB CTAPHID.
+- `--transport ble --device <address|name>`: FIDO over BLE (`ble_transport.py`,
+  bleak). Pair the device with the PC first (`ble pair`, passkey in Windows
+  Bluetooth settings). A bonded device already connected to the PC does not
+  advertise: pass its address, the scan is skipped.
+- `test_transport.py` (marker `transport`): PING on both transports, BLE
+  framing errors. If getInfo fails (no CTAP2 core yet), only these run.
 
 ```powershell
 cd tests/fido2
-python -m pytest [-k name] [--device YubiKey] [--pin 1234] [--set-pin] [--destructive] [--reset]
+python -m pytest [-k name] [--transport ble] [--device YubiKey|<address>] [--pin 1234] [--set-pin] [--destructive] [--reset]
 ```
 
 - Never changes the PIN; sets one only with `--set-pin`, resets only with `--reset`.
