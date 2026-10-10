@@ -175,6 +175,7 @@ int OnControlPoint(const uint8_t *frame, uint16_t len) {
         }
         request_cmd = frame[0];
         request_len = (frame[1] << 8) | frame[2];
+        ESP_LOGD(TAG, "frame cmd 0x%02x len %u", request_cmd, static_cast<unsigned>(request_len));
         if (request_len > sizeof request || len - 3u > request_len) {
             SendError(kErrInvalidLen);
             return 0;
@@ -217,6 +218,7 @@ int Access(uint16_t, uint16_t, ble_gatt_access_ctxt *ctxt, void *arg) {
         case 2:  // fidoStatus: notify only
             return BLE_ATT_ERR_READ_NOT_PERMITTED;
         case 3: {  // fidoControlPointLength, big-endian
+            ESP_LOGD(TAG, "control point length read");
             const uint8_t v[2] = {kControlPointLength >> 8, kControlPointLength & 0xFF};
             return os_mbuf_append(ctxt->om, v, 2) == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
         }
@@ -225,12 +227,14 @@ int Access(uint16_t, uint16_t, ble_gatt_access_ctxt *ctxt, void *arg) {
                 uint8_t v = 0;
                 uint16_t len = 0;
                 ble_hs_mbuf_to_flat(ctxt->om, &v, 1, &len);
+                ESP_LOGD(TAG, "revision write 0x%02x (len %u)", v, len);
                 if (len != 1 || (v & ~kRevisionFido2) != 0) {
                     return BLE_ATT_ERR_UNLIKELY;  // only FIDO2 is offered
                 }
                 revision = v;
                 return 0;
             }
+            ESP_LOGD(TAG, "revision read");
             return os_mbuf_append(ctxt->om, &revision, 1) == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
         default:
             return BLE_ATT_ERR_UNLIKELY;
@@ -261,6 +265,7 @@ const ble_gatt_svc_def kServices[] = {
 void OnEvent(const ble_gap_event *event) {
     if (event->type == BLE_GAP_EVENT_SUBSCRIBE && event->subscribe.attr_handle == status_handle) {
         subscribed = event->subscribe.cur_notify;
+        ESP_LOGD(TAG, "fidoStatus notify %s", subscribed ? "on" : "off");
     } else if (event->type == BLE_GAP_EVENT_DISCONNECT) {
         subscribed = false;
         assembling = false;
