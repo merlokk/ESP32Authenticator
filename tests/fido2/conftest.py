@@ -46,6 +46,7 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "pin: needs a PIN")
     config.addinivalue_line("markers", "destructive: needs --destructive")
     config.addinivalue_line("markers", "reset: needs --reset, runs last")
+    config.addinivalue_line("markers", "replug: asks to replug the authenticator, runs late")
 
 
 def pytest_sessionstart(session):
@@ -57,6 +58,7 @@ def pytest_sessionstart(session):
     device = transports.open_device(config.getoption("--transport"),
                                     config.getoption("--device"))
     pin = config.getoption("--pin")
+    pin = Secret(pin) if pin else None
     try:
         info = Ctap2(device).info
     except CtapError as e:
@@ -90,7 +92,8 @@ def pytest_sessionfinish(session):
 
 def pytest_collection_modifyitems(config, items):
     auth = getattr(config, "fido_auth", None)
-    items.sort(key=lambda item: "reset" in item.keywords)  # stable: reset last
+    # stable sort: tests that need a replug, then reset tests, run last
+    items.sort(key=lambda item: 2 * ("reset" in item.keywords) + ("replug" in item.keywords))
     for item in items:
         if "reset" in item.keywords and not config.getoption("--reset"):
             item.add_marker(pytest.mark.skip(reason="needs --reset"))
@@ -113,6 +116,18 @@ def err_name(code: int) -> str:
         return CtapError.ERR(code).name
     except ValueError:
         return hex(code)
+
+
+class Secret(str):
+    """A PIN: prints as <PIN> in tracebacks and logs."""
+
+    def __repr__(self):
+        return "<PIN>"
+
+    __str__ = __repr__
+
+    def __add__(self, other):
+        return Secret(str.__add__(self, other))
 
 
 def read_secret(prompt: str, echo: bool = False) -> str:
@@ -144,7 +159,8 @@ def read_secret(prompt: str, echo: bool = False) -> str:
                 chars.append(c)
                 put(c if echo else "*")
         put("\r\n")
-        return "".join(chars)
+        text = "".join(chars)
+        return text if echo else Secret(text)
     import termios
     with open("/dev/tty", "r+") as tty:
         tty.write(prompt)
@@ -159,7 +175,7 @@ def read_secret(prompt: str, echo: bool = False) -> str:
         finally:
             termios.tcsetattr(tty, termios.TCSADRAIN, old)
         tty.write("\n")
-        return line
+        return line if echo else Secret(line)
 
 
 PIN_FATAL = (CtapError.ERR.PIN_INVALID, CtapError.ERR.PIN_AUTH_BLOCKED,
@@ -294,9 +310,9 @@ class Authenticator:
             on_keepalive=self.on_keepalive)
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture
 def device(auth):
-    return auth.device
+    return auth.device  # current one: replug tests reopen it
 
 
 @pytest.fixture(scope="session")

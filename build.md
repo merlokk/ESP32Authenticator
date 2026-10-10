@@ -74,7 +74,9 @@ python -m pytest [-k name] [--device YubiKey] [--pin 1234] [--set-pin] [--destru
   RPs `ctap-test*.example` and delete their credentials.
 - `--set-pin`: on a key without a PIN, asks for a new one twice and sets it
   (only a FIDO reset removes it); refuses if a PIN is already set.
-- `--destructive`: one wrong PIN attempt (retries restored by the right PIN).
+- `--destructive`: one wrong PIN (retries restored by the right PIN); 3 wrong
+  in a row must give PIN_AUTH_BLOCKED even for the right PIN, then replug and
+  the right PIN restores the retries (needs >= 6 left).
   Also the empty CBOR request: YubiKey 5.8 stays CHANNEL_BUSY until replugged.
 - `--reset` (asks to type RESET): authenticatorReset tests, run last. Make
   credentials, replug, reset at once with a touch (YubiKey: within 10 s of

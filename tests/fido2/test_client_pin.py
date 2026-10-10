@@ -4,6 +4,7 @@ import pytest
 from fido2.ctap import CtapError
 from fido2.ctap2.pin import ClientPin
 
+import transports
 from conftest import client_data_hash, err_name, expect_error
 
 ERR = CtapError.ERR
@@ -71,3 +72,33 @@ def test_wrong_pin(auth, client_pin):
     client_pin.get_pin_token(auth.pin, ClientPin.PERMISSION.GET_ASSERTION,
                              "ctap-test.example")
     assert client_pin.get_pin_retries()[0] == before
+
+
+@pytest.mark.pin
+@pytest.mark.destructive
+@pytest.mark.replug
+def test_pin_auth_blocked(request, auth):
+    """3 wrong PINs in a row block PIN auth until a power cycle, even for the
+    right PIN, without burning more retries; after a replug the right PIN
+    works and restores the retries."""
+    cp = ClientPin(auth.ctap2)
+    before, _ = cp.get_pin_retries()
+    if before < 6:
+        pytest.skip(f"only {before} PIN retries left")
+    wrong = auth.pin + "x"
+    expect_error(ERR.PIN_INVALID, cp.get_pin_token, wrong)
+    expect_error(ERR.PIN_INVALID, cp.get_pin_token, wrong)
+    # CTAP 2.1: the 3rd mismatch in a row already answers PIN_AUTH_BLOCKED;
+    # 2.0 authenticators may answer PIN_INVALID and block from the next try
+    expect_error([ERR.PIN_AUTH_BLOCKED, ERR.PIN_INVALID], cp.get_pin_token, wrong)
+    assert cp.get_pin_retries()[0] == before - 3
+    expect_error(ERR.PIN_AUTH_BLOCKED, cp.get_pin_token, auth.pin)
+    assert cp.get_pin_retries()[0] == before - 3
+
+    auth.say("\n" + "=" * 60 + "\n  PIN auth blocked: unplug the authenticator and plug it back in."
+             "\n" + "=" * 60)
+    auth.attach(transports.wait_replug(auth.device, request.config.getoption("--device")))
+    cp = ClientPin(auth.ctap2)
+    assert cp.get_pin_retries()[0] == before - 3
+    cp.get_pin_token(auth.pin)
+    assert cp.get_pin_retries()[0] == before
