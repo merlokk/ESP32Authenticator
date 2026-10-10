@@ -65,13 +65,15 @@ On Windows, raw FIDO HID access needs an administrator terminal.
 
 ```powershell
 cd tests/fido2
-python -m pytest [-k name] [--device YubiKey] [--pin 1234] [--destructive]
+python -m pytest [-k name] [--device YubiKey] [--pin 1234] [--set-pin] [--destructive]
 ```
 
-- Never sets, changes or resets the PIN, never resets the key.
+- Never changes the PIN or resets the key; sets one only with `--set-pin`.
 - PIN: asked at start when the key has one (or `--pin` / `FIDO_PIN`); empty
   skips the PIN, UV and discoverable-credential tests. These use only the test
   RPs `ctap-test*.example` and delete their credentials.
+- `--set-pin`: on a key without a PIN, asks for a new one twice and sets it
+  (only a FIDO reset removes it); refuses if a PIN is already set.
 - `--destructive`: one wrong PIN attempt (retries restored by the right PIN).
   Also the empty CBOR request: YubiKey 5.8 stays CHANNEL_BUSY until replugged.
 - Hang guards: 5 s per HID report, 40 s per request (then CANCEL), 60 s per

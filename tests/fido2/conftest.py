@@ -33,6 +33,9 @@ def pytest_addoption(parser):
     g.addoption("--destructive", action="store_true",
                 help="allow tests that may change authenticator state "
                      "(wrong PIN attempts) or wedge it until replug")
+    g.addoption("--set-pin", action="store_true",
+                help="set a PIN on an authenticator that has none (asked twice); "
+                     "only a FIDO reset removes it")
 
 
 def pytest_configure(config):
@@ -59,7 +62,14 @@ def pytest_sessionstart(session):
     with capman.global_and_fixture_disabled():
         print(f"\nauthenticator: {info.versions}, firmware {info.firmware_version:#x}, "
               f"aaguid {info.aaguid}\noptions: {info.options}")
-        if info.options.get("clientPin"):
+        if config.getoption("--set-pin"):
+            if "clientPin" not in info.options:
+                pytest.exit("--set-pin: the authenticator has no PIN support", returncode=2)
+            if info.options["clientPin"]:
+                pytest.exit("--set-pin: the authenticator already has a PIN; "
+                            "it is never changed", returncode=2)
+            pin = set_pin(Ctap2(device), info.min_pin_length)
+        elif info.options.get("clientPin"):
             pin = check_pin(Ctap2(device), pin)
         else:
             pin = None  # no PIN set on the authenticator
@@ -145,6 +155,25 @@ def read_secret(prompt: str) -> str:
 PIN_FATAL = (CtapError.ERR.PIN_INVALID, CtapError.ERR.PIN_AUTH_BLOCKED,
              CtapError.ERR.PIN_BLOCKED)
 MIN_PIN_RETRIES = 4  # do not ask for the PIN below this
+
+
+def set_pin(ctap2, min_len):
+    """Asks for a new PIN twice and sets it (the authenticator has no PIN)."""
+    print("\n" + "=" * 60)
+    print("  --set-pin: the authenticator has no PIN. Choose a new one")
+    print(f"  ({min_len}..63 characters). Only a FIDO reset removes it.")
+    print("  Empty input: cancel.")
+    print("=" * 60)
+    pin = read_secret("New PIN: ")
+    if not pin:
+        pytest.exit("--set-pin cancelled", returncode=2)
+    if len(pin) < min_len:
+        pytest.exit(f"PIN shorter than {min_len}: not set", returncode=2)
+    if read_secret("Repeat PIN: ") != pin:
+        pytest.exit("PINs differ: not set", returncode=2)
+    ClientPin(ctap2).set_pin(pin)
+    print("PIN set")
+    return pin
 
 
 def check_pin(ctap2, pin):
