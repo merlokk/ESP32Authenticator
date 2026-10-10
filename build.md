@@ -101,8 +101,9 @@ python -m pytest [-k name] [--transport ble] [--device YubiKey|<address>] [--con
   CHANNEL_BUSY, the test power-cycles it and fails (expected on YubiKey).
 - `--reset` (asks to type RESET): authenticatorReset tests, run last. Make
   credentials, power cycle, reset at once with a touch (within 10 s of
-  power-up: YubiKey, our firmware), check PIN and credentials are gone; then a reset 12 s after
-  plug-in must be refused (cancelled if the key asks for a touch instead).
+  power-up: YubiKey, our firmware), check PIN and credentials are gone; then
+  a reset 12 s after the first one must be refused (cancelled if the key asks
+  for a touch instead). LionKey restarts its 10 s window after a reset.
 - Hang guards: 5 s per HID report, 40 s per request (then CANCEL), 180 s per
   test (stack dump and exit). Run Python with `-u` when piping the output.
 - Touches: one for the shared credential, one each for `exclude_list` and

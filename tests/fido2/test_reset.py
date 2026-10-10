@@ -19,7 +19,7 @@ pytestmark = pytest.mark.reset
 
 RESET_RP = {"id": "ctap-test-reset.example", "name": "CTAP reset test"}
 RESET_USER = {"id": b"ctap-test-reset-user", "name": "reset", "displayName": "Reset"}
-WINDOW_PROBE_DELAY = 12.0  # s after plug-in; YubiKey's window is 10 s
+WINDOW_PROBE_DELAY = 12.0  # s after the reset; the window is 10 s
 
 
 def descriptor(att):
@@ -41,14 +41,13 @@ def before(auth):
 
 
 @pytest.fixture(scope="module")
-def plugged_at(request, auth, before):
-    """Replug, reset at once; returns the plug-in time (monotonic)."""
+def reset_done(request, auth, before):
+    """Power cycle, reset at once; returns when the reset finished (monotonic)."""
     auth.say("\n" + "=" * 60 +
              "\n  RESET: power cycle, then touch the authenticator as soon as it is"
              "\n  back (within 10 s of power-up)."
              "\n" + "=" * 60)
     device = transports.wait_replug(auth.device, request.config, auth.say)
-    t = time.monotonic()
     auth.attach(device)
     auth.say(">>> back: touch the authenticator now")
     auth._prompted = True  # the prompt above replaces the keepalive one
@@ -61,28 +60,28 @@ def plugged_at(request, auth, before):
         raise
     auth.attach(device)  # getInfo after the reset
     auth.pin = None
-    return t
+    return time.monotonic()
 
 
-def test_pin_cleared(auth, plugged_at):
+def test_pin_cleared(auth, reset_done):
     if "clientPin" in auth.info.options:
         assert auth.info.options["clientPin"] is False
 
 
-def test_credential_gone(auth, plugged_at, before):
+def test_credential_gone(auth, reset_done, before):
     expect_error(ERR.NO_CREDENTIALS, auth.get_assertion, client_data_hash("gone"),
                  rp_id=RESET_RP["id"], allow_list=[descriptor(before["plain"])],
                  up=False)
 
 
-def test_discoverable_gone(auth, plugged_at, before):
+def test_discoverable_gone(auth, reset_done, before):
     if "rk" not in before:
         pytest.skip("no discoverable credential was made before the reset")
     expect_error(ERR.NO_CREDENTIALS, auth.get_assertion, client_data_hash("rk-gone"),
                  rp_id=RESET_RP["id"], up=False)
 
 
-def test_new_credential(auth, plugged_at):
+def test_new_credential(auth, reset_done):
     cdh = client_data_hash("after-reset")
     att = auth.make_credential(cdh, rp=RESET_RP, user=RESET_USER)
     a = auth.get_assertion(cdh, rp_id=RESET_RP["id"], allow_list=[descriptor(att)],
@@ -90,13 +89,16 @@ def test_new_credential(auth, plugged_at):
     a.verify(cdh, att.auth_data.credential_data.public_key)
 
 
-def test_reset_window(auth, plugged_at):
-    """A reset long after plug-in is refused with NOT_ALLOWED.
+def test_reset_window(auth, reset_done):
+    """A reset long after power-up is refused with NOT_ALLOWED.
+
+    Waits from the first reset, not from power-up: LionKey re-inits after a
+    reset and restarts its 10 s window then (YubiKey counts from power-up).
 
     Optional in CTAP. If the authenticator asks for a touch instead, the
     request is cancelled at once, so nothing is erased.
     """
-    time.sleep(max(0.0, plugged_at + WINDOW_PROBE_DELAY - time.monotonic()))
+    time.sleep(max(0.0, reset_done + WINDOW_PROBE_DELAY - time.monotonic()))
     cancel = threading.Event()
 
     def on_keepalive(status):
