@@ -11,7 +11,9 @@
 namespace ble_fido {
 
 // Handles one CTAP message (CTAP2 command or U2F APDU) and writes the response.
-// Returns the response length (<= `out_size`).
+// Returns the response length (<= `out_size`). Runs in the driver's worker
+// task, one message at a time (a MSG meanwhile gets ERR_BUSY), so it may block
+// waiting for the user; it should check Cancelled() and call Keepalive().
 using MessageHandler = size_t (*)(const uint8_t *msg, size_t len, uint8_t *out,
                                   size_t out_size);
 
@@ -21,6 +23,13 @@ void Register();
 
 // Replaces the default handler (which answers "command not supported").
 void SetMessageHandler(MessageHandler handler);
+
+// Sends a KEEPALIVE frame (1 = processing, 2 = user presence needed) while a
+// message is being handled. Call from the handler.
+void Keepalive(uint8_t status);
+
+// True when the host sent CANCEL (or disconnected) during the current message.
+bool Cancelled();
 
 // True when the host has subscribed to fidoStatus notifications.
 bool Ready();

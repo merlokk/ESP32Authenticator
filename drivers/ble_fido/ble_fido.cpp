@@ -2,9 +2,12 @@
 
 #include <cstring>
 
+#include <atomic>
+
 #include "ble.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "host/ble_hs.h"
 
@@ -24,6 +27,12 @@ constexpr uint8_t kCmdError = 0xBF;
 constexpr uint8_t kErrInvalidCmd = 0x01;
 constexpr uint8_t kErrInvalidLen = 0x03;
 constexpr uint8_t kErrInvalidSeq = 0x04;
+constexpr uint8_t kErrBusy = 0x06;
+
+// The message handler may wait for the user (CTAP user presence), so it runs
+// in its own task, not in the NimBLE host task.
+constexpr uint32_t kWorkerStack = 12 * 1024;
+constexpr UBaseType_t kWorkerPriority = 5;
 
 // fidoServiceRevisionBitfield: bit 5 = FIDO2 (CTAP2) over BLE.
 constexpr uint8_t kRevisionFido2 = 0x20;
@@ -60,6 +69,15 @@ bool assembling = false;
 uint32_t requests = 0;
 uint32_t errors = 0;
 
+// MSG being handled by the worker: copied out of `request`, which the host
+// task keeps using for the next frames.
+uint8_t work[kMaxMessage];
+size_t work_len = 0;
+std::atomic<bool> busy{false};
+std::atomic<bool> cancelled{false};
+TaskHandle_t worker = nullptr;
+SemaphoreHandle_t send_lock = nullptr;  // one response's frames go out together
+
 size_t DefaultHandler(const uint8_t *msg, size_t len, uint8_t *out, size_t) {
     // U2F APDUs start with CLA 0x00 (CTAP2 command bytes start at 0x01).
     if (len >= 4 && msg[0] == 0x00) {
@@ -74,7 +92,12 @@ size_t DefaultHandler(const uint8_t *msg, size_t len, uint8_t *out, size_t) {
 MessageHandler handler = DefaultHandler;
 
 // Sends one response as fidoStatus notifications, fragmented by MTU.
+// Called from the host task and the worker.
 void Send(uint8_t cmd, const uint8_t *data, size_t len) {
+    xSemaphoreTake(send_lock, portMAX_DELAY);
+    struct Unlock {
+        ~Unlock() { xSemaphoreGive(send_lock); }
+    } unlock;
     const uint16_t conn = ble::ConnHandle();
     size_t frame_max = ble::NotifyPayload();
     if (frame_max > kControlPointLength) {
@@ -119,13 +142,21 @@ void Dispatch() {
         case kCmdPing:
             Send(kCmdPing, request, request_len);
             break;
-        case kCmdMsg: {
-            const size_t n = handler(request, request_len, response, sizeof response);
-            Send(kCmdMsg, response, n);
+        case kCmdMsg:
+            if (busy.exchange(true)) {
+                SendError(kErrBusy);
+                break;
+            }
+            memcpy(work, request, request_len);
+            work_len = request_len;
+            cancelled = false;
+            xTaskNotifyGive(worker);
             break;
-        }
         case kCmdCancel:
-            break;  // nothing runs asynchronously yet
+            if (busy) {
+                cancelled = true;  // the handler sees it and answers KEEPALIVE_CANCEL
+            }
+            break;
         default:
             SendError(kErrInvalidCmd);
             break;
@@ -234,15 +265,37 @@ void OnEvent(const ble_gap_event *event) {
         subscribed = false;
         assembling = false;
         revision = kRevisionFido2;
+        if (busy) {
+            cancelled = true;  // nobody waits for the answer any more
+        }
+    }
+}
+
+void Worker(void *) {
+    while (true) {
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        const size_t n = handler(work, work_len, response, sizeof response);
+        Send(kCmdMsg, response, n);
+        busy = false;
     }
 }
 
 }  // namespace
 
 void Register() {
+    send_lock = xSemaphoreCreateMutex();
+    xTaskCreate(Worker, "ble_fido", kWorkerStack, nullptr, kWorkerPriority, &worker);
     ble::AddServices(kServices);
     ble::AddListener(OnEvent);
 }
+
+void Keepalive(uint8_t status) {
+    if (busy && ble::ConnHandle() != BLE_HS_CONN_HANDLE_NONE) {
+        Send(kCmdKeepalive, &status, 1);
+    }
+}
+
+bool Cancelled() { return cancelled; }
 
 void SetMessageHandler(MessageHandler h) { handler = h != nullptr ? h : DefaultHandler; }
 

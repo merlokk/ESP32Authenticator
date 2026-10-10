@@ -12,6 +12,13 @@ pwsh -NoProfile -Command "& { . 'C:\Espressif\tools\Microsoft.v6.0.2.PowerShell_
 
 ## Build and flash
 
+Submodules: LionKey and only the parts of it the build uses (not tinyusb):
+
+```powershell
+git submodule update --init lib/lionkey
+git -C lib/lionkey submodule update --init lib/tinycbor crypto/micro-ecc crypto/tiny-AES-c crypto/tinymt
+```
+
 ```powershell
 idf.py set-target esp32s3   # once
 idf.py build

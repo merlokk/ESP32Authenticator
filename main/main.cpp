@@ -1,10 +1,12 @@
 #include "ble_fido.h"
 #include "ble_kb.h"
 #include "ble.h"
+#include "buttons.h"
 #include "config.h"
 #include "console.h"
 #include "esp_log.h"
 #include "esp_ota_ops.h"
+#include "fido_ctap.h"
 #include "nvs_flash.h"
 #include "spiffs_fs.h"
 #include "wifimgr.h"
@@ -35,6 +37,21 @@ void InitNvs() {
     ESP_ERROR_CHECK(err);
 }
 
+// FIDO2 over BLE: the LionKey CTAP core behind the ble_fido transport. User
+// presence: Left button (GPIO0, the BOOT button on the dev board).
+void InitFido() {
+    buttons::kLeft.Init();
+    static char store[64];
+    const bool have_fs = spiffs_fs::Mounted() && spiffs_fs::FullPath("fido.bin", store, sizeof store);
+    const fido_ctap_hooks_t hooks = {ble_fido::Keepalive, ble_fido::Cancelled,
+                                     [] { return buttons::kLeft.Pressed(); }};
+    if (fido_ctap_init(&hooks, have_fs ? store : nullptr) == ESP_OK) {
+        ble_fido::SetMessageHandler(fido_ctap_request);
+    } else {
+        ESP_LOGE(TAG, "fido: CTAP core init failed");
+    }
+}
+
 }  // namespace
 
 extern "C" void app_main() {
@@ -47,6 +64,7 @@ extern "C" void app_main() {
 
     ble_kb::Register();  // BLE profiles, before the stack starts
     ble_fido::Register();
+    InitFido();
     ESP_ERROR_CHECK(console::Init());
 
     wifimgr::Start();  // starts the radio if wifi.active

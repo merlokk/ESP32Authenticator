@@ -17,10 +17,11 @@ Reference ESP-IDF + LVGL project: `../../ai-remote/approver-esp32` ([GitHub](htt
 | Path | Contents |
 |---|---|
 | `main/` | `app_main`: OTA self-confirm, NVS, SPIFFS, config, autostart of Wi-Fi/BLE, console |
-| `components/` | app components (`cli`: USB command line; `config`: config.json; `wifimgr`: config to the Wi-Fi driver) |
+| `components/` | app components (`cli`: USB command line; `config`: config.json; `wifimgr`: config to the Wi-Fi driver; `fido_ctap`: CTAP 2.1 core, see FIDO2) |
+| `lib/` | third-party git submodules, used unmodified (`lionkey`) |
 | `host_test/` | host tests (Unity, MSVC), no board: see Tests |
 | `utils/` | host-side Python tools over the USB console (`spiffs.py`: ls/info/rm/get/put; `ble.py`: ble commands, `kb` text quoting) |
-| `drivers/` | hardware drivers, one component per device (`hardware`: SoC info; `spiffs_fs`: SPIFFS on `spiffs` at `/spiffs`, never formatted, it holds stock data on the X4 Pro; `ble`, `ble_kb`, `ble_fido`: see BLE; `wifi`: station, tries the networks it is given in order, stores nothing) |
+| `drivers/` | hardware drivers, one component per device (`hardware`: SoC info; `spiffs_fs`: SPIFFS on `spiffs` at `/spiffs`, never formatted, it holds stock data on the X4 Pro; `ble`, `ble_kb`, `ble_fido`: see BLE; `wifi`: station, tries the networks it is given in order, stores nothing; `buttons`: GPIO buttons, polled; `crypto`: hardware RNG, SHA-256, AES-256-CBC via PSA) |
 
 ## Config
 
@@ -69,13 +70,32 @@ NimBLE, peripheral, one connection. Stack is off at boot (`ble on`).
 |---|---|
 | `ble` | stack on/off, advertising (HID + FIDO UUIDs), bonding (NVS), DIS + Battery services; profile drivers register GATT services and GAP listeners before `ble on` |
 | `ble_kb` | HID over GATT keyboard; types ASCII with a US layout |
-| `ble_fido` | FIDO BLE transport (service 0xFFFD, CTAP 2.1 BLE framing, MTU fragmentation); CTAP is a pluggable handler, default answers "not supported" |
+| `ble_fido` | FIDO BLE transport (service 0xFFFD, CTAP 2.1 BLE framing, MTU fragmentation); CTAP is a pluggable handler run in a worker task (MSG meanwhile: ERR_BUSY; CANCEL and KEEPALIVE frames), default answers "not supported" |
 
 Security:
 - IO capability DisplayOnly: the device shows a 6-digit passkey, the host types it (MITM-protected, LE Secure Connections).
 - New hosts pair only inside the pairing window (`ble pair`); other pairing attempts are rejected.
 - One connection at a time. `ble use` picks the target bond: keys released on the old host, link dropped, advertising filtered (accept list) to the target; a non-target bonded host that still gets through is dropped after encryption.
 - Unauthenticated (Just Works) links are dropped; HID reports and FIDO characteristics require an authenticated link.
+
+## FIDO2
+
+`components/fido_ctap`: [LionKey](https://github.com/pokusew/lionkey) CTAP 2.1
+core (`lib/lionkey`, git submodule, not modified: update by moving the
+submodule) behind `ble_fido`. API: `fido_ctap_init(hooks, store)`,
+`fido_ctap_request(msg) -> response`.
+
+- Crypto: lionkey's table with RNG, SHA-256, AES from the `crypto` driver;
+  P-256 on lionkey's micro-ecc (no ECC accelerator on the S3; its `uECC_*`
+  symbols are renamed `lk_uECC_*`, NimBLE's tinycrypt has the same names).
+- Store: `/spiffs/fido.bin` = lionkey's RAM log (12 KB), rewritten whole
+  through a temp file on every change, compacted at boot. Max 10 credentials:
+  lionkey stores non-discoverable ones too, the 11th gets KEY_STORE_FULL.
+  The signature counter is in NVS (`fido/sign_count`), kept by reset.
+- User presence: a fresh press of the Left button (GPIO0, BOOT on the dev
+  board) within 30 s; KEEPALIVE every 300 ms; CANCEL aborts the wait.
+- Reset only within 10 s after boot (lionkey). No U2F/CTAP1.
+- Tests: `tests/fido2` over BLE (see build.md).
 
 ## Flash layout
 

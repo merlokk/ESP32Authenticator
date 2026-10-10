@@ -49,18 +49,20 @@ def responsive(device, timeout=3.0) -> bool:
 
 
 @pytest.mark.destructive
-@pytest.mark.replug
+@pytest.mark.late
 def test_empty_request(request, auth):
     """CBOR message without a command byte must be rejected.
 
     YubiKey 5.8 never answers it and stays CHANNEL_BUSY until replugged: then
-    the test asks for a replug (so the run goes on) and fails.
+    the test asks for a replug (USB; so the run goes on) and fails.
     """
     try:
         s = status(auth.device, b"")
     except TimeoutError:
         s = None
     if s is None or not responsive(auth.device):
+        if not hasattr(auth.device, "descriptor"):  # not USB: cannot wait for a replug
+            pytest.fail("no answer to an empty CBOR request; power-cycle the authenticator")
         auth.say("\n" + "=" * 60 +
                  "\n  The authenticator is wedged: unplug it and plug it back in."
                  "\n" + "=" * 60)

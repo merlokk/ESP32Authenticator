@@ -47,6 +47,7 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "destructive: needs --destructive")
     config.addinivalue_line("markers", "reset: needs --reset, runs last")
     config.addinivalue_line("markers", "replug: asks to replug the authenticator, runs late")
+    config.addinivalue_line("markers", "late: runs after the other tests (before reset)")
     config.addinivalue_line("markers", "transport: transport level, runs without CTAP2")
 
 
@@ -99,8 +100,9 @@ def pytest_sessionfinish(session):
 
 def pytest_collection_modifyitems(config, items):
     auth = getattr(config, "fido_auth", None)
-    # stable sort: tests that need a replug, then reset tests, run last
-    items.sort(key=lambda item: 2 * ("reset" in item.keywords) + ("replug" in item.keywords))
+    # stable sort: late and replug tests, then reset tests, run last
+    items.sort(key=lambda item: 2 * ("reset" in item.keywords)
+               + ("replug" in item.keywords or "late" in item.keywords))
     for item in items:
         if "reset" in item.keywords and not config.getoption("--reset"):
             item.add_marker(pytest.mark.skip(reason="needs --reset"))
