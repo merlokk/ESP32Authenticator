@@ -73,6 +73,9 @@ python -m pytest [-k name] [--device YubiKey] [--pin 1234] [--destructive]
   skips the PIN, UV and discoverable-credential tests. These use only the test
   RPs `ctap-test*.example` and delete their credentials.
 - `--destructive`: one wrong PIN attempt (retries restored by the right PIN).
+  Also the empty CBOR request: YubiKey 5.8 stays CHANNEL_BUSY until replugged.
+- Hang guards: 5 s per HID report, 40 s per request (then CANCEL), 60 s per
+  test (stack dump and exit). Run Python with `-u` when piping the output.
 - Touches: one for the shared credential, one each for `exclude_list` and
   `assertion_with_touch`, one for the discoverable credential.
 

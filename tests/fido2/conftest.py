@@ -32,7 +32,7 @@ def pytest_addoption(parser):
                 help="authenticator PIN (or FIDO_PIN env); asked if the key has one")
     g.addoption("--destructive", action="store_true",
                 help="allow tests that may change authenticator state "
-                     "(wrong PIN attempts)")
+                     "(wrong PIN attempts) or wedge it until replug")
 
 
 def pytest_configure(config):
@@ -41,10 +41,44 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "destructive: needs --destructive")
 
 
+def pytest_sessionstart(session):
+    """Opens the authenticator and settles the PIN before any test runs."""
+    config = session.config
+    if config.option.collectonly:
+        return
+    capman = config.pluginmanager.getplugin("capturemanager")
+    device = transports.open_device(config.getoption("--transport"),
+                                    config.getoption("--device"))
+    pin = config.getoption("--pin")
+    try:
+        info = Ctap2(device).info
+    except CtapError as e:
+        if e.code == CtapError.ERR.CHANNEL_BUSY:
+            pytest.exit("the authenticator stays busy: replug it", returncode=2)
+        raise
+    with capman.global_and_fixture_disabled():
+        print(f"\nauthenticator: {info.versions}, firmware {info.firmware_version:#x}, "
+              f"aaguid {info.aaguid}\noptions: {info.options}")
+        if info.options.get("clientPin"):
+            pin = check_pin(Ctap2(device), pin)
+        else:
+            pin = None  # no PIN set on the authenticator
+    config.fido_auth = Authenticator(device, pin, capman)
+
+
+def pytest_sessionfinish(session):
+    auth = getattr(session.config, "fido_auth", None)
+    if auth:
+        auth.device.close()
+
+
 def pytest_collection_modifyitems(config, items):
+    auth = getattr(config, "fido_auth", None)
     for item in items:
         if "destructive" in item.keywords and not config.getoption("--destructive"):
             item.add_marker(pytest.mark.skip(reason="needs --destructive"))
+        if "pin" in item.keywords and auth and not auth.pin:
+            item.add_marker(pytest.mark.skip(reason="needs a PIN"))
 
 
 def client_data_hash(tag: str) -> bytes:
@@ -205,30 +239,13 @@ class Authenticator:
 
 
 @pytest.fixture(scope="session")
-def device(request):
-    dev = transports.open_device(request.config.getoption("--transport"),
-                                 request.config.getoption("--device"))
-    yield dev
-    dev.close()
+def device(auth):
+    return auth.device
 
 
 @pytest.fixture(scope="session")
-def auth(request, device):
-    capman = request.config.pluginmanager.getplugin("capturemanager")
-    pin = request.config.getoption("--pin")
-    info = Ctap2(device).info
-    with capman.global_and_fixture_disabled():
-        print(f"\nauthenticator: {info.versions}, firmware {info.firmware_version:#x}, "
-              f"aaguid {info.aaguid}\noptions: {info.options}")
-        if info.options.get("clientPin"):
-            pin = check_pin(Ctap2(device), pin)
-    return Authenticator(device, pin, capman)
-
-
-@pytest.fixture(autouse=True)
-def _needs_pin(request):
-    if request.node.get_closest_marker("pin") and not request.getfixturevalue("auth").pin:
-        pytest.skip("needs a PIN")
+def auth(request):
+    return request.config.fido_auth
 
 
 @pytest.fixture(scope="session")

@@ -4,7 +4,7 @@ import pytest
 from fido2.ctap import CtapError
 from fido2.ctap2.pin import ClientPin
 
-from conftest import client_data_hash, expect_error
+from conftest import client_data_hash, err_name, expect_error
 
 ERR = CtapError.ERR
 
@@ -16,8 +16,16 @@ def client_pin(auth):
     return ClientPin(auth.ctap2)
 
 
-def test_retries(client_pin):
-    retries, _ = client_pin.get_pin_retries()
+def test_retries(client_pin, info):
+    if not info.options["clientPin"]:
+        # PIN not set: YubiKey 5.8 answers PIN_NOT_SET, others may give the count
+        try:
+            retries, _ = client_pin.get_pin_retries()
+        except CtapError as e:
+            assert e.code == ERR.PIN_NOT_SET, err_name(e.code)
+            return
+    else:
+        retries, _ = client_pin.get_pin_retries()
     assert 0 <= retries <= 8
 
 

@@ -1,5 +1,6 @@
 """Command dispatch and malformed requests."""
 
+import pytest
 from fido2.ctap import CtapError
 
 from conftest import err_name
@@ -31,7 +32,12 @@ def test_cbor_not_a_map(device):
     assert s in (ERR.CBOR_UNEXPECTED_TYPE, ERR.INVALID_CBOR), err_name(s)
 
 
+@pytest.mark.destructive
 def test_empty_request(device):
+    """CBOR message without a command byte.
+
+    YubiKey 5.8 never answers it and stays CHANNEL_BUSY until replugged.
+    """
     s = status(device, b"")
     assert s in (ERR.INVALID_LENGTH, ERR.INVALID_COMMAND), err_name(s)
 
