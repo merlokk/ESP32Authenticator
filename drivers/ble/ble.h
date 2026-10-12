@@ -43,6 +43,9 @@ esp_err_t Off();
 bool IsOn();
 
 // Opens the pairing window for `seconds`; it closes earlier on a new bond.
+// The current link is dropped, and bonded hosts that reconnect inside the
+// window are dropped too (unless they pair again), so a new host gets the
+// only connection.
 esp_err_t StartPairing(uint32_t seconds);
 void StopPairing();
 uint32_t PairingSecondsLeft();

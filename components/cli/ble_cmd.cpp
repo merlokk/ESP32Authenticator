@@ -77,6 +77,9 @@ int CmdPair(int argc, char **argv) {
         printf("usage: ble pair [seconds [bg]] | ble pair stop\n");
         return 1;
     }
+    if (ble::ConnHandle() != BLE_HS_CONN_HANDLE_NONE) {
+        printf("current host disconnected: one connection at a time\n");
+    }
     ble::StartPairing(seconds);
     printf("pairing open for %" PRIu32 " s: add '%s' on the host\n", seconds, ble::kDeviceName);
     if (background) {

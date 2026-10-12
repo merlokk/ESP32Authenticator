@@ -315,6 +315,13 @@ void OnEncChange(const ble_gap_event *event) {
         PostPairing(PairingEvent::kPaired, 0, addr, nullptr);
         return;
     }
+    if (PairingOpen()) {
+        // One connection only: a bonded host reconnecting would take the slot
+        // the new host needs. A bond that pairs again (lost keys) is kept above.
+        ESP_LOGW(TAG, "pairing window open, bonded host dropped");
+        ble_gap_terminate(desc.conn_handle, BLE_ERR_REM_USER_CONN_TERM);
+        return;
+    }
     if (has_target && ble_addr_cmp(&desc.peer_id_addr, &target) != 0) {
         // Backstop for the accept list (e.g. a host on a resolvable address).
         ESP_LOGW(TAG, "not the target host, dropping");
@@ -500,6 +507,8 @@ esp_err_t StartPairing(uint32_t seconds) {
     }
     xQueueReset(pairing_events);
     pairing_until_us = esp_timer_get_time() + static_cast<int64_t>(seconds) * 1000000;
+    // One connection only: free it, advertising restarts open on disconnect.
+    Drop();
     RestartAdvertising();  // open to everyone for the window
     esp_timer_stop(pairing_timer);
     esp_timer_start_once(pairing_timer, static_cast<uint64_t>(seconds) * 1000000 + 100000);

@@ -53,6 +53,7 @@ python utils/spiffs.py -p COM6 get <remote> [local]
 python utils/spiffs.py -p COM6 put <local> [remote]
 python utils/ble.py -p COM6 on | off | info | bonds | conns | disconnect
 python utils/ble.py -p COM6 pair [seconds]     # waits, prints the passkey
+python utils/ble.py -p COM6 pair [seconds] --bg | pair stop
 python utils/ble.py -p COM6 use <#|addr|any>
 python utils/ble.py -p COM6 unpair <#|addr|all>
 python utils/ble.py -p COM6 kb "text"          # or kb --stdin; quoting and splitting

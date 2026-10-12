@@ -3,6 +3,8 @@
   python utils/ble.py -p COM6                       device usage, then info
   python utils/ble.py -p COM6 on | off | info | bonds | conns | disconnect
   python utils/ble.py -p COM6 pair [seconds]        waits, prints the passkey
+  python utils/ble.py -p COM6 pair [seconds] --bg   opens the window, returns
+  python utils/ble.py -p COM6 pair stop             closes the window
   python utils/ble.py -p COM6 use <#|addr|any>      switch the target host
   python utils/ble.py -p COM6 unpair <#|addr|all>
   python utils/ble.py -p COM6 kb <text...>          type text (US layout)
@@ -82,7 +84,9 @@ def main() -> int:
                             ("conns", "the connection"), ("disconnect", "drop the link")):
         sub.add_parser(name, help=help_text)
     p = sub.add_parser("pair", help="open the pairing window and wait for a new bond")
-    p.add_argument("seconds", nargs="?", type=int, default=60)
+    p.add_argument("seconds", nargs="?", default="60", help="window length, or 'stop'")
+    p.add_argument("--bg", action="store_true",
+                   help="return at once (the passkey goes to the device log)")
     p = sub.add_parser("use", help="switch the target host")
     p.add_argument("which", help="# from 'bonds', address, or 'any'")
     p = sub.add_parser("unpair", help="delete a bond")
@@ -98,7 +102,14 @@ def main() -> int:
         if args.cmd == "kb":
             return cmd_kb(dev, args)
         if args.cmd == "pair":
-            dev.timeout = args.seconds + 10  # silent while waiting for the host
+            if args.seconds == "stop":
+                return run(dev, "ble pair stop")
+            if not args.seconds.isdigit() or int(args.seconds) == 0:
+                print("seconds: a positive number or 'stop'", file=sys.stderr)
+                return 2
+            if args.bg:
+                return run(dev, f"ble pair {args.seconds} bg")
+            dev.timeout = int(args.seconds) + 10  # silent while waiting for the host
             return run(dev, f"ble pair {args.seconds}")
         if args.cmd in ("use", "unpair"):
             return run(dev, f"ble {args.cmd} {args.which}")
