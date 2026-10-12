@@ -3,5 +3,10 @@
   <component name="VcsDirectoryMappings">
     <mapping directory="" vcs="Git" />
     <mapping directory="$PROJECT_DIR$" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/lib/lionkey" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/lib/lionkey/crypto/micro-ecc" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/lib/lionkey/crypto/tiny-AES-c" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/lib/lionkey/crypto/tinymt" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/lib/lionkey/lib/tinycbor" vcs="Git" />
   </component>
 </project>
