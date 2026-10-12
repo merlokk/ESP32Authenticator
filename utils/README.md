@@ -33,6 +33,7 @@ python utils/spiffs.py -p COM6 rm <remote>
 ## ble.py
 
 ```powershell
+python utils/ble.py -p COM6                  # device usage, then info
 python utils/ble.py -p COM6 on | off | info | bonds | conns | disconnect
 python utils/ble.py -p COM6 pair [seconds]
 python utils/ble.py -p COM6 use <#|addr|any>

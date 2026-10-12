@@ -1,5 +1,6 @@
 """BLE control over the USB console.
 
+  python utils/ble.py -p COM6                       device usage, then info
   python utils/ble.py -p COM6 on | off | info | bonds | conns | disconnect
   python utils/ble.py -p COM6 pair [seconds]        waits, prints the passkey
   python utils/ble.py -p COM6 use <#|addr|any>      switch the target host
@@ -75,7 +76,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("-p", "--port", required=True, help="serial port, e.g. COM6")
-    sub = parser.add_subparsers(dest="cmd", required=True)
+    sub = parser.add_subparsers(dest="cmd")
     for name, help_text in (("on", "start the BLE stack"), ("off", "stop it"),
                             ("info", "state summary"), ("bonds", "numbered bond list"),
                             ("conns", "the connection"), ("disconnect", "drop the link")):
@@ -92,6 +93,8 @@ def main() -> int:
     args = parser.parse_args()
 
     with Device(args.port) as dev:
+        if args.cmd is None:
+            return run(dev, "ble")
         if args.cmd == "kb":
             return cmd_kb(dev, args)
         if args.cmd == "pair":
