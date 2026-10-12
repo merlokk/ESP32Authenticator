@@ -3,5 +3,42 @@
     "type": "command",
     "command": "\"E:\\projects\\ai-remote\\statusline\\target\\release\\statusline.exe\"",
     "padding": 0
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"E:\\projects\\ai-remote\\statusline\\target\\release\\statusline.exe\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"E:\\projects\\ai-remote\\statusline\\target\\release\\statusline.exe\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"E:\\projects\\ai-remote\\statusline\\target\\release\\statusline.exe\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
   }
 }
