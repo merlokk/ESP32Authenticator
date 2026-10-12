@@ -1,0 +1,7 @@
+{
+  "statusLine": {
+    "type": "command",
+    "command": "\"E:\\projects\\ai-remote\\statusline\\target\\release\\statusline.exe\"",
+    "padding": 0
+  }
+}

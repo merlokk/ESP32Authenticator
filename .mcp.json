@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "lvgl-simulator": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "C:\\Users\\User\\AppData\\Roaming\\npm\\node_modules\\lvgl-mcp-server\\bin\\lvgl-mcp-server.mjs"
+      ],
+      "env": {
+        "VCVARSALL_PATH": "C:\\Program Files (x86)\\Microsoft Visual Studio\\18\\BuildTools\\VC\\Auxiliary\\Build\\vcvarsall.bat",
+        "NINJA_PATH": "C:\\Espressif\\tools\\ninja\\1.12.1\\ninja.exe"
+      }
+    }
+  }
+}

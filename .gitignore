@@ -3,3 +3,5 @@ managed_components/
 sdkconfig
 sdkconfig.old
 __pycache__/
+
+.claude/settings.local.json
