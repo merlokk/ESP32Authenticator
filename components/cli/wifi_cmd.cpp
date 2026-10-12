@@ -5,6 +5,7 @@
 
 #include "config.h"
 #include "wifi.h"
+#include "subcommand.h"
 #include "wifimgr.h"
 
 namespace console {
@@ -108,23 +109,6 @@ int CmdForget(int argc, char **argv) {
     return SaveAndApply();
 }
 
-struct Subcommand {
-    const char *name;
-    int (*func)(int, char **);
-};
-
-int Dispatch(const Subcommand *subs, size_t count, int argc, char **argv, const char *usage) {
-    if (argc >= 2) {
-        for (size_t i = 0; i < count; ++i) {
-            if (strcmp(argv[1], subs[i].name) == 0) {
-                return subs[i].func(argc - 1, argv + 1);
-            }
-        }
-    }
-    printf("usage: %s\n", usage);
-    return 1;
-}
-
 constexpr Subcommand kWifiSubcommands[] = {
     {"on", &CmdOn},           {"off", &CmdOff}, {"info", &CmdInfo},
     {"scan", &CmdScan},       {"networks", &CmdNetworks},
@@ -188,15 +172,13 @@ constexpr Subcommand kConfigSubcommands[] = {
 }  // namespace
 
 int CmdWifi(int argc, char **argv) {
-    return Dispatch(kWifiSubcommands, sizeof kWifiSubcommands / sizeof kWifiSubcommands[0], argc,
-                    argv,
+    return Dispatch(kWifiSubcommands, argc, argv,
                     "wifi on | off | info | scan | networks | set <ssid> [password] | "
                     "forget <ssid|all>");
 }
 
 int CmdConfig(int argc, char **argv) {
-    return Dispatch(kConfigSubcommands, sizeof kConfigSubcommands / sizeof kConfigSubcommands[0],
-                    argc, argv, "config show | info | reload | save");
+    return Dispatch(kConfigSubcommands, argc, argv, "config show | info | reload | save");
 }
 
 }  // namespace console

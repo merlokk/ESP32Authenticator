@@ -9,6 +9,7 @@
 #include "ble_fido.h"
 #include "ble_kb.h"
 #include "host/ble_hs.h"
+#include "subcommand.h"
 
 namespace console {
 
@@ -209,11 +210,6 @@ int CmdKb(int argc, char **argv) {
     return rc;
 }
 
-struct Subcommand {
-    const char *name;
-    int (*func)(int, char **);
-};
-
 constexpr Subcommand kSubcommands[] = {
     {"on", &CmdOn},         {"off", &CmdOff},       {"info", &CmdInfo},
     {"pair", &CmdPair},     {"bonds", &CmdBonds},   {"conns", &CmdConns},
@@ -224,16 +220,9 @@ constexpr Subcommand kSubcommands[] = {
 }  // namespace
 
 int CmdBle(int argc, char **argv) {
-    if (argc >= 2) {
-        for (const Subcommand &sub : kSubcommands) {
-            if (strcmp(argv[1], sub.name) == 0) {
-                return sub.func(argc - 1, argv + 1);
-            }
-        }
-    }
-    printf("usage: ble on | off | info | pair [seconds [bg]|stop] | bonds | conns |"
-           " use <#|addr|any> | disconnect | unpair <#|addr|all> | kb <text>\n");
-    return 1;
+    return Dispatch(kSubcommands, argc, argv,
+                    "ble on | off | info | pair [seconds [bg]|stop] | bonds | conns |"
+                    " use <#|addr|any> | disconnect | unpair <#|addr|all> | kb <text>");
 }
 
 }  // namespace console

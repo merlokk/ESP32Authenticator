@@ -11,6 +11,9 @@
 //   ble        on | off | info | pair | bonds | conns | use | unpair | kb (see ble_cmd.h)
 //   wifi       on | off | info | scan | networks | set | forget (see wifi_cmd.h)
 //   config     show | info | reload | save (see wifi_cmd.h)
+//
+// Bare spiffs/ble/wifi/config print usage and their `info`; `help` prints
+// usage; an unknown subcommand is an error (see subcommand.h).
 
 #include "esp_err.h"
 

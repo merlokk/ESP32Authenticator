@@ -14,6 +14,7 @@
 #include "esp_rom_crc.h"
 #include "freertos/FreeRTOS.h"
 #include "spiffs_fs.h"
+#include "subcommand.h"
 
 namespace console {
 
@@ -399,11 +400,6 @@ int CmdInfo(int, char **) {
     return 0;
 }
 
-struct Subcommand {
-    const char *name;
-    int (*func)(int, char **);
-};
-
 constexpr Subcommand kSubcommands[] = {
     {"ls", &CmdLs},
     {"cat", &CmdCat},
@@ -417,16 +413,9 @@ constexpr Subcommand kSubcommands[] = {
 }  // namespace
 
 int CmdSpiffs(int argc, char **argv) {
-    if (argc >= 2) {
-        for (const Subcommand &sub : kSubcommands) {
-            if (strcmp(argv[1], sub.name) == 0) {
-                return sub.func(argc - 1, argv + 1);
-            }
-        }
-    }
-    printf("usage: spiffs info | ls | cat <file> | catbase64 <file> |"
-           " write <file> [<length> <crc32>] | rm <file> | format confirm\n");
-    return 1;
+    return Dispatch(kSubcommands, argc, argv,
+                    "spiffs info | ls | cat <file> | catbase64 <file> |"
+                    " write <file> [<length> <crc32>] | rm <file> | format confirm");
 }
 
 }  // namespace console
