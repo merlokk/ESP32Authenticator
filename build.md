@@ -12,8 +12,6 @@ pwsh -NoProfile -Command "& { . 'C:\Espressif\tools\Microsoft.v6.0.2.PowerShell_
 
 ## Build and flash
 
-Configure patches NimBLE in `$IDF_PATH` (`cmake/nimble_patch.cmake`, idempotent): the last GATT service answers Find By Type Value with end handle 0xFFFF. Without it Windows 11 WebAuthn cannot open the FIDO service.
-
 Submodules: LionKey and only the parts of it the build uses (not tinyusb):
 
 ```powershell

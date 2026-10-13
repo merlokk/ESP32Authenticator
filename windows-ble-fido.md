@@ -1,7 +1,7 @@
 # Windows 11: BLE FIDO2 not usable from Chrome
 
-Fixed 2026-10-13 (commit 60ed7c3). Verified: Chrome on webauthn.io (register +
-authenticate, cross-platform), python-fido2 `WindowsClient`, full CTAP2 suite over BLE.
+Fixed 2026-10-13. Verified: Chrome on webauthn.io (register + authenticate,
+cross-platform), python-fido2 `WindowsClient`, full CTAP2 suite over BLE.
 
 ## Symptom
 
@@ -36,25 +36,34 @@ after   → 06 0100 FFFF 0028 FDFF   ← 07 2B00 FFFF     → 08 2B00 FFFF 0328 
 
 ## Fix
 
-`cmake/nimble_patch.cmake` (included from `CMakeLists.txt`) patches NimBLE in
-`$IDF_PATH` at configure time; idempotent, fails configure if the code moved.
-Change in `components/bt/host/nimble/nimble/nimble/host/src/ble_att_svr.c`,
-`ble_att_svr_fill_type_value()`, last group at the end of the attribute table:
+The mismatch exists only for the **last** service in the table: NimBLE uses
+0xFFFF there in Read By Group Type and the real last handle in Find By Type Value;
+for any other service both give the handle before the next service. So a small
+tail service is registered after all profile services (`drivers/ble/ble.cpp`,
+`ble::On()`), and the FIDO range is 0x002B–0x0034 in both responses:
 
-```c
-    /* Process last group in case a group was in progress when the end of the
-     * attribute list was reached.
-     */
-    if (first) {
-        /* Last group in the table: end handle 0xffff, as Read By Group Type
-         * does (ESP32Authenticator patch). */
-        rc = ble_att_svr_fill_type_value_entry(txom, first, 0xFFFF, mtu,   /* was: prev */
-                                               out_att_err);
+```cpp
+// 40e2955e-e36d-4cca-9827-9890bace65f7: tail service, 40e2955f-...: layout version.
+const ble_gatt_svc_def kTailServices[] = {
+    {.type = BLE_GATT_SVC_TYPE_PRIMARY, .uuid = &kTailUuid.u, .characteristics = kTailChrs},
+    {},
+};
+...
+    for (size_t i = 0; rc == 0 && i < service_table_count; ++i) {
+        rc = ble_gatts_count_cfg(service_tables[i]);
+        rc = rc == 0 ? ble_gatts_add_svcs(service_tables[i]) : rc;
+    }
+    rc = rc == 0 ? ble_gatts_count_cfg(kTailServices) : rc;
+    rc = rc == 0 ? ble_gatts_add_svcs(kTailServices) : rc;  // must stay last
 ```
 
-The FIDO service must stay the last one registered (`ble_fido::Register()` after
-`ble_kb`), otherwise its range is not affected. A fresh or updated ESP-IDF needs
-`idf.py reconfigure`.
+Windows caches the GATT table of a bonded device: after a layout change the host
+must re-read it (remove the device and pair again), otherwise WebAuthn still
+compares against the old cached range and fails the same way.
+
+Alternative (used first, commit 60ed7c3, removed): patch NimBLE
+`ble_att_svr_fill_type_value()` to report 0xFFFF for the last group in Find By
+Type Value too (`fill_type_value_entry(txom, first, 0xFFFF, ...)` instead of `prev`).
 
 ## How it was found
 

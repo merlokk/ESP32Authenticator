@@ -19,7 +19,7 @@ Stack (ESP-IDF, LVGL, BLE, Wi-Fi) and flash layout: [architecture.md](architectu
 
 ESP-IDF setup, build/flash, version, CLI: [build.md](build.md).
 
-Windows 11 BLE FIDO2 fix (NimBLE patch): [windows-ble-fido.md](windows-ble-fido.md).
+Windows 11 BLE FIDO2 fix (GATT tail service): [windows-ble-fido.md](windows-ble-fido.md).
 
 ## Hardware
 

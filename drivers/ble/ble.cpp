@@ -176,6 +176,34 @@ const ble_gatt_svc_def kCoreServices[] = {
     {},
 };
 
+// --- Tail service -----------------------------------------------------------
+
+// Registered after every profile service so that none of them is the last one.
+// NimBLE gives the last service end handle 0xFFFF in Read By Group Type but its
+// real last handle in Find By Type Value; Windows 11 WebAuthn looks the FIDO
+// service up by the latter and fails on the mismatch (windows-ble-fido.md).
+// 40e2955e-e36d-4cca-9827-9890bace65f7: tail service, 40e2955f-...: layout version.
+const ble_uuid128_t kTailUuid = BLE_UUID128_INIT(
+    0xf7, 0x65, 0xce, 0xba, 0x90, 0x98, 0x27, 0x98, 0xca, 0x4c, 0x6d, 0xe3, 0x5e, 0x95, 0xe2, 0x40);
+const ble_uuid128_t kTailVersionUuid = BLE_UUID128_INIT(
+    0xf7, 0x65, 0xce, 0xba, 0x90, 0x98, 0x27, 0x98, 0xca, 0x4c, 0x6d, 0xe3, 0x5f, 0x95, 0xe2, 0x40);
+constexpr uint8_t kGattLayoutVersion = 1;
+
+int AccessTail(uint16_t, uint16_t, ble_gatt_access_ctxt *ctxt, void *) {
+    return os_mbuf_append(ctxt->om, &kGattLayoutVersion, 1) == 0 ? 0
+                                                                   : BLE_ATT_ERR_INSUFFICIENT_RES;
+}
+
+const ble_gatt_chr_def kTailChrs[] = {
+    {.uuid = &kTailVersionUuid.u, .access_cb = AccessTail, .flags = BLE_GATT_CHR_F_READ},
+    {},
+};
+
+const ble_gatt_svc_def kTailServices[] = {
+    {.type = BLE_GATT_SVC_TYPE_PRIMARY, .uuid = &kTailUuid.u, .characteristics = kTailChrs},
+    {},
+};
+
 // --- GAP --------------------------------------------------------------------
 
 bool PairingOpen() { return esp_timer_get_time() < pairing_until_us; }
@@ -484,6 +512,8 @@ esp_err_t On() {
         rc = ble_gatts_count_cfg(service_tables[i]);
         rc = rc == 0 ? ble_gatts_add_svcs(service_tables[i]) : rc;
     }
+    rc = rc == 0 ? ble_gatts_count_cfg(kTailServices) : rc;
+    rc = rc == 0 ? ble_gatts_add_svcs(kTailServices) : rc;  // must stay last
     if (rc != 0) {
         ESP_LOGE(TAG, "gatt services: %d", rc);
         nimble_port_deinit();
