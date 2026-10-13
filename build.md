@@ -142,9 +142,11 @@ Opening the port with RTS asserted resets the chip.
 | `ble kb <text>` | type text on the connected host (US layout). esp_console drops single-backslash escapes: type `\\n` (Enter), `\\t` (Tab), `\\\\`; quote to keep spaces |
 | `wifi on` / `wifi off` | radio on in the configured mode / off (saved) |
 | `wifi mode client\|ap\|apsta` | set the mode and switch the radio on (saved) |
-| `wifi info` | config, policy state (asked vs actual, timers), network and round, last error, radio mode, channel, MACs, hostname, IP (static/dhcp)/netmask/gateway/DNS, AP and its clients |
+| `wifi info` | config, policy state (asked vs actual, timers), network and round, last error, radio mode, channel, MACs, hostname, IP (static/dhcp)/netmask/gateway/DNS, internet (state, last reply, failed rounds, next check), AP and its clients |
 | `wifi scan` | access points: RSSI, channel, auth, SSID (brings the radio up for it if off) |
 | `wifi ap [<ssid> [password] [channel]]` | show / set the device's own AP (empty password: open) |
+| `wifi ping` | internet check round now, waits for it, then `wifi info` |
+| `wifi check` / `wifi check on\|off` / `wifi check <ip> [ip ...]` | show the internet check / switch it / set up to 4 IPv4 targets (saved; the link is not touched) |
 | `wifi retry` | restart the current mode from the top (re-reads the settings) |
 | `wifi networks` | configured networks, in try order, static addresses, refused passwords marked |
 | `wifi static <n> <ip> <mask> <gw> [dns1] [dns2]` / `wifi static <n> off` | fixed address for network n (all fields checked before saving) / back to DHCP, typed address kept |

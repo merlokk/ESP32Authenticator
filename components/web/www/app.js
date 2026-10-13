@@ -174,7 +174,8 @@
     function paint(d) {
       var online = d.wifi === "connected";
       var apUp = d.ap_ip && d.ap_ip !== "0.0.0.0";
-      if (online) lamp("ok", "online");
+      if (online && d.internet === "offline") lamp("warn", "no internet");
+      else if (online) lamp("ok", "online");
       else if (apUp) lamp("warn", "access point");
       else lamp("warn", d.wifi);
 
@@ -185,6 +186,9 @@
         text(rssi, d.rssi + " dBm", d.rssi > -67 ? "ok" : d.rssi > -80 ? "warn" : "bad");
       } else { text(rssi, "-", "faint"); }
       text(by("ip"), d.ip === "0.0.0.0" ? "-" : d.ip + (d.ip_static ? " (static)" : " (dhcp)"));
+      text(by("mac"), d.mac);
+      text(by("internet"), d.internet,
+           d.internet === "online" ? "ok" : d.internet === "offline" ? "bad" : "faint");
       text(by("ap"), apUp ? d.ap_ssid + " at " + d.ap_ip + ", " + d.ap_clients + " client(s)" : "off");
 
       text(by("ble"), d.ble + (d.ble === "connected" ? (d.ble_secure ? ", secure" : ", not secure") : ""),

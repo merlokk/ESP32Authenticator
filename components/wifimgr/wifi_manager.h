@@ -9,6 +9,7 @@
 #include <cstdint>
 
 #include "esp_err.h"
+#include "reachability.h"
 #include "wifi_policy.h"
 #include "wifi_radio.h"
 
@@ -33,6 +34,14 @@ struct Snapshot {
     // listen() without lwIP is an assert, not an error.
     bool stack_up = false;
     esp_err_t radio_error = ESP_OK;
+
+    // Is anything reachable through the client link (unknown without one).
+    Internet internet = Internet::kUnknown;
+    uint8_t internet_failed_rounds = 0;
+    uint32_t internet_last_ok_ms = kNeverSucceeded;  // age, not a timestamp
+    uint32_t internet_next_probe_ms = kNeverSucceeded;
+    uint8_t internet_target = kNoTarget;  // index into config internet.targets
+    bool internet_probing = false;
 };
 
 // Starts the task. The radio follows config.json from the first tick.
@@ -44,6 +53,12 @@ bool Ready();
 void Apply();
 
 Snapshot Get();
+
+// Re-reads the internet check settings only: the link is not touched.
+void ApplyInternetCheck();
+
+// Starts an internet check round now (nothing without a client link).
+void CheckInternetNow();
 
 // The desired mode config.json asks for (wifi.active false: off).
 Desired DesiredFromConfig();

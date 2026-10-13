@@ -73,6 +73,20 @@ struct Wifi {
     uint8_t ap_channel;
 };
 
+constexpr size_t kMaxProbeTargets = 4;
+
+// Internet check: while there is a client link, ping these (IPv4, no names:
+// an ICMP echo has no resolver) every interval. A list, because many
+// networks drop ICMP to one operator or another.
+struct InternetCheck {
+    bool check;
+    uint16_t interval_seconds;  // 5..3600
+    uint16_t timeout_ms;        // 100..10000, per echo
+    uint8_t failures;           // consecutive failed rounds that mean offline, 1..10
+    char targets[kMaxProbeTargets][kIpTextSize];
+    uint8_t target_count;
+};
+
 struct Ble {
     bool active;  // start BLE at boot
 };
@@ -92,6 +106,7 @@ struct Web {
 
 struct Data {
     Wifi wifi;
+    InternetCheck internet;
     Ble ble;
     Web web;
 };

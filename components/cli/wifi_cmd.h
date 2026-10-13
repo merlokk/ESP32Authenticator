@@ -4,7 +4,8 @@
 // applies it to the radio):
 //   wifi on | off                radio on (in the configured mode) / off
 //   wifi mode client|ap|apsta    set the mode (and switch the radio on)
-//   wifi info                    mode, state, network, last error, MACs, IPv4, AP
+//   wifi info                    mode, state, network, last error, MACs, IPv4,
+//                                internet, AP
 //   wifi scan                    list access points (brings the radio up for it)
 //   wifi ap [<ssid> [pw] [ch]]   show / set the device's own access point
 //   wifi retry                   restart the current mode from the top
@@ -12,6 +13,8 @@
 //   wifi set <ssid> [password]   add/update a network (quote an SSID with spaces)
 //   wifi static <n> <ip> <mask> <gw> [dns1] [dns2] | static <n> off
 //                                fixed address for network n / back to DHCP
+//   wifi ping                    internet check now, then `wifi info`
+//   wifi check [on|off|<ip>...]  show the internet check / switch it / set the targets
 //   wifi forget <ssid> | all     remove a network / all
 //
 // `web` command (the configuration site):

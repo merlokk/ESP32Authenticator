@@ -6,6 +6,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
+#include "ping/ping_sock.h"
 
 namespace wifimgr {
 
@@ -17,6 +18,7 @@ static_assert(kMaxNetworks == config::kMaxNetworks, "policy bitmask vs config li
 static_assert(wifi::kSsidSize == config::kSsidSize);
 static_assert(wifi::kPasswordSize == config::kPasswordSize);
 static_assert(wifi::kHostnameSize == config::kHostnameSize);
+static_assert(kMaxProbeTargets == config::kMaxProbeTargets, "probe list vs config list");
 
 constexpr uint32_t kStackBytes = 4096;
 StackType_t task_stack[kStackBytes];
@@ -28,6 +30,64 @@ SemaphoreHandle_t lock = nullptr;
 
 wifi::Radio radio;
 Policy policy;
+Reachability reach;
+
+// --- the ICMP echo ------------------------------------------------------------
+// esp_ping runs a session on its own task and answers through callbacks: a
+// small mailbox. The decisions are all in reachability.h.
+
+struct PingMailbox {
+    volatile bool done;
+    volatile bool replied;
+};
+PingMailbox ping_mail = {};
+esp_ping_handle_t ping_handle = nullptr;
+uint32_t ping_started_ms = 0;
+uint32_t ping_deadline_ms = 0;
+
+void OnPingReply(esp_ping_handle_t, void *) { ping_mail.replied = true; }
+void OnPingEnd(esp_ping_handle_t, void *) { ping_mail.done = true; }
+
+void ClosePing() {
+    if (ping_handle == nullptr) {
+        return;
+    }
+    esp_ping_stop(ping_handle);
+    esp_ping_delete_session(ping_handle);
+    ping_handle = nullptr;
+}
+
+// One echo; a session per probe (esp_ping cannot retarget a live one).
+bool StartPing(uint32_t address, uint32_t timeout_ms, uint32_t now_ms) {
+    if (ping_handle != nullptr) {
+        return false;
+    }
+    esp_ping_config_t config = ESP_PING_DEFAULT_CONFIG();
+    config.count = 1;
+    config.timeout_ms = timeout_ms;
+    config.data_size = 32;
+    config.task_stack_size = 3072;
+    config.target_addr.type = IPADDR_TYPE_V4;  // lwIP's ip_addr_t
+    config.target_addr.u_addr.ip4.addr = address;
+    esp_ping_callbacks_t callbacks = {};
+    callbacks.on_ping_success = &OnPingReply;
+    callbacks.on_ping_end = &OnPingEnd;
+    ping_mail.done = false;
+    ping_mail.replied = false;
+    if (esp_ping_new_session(&config, &callbacks, &ping_handle) != ESP_OK) {
+        ping_handle = nullptr;
+        return false;
+    }
+    if (esp_ping_start(ping_handle) != ESP_OK) {
+        ClosePing();
+        return false;
+    }
+    ping_started_ms = now_ms;
+    // Our own deadline on top of the library's: a session that never calls
+    // back must not freeze the check.
+    ping_deadline_ms = timeout_ms + 3000;
+    return true;
+}
 
 // Edges already reported; cleared by every Start (the only new attempt).
 bool reported_connected = false;
@@ -70,6 +130,16 @@ wifi::StaticIp AddressFor(const config::Network &network) {
     config::ParseIpv4(network.ip.dns2, &ip.dns2);
     ip.enabled = true;
     return ip;
+}
+
+ProbeSettings ProbesFromConfig() {
+    const config::InternetCheck &net = config::Get().internet;
+    ProbeSettings settings;
+    settings.enabled = net.check;
+    settings.target_count = net.target_count;
+    settings.interval_ms = static_cast<uint32_t>(net.interval_seconds) * 1000u;
+    settings.failures_before_offline = net.failures;
+    return settings;
 }
 
 Settings SettingsFromConfig() {
@@ -161,8 +231,41 @@ bool ApplyAction(Action action, uint32_t now_ms) {
     return true;
 }
 
+// The internet check, on the same pass as everything else.
+void PumpReachability(uint32_t now, bool link_is_up) {
+    if (!link_is_up) {
+        reach.LinkDown(now);
+        ClosePing();  // its answer would be about nothing
+        return;
+    }
+    reach.LinkUp(now);
+    if (ping_handle != nullptr) {
+        if (ping_mail.done) {
+            const bool replied = ping_mail.replied;
+            ClosePing();
+            reach.OnResult(replied, now);
+        } else if (now - ping_started_ms >= ping_deadline_ms) {
+            ESP_LOGW(TAG, "ping session did not finish; counted as no answer");
+            ClosePing();
+            reach.OnResult(false, now);
+        }
+        return;
+    }
+    if (reach.Tick(now) != Probe::kSend) {
+        return;
+    }
+    const config::InternetCheck &net = config::Get().internet;
+    const uint8_t index = reach.Target();
+    uint32_t address = 0;
+    if (index >= net.target_count || !config::ParseIpv4(net.targets[index], &address) ||
+        !StartPing(address, net.timeout_ms, now)) {
+        reach.OnResult(false, now);  // the list changed under the round, or no session
+    }
+}
+
 void Pump() {
     const uint32_t now = NowMs();
+    bool link_is_up = false;
     if (radio_ready) {
         const wifi::Status status = radio.Get();
         policy.OnApClients(status.clients, now);
@@ -173,7 +276,11 @@ void Pump() {
             reported_failed = true;
             policy.OnFailed(Translate(status.failure), now);
         }
+        // A client link with an address: an AP has no uplink of its own to test.
+        link_is_up = (status.mode == wifi::Mode::kClient || status.mode == wifi::Mode::kApSta) &&
+                     status.link == wifi::Link::kConnected && status.ip != 0;
     }
+    PumpReachability(now, link_is_up);
     // Idempotent, so an edited file takes effect without anybody telling us.
     policy.SetDesired(DesiredFromConfig(), now);
 
@@ -230,6 +337,7 @@ esp_err_t Init() {
         return ESP_ERR_NO_MEM;
     }
     policy.Configure(SettingsFromConfig(), NowMs());
+    reach.Configure(ProbesFromConfig(), NowMs());
     task_handle = xTaskCreateStatic(&Task, "wifimgr", kStackBytes, nullptr, 4, task_stack,
                                     &task_storage);
     if (task_handle == nullptr) {
@@ -254,6 +362,26 @@ void Apply() {
     }
     policy.SetDesired(DesiredFromConfig(), NowMs());
     policy.Configure(SettingsFromConfig(), NowMs());
+    reach.Configure(ProbesFromConfig(), NowMs());
+    xSemaphoreGive(lock);
+}
+
+void ApplyInternetCheck() {
+    if (!started) {
+        return;
+    }
+    xSemaphoreTake(lock, portMAX_DELAY);
+    // Not policy.Configure: the ping list is no reason to drop a link.
+    reach.Configure(ProbesFromConfig(), NowMs());
+    xSemaphoreGive(lock);
+}
+
+void CheckInternetNow() {
+    if (!started) {
+        return;
+    }
+    xSemaphoreTake(lock, portMAX_DELAY);
+    reach.ProbeNow(NowMs());
     xSemaphoreGive(lock);
 }
 
@@ -277,6 +405,12 @@ Snapshot Get() {
     snapshot.wait_remaining_ms = policy.WaitRemainingMs(now);
     snapshot.radio_ready = radio_ready;
     snapshot.radio_error = radio_error;
+    snapshot.internet = reach.State();
+    snapshot.internet_failed_rounds = reach.FailedRounds();
+    snapshot.internet_last_ok_ms = reach.SinceLastSuccessMs(now);
+    snapshot.internet_next_probe_ms = reach.NextProbeInMs(now);
+    snapshot.internet_target = reach.Target();
+    snapshot.internet_probing = reach.Probing();
     xSemaphoreGive(lock);
     // Outside the lock: the radio takes its own.
     if (radio_ready) {

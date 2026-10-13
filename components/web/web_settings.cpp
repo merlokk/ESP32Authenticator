@@ -1,6 +1,7 @@
 #include "web_settings.h"
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 #include "cJSON.h"
@@ -214,12 +215,13 @@ bool ReadNetworks(const cJSON *list, config::Wifi *wifi, const config::Wifi &bef
     return true;
 }
 
-bool ReadWifi(const cJSON *wifi, config::Data *into, WriteOutcome *out) {
+// `before` is the live config (untouched until success), `into` the staging copy.
+bool ReadWifi(const cJSON *wifi, const config::Wifi &before, config::Data *into,
+              WriteOutcome *out) {
     if (!cJSON_IsObject(wifi)) {
         Say(out, WriteResult::kBadValue, "wifi");
         return false;
     }
-    const config::Wifi before = into->wifi;
     for (const cJSON *item = wifi->child; item != nullptr; item = item->next) {
         const char *key = item->string != nullptr ? item->string : "";
         bool ok = false;
@@ -263,23 +265,34 @@ WriteOutcome ApplySettings(const char *body, size_t length, config::Data *into) 
         return out;
     }
     // Staged: a refusal anywhere leaves the live config as it was.
-    config::Data staged = *into;
+    // Staged on the heap: over a kilobyte, and httpd's stack is 4 KB.
+    config::Data *staging = static_cast<config::Data *>(malloc(sizeof(config::Data)));
+    if (staging == nullptr) {
+        cJSON_Delete(root);
+        Say(&out, WriteResult::kTooBig, "");
+        return out;
+    }
+    *staging = *into;
+    config::Data &staged = *staging;
     bool ok = true;
     for (const cJSON *section = root->child; section != nullptr && ok; section = section->next) {
         const char *key = section->string != nullptr ? section->string : "";
         if (std::strcmp(key, "wifi") == 0) {
-            ok = ReadWifi(section, &staged, &out);
+            ok = ReadWifi(section, into->wifi, &staged, &out);
         } else {
             Say(&out, WriteResult::kUnknownField, key);
             ok = false;
         }
     }
     cJSON_Delete(root);
+    if (ok) {
+        *into = staged;
+    }
+    free(staging);
     if (!ok) {
         out.wifi_changed = false;
         return out;
     }
-    *into = staged;
     out.result = WriteResult::kOk;
     return out;
 }

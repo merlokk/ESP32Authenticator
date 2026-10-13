@@ -51,6 +51,8 @@ Reference ESP-IDF + LVGL project: `../../ai-remote/approver-esp32` ([GitHub](htt
         "netmask": "255.255.255.0", "gateway": "10.0.0.1", "dns1": "10.0.0.1", "dns2": ""}}
     ]
   },
+  "internet": {"check": true, "intervalSeconds": 60, "timeoutMs": 2000, "failures": 2,
+               "targets": ["8.8.8.8", "1.1.1.1", "9.9.9.9"]},
   "ble": {"active": false},
   "web": {"mode": "auto", "write": true, "user": "", "password": ""}
 }
@@ -62,7 +64,8 @@ empty (open) or 8..63 chars; `rounds` 1..10, `apWindowSeconds` 30..3600,
 channel 1..13. Change the default AP password. `ip` (optional, per network):
 `static` false or absent is DHCP (the typed fields are kept); with `static`
 true address/netmask/gateway are required, DNS optional; dotted quads, no
-leading zeros.
+leading zeros. `internet`: `intervalSeconds` 5..3600, `timeoutMs` 100..10000,
+`failures` 1..10, up to 4 IPv4 `targets` (pinged: no names).
 
 ## Tests
 
@@ -103,7 +106,8 @@ Ported from approver-esp32 (`../../ai-remote/approver-esp32`, firmware.md
 |---|---|
 | `drivers/wifi` (`wifi::Radio`) | join a network / be an AP / scan; no decisions. Stack (netifs + `esp_wifi_init`, ~40 KB) taken lazily, given back on stop. AP runs as APSTA so a scan works. Credentials never in the driver's NVS store |
 | `wifimgr::Policy` (`wifi_policy.h`) | pure state machine, host-tested: which network, when to give up, when to be an AP |
-| `wifimgr` manager | one task, 200 ms tick: radio status → policy events, policy actions → radio, SSIDs/passwords from config |
+| `wifimgr::Reachability` (`reachability.h`) | pure, host-tested: internet check rounds, online / offline / unknown |
+| `wifimgr` manager | one task, 200 ms tick: radio status → policy events, policy actions → radio, SSIDs/passwords from config; ICMP echo (`esp_ping`) for the internet check |
 
 Modes (`wifi.mode`, `wifi.active` false = off):
 - `client`: networks in turn (last good first), gap between networks, growing
@@ -114,6 +118,10 @@ Modes (`wifi.mode`, `wifi.active` false = off):
   window ends or the list changes; a drop while online is not a refusal.
 - Static address per network: set on association (DHCP client stopped first);
   a DHCP network after a static one starts the DHCP client again.
+- Internet check (client link only): a round when the link comes up, then
+  every `intervalSeconds`; targets in turn from the last one that answered,
+  one reply = online; `failures` consecutive failed rounds = offline;
+  unknown without a link or before the first answer. Never touches the link.
 - `ap`: the AP only.
 - `apsta`: the AP always, plus the client walk; instead of the AP window it
   rests `apWindowSeconds` between cycles. While the station scans/joins, the
@@ -129,7 +137,7 @@ and never starts without lwIP (an assert).
 | Route | |
 |---|---|
 | `GET /`, `/*.html`, `/app.js` | pages (whitelist of names/extensions; anything else, e.g. `/config.json`, is the 404 page) |
-| `GET /api/status` | firmware, heap, SPIFFS, Wi-Fi, AP, BLE, FIDO state (no secrets) |
+| `GET /api/status` | firmware, heap, SPIFFS, Wi-Fi (IP, MAC, internet), AP, BLE, FIDO state (no secrets) |
 | `GET /api/devstatus` | the console's `devstatus` dump (stdout swapped for the request) |
 | `GET /api/settings`, `POST /api/settings` | Wi-Fi mode, AP, networks (with `ip`; absent `ip` keeps the current one). Whitelist; passwords write-only (absent/null keeps, `""` clears); all-or-nothing; memory only |
 | `GET /api/wifi/scan` | access points (hidden/duplicate names dropped) |

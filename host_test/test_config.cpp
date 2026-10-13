@@ -71,6 +71,13 @@ void AssertDefaults(const config::Data &d) {
     TEST_ASSERT_EQUAL_STRING("esp32-auth", d.wifi.ap_password);
     TEST_ASSERT_EQUAL_UINT8(6, d.wifi.ap_channel);
     TEST_ASSERT_FALSE(d.ble.active);
+    TEST_ASSERT_TRUE(d.internet.check);
+    TEST_ASSERT_EQUAL_UINT16(60, d.internet.interval_seconds);
+    TEST_ASSERT_EQUAL_UINT16(2000, d.internet.timeout_ms);
+    TEST_ASSERT_EQUAL_UINT8(2, d.internet.failures);
+    TEST_ASSERT_EQUAL_UINT8(3, d.internet.target_count);
+    TEST_ASSERT_EQUAL_STRING("8.8.8.8", d.internet.targets[0]);
+    TEST_ASSERT_EQUAL_STRING("9.9.9.9", d.internet.targets[2]);
     TEST_ASSERT_EQUAL_INT(static_cast<int>(config::WebMode::kAuto), static_cast<int>(d.web.mode));
     TEST_ASSERT_TRUE(d.web.write);
     TEST_ASSERT_EQUAL_STRING("", d.web.user);
@@ -138,6 +145,44 @@ void test_parse_full() {
     TEST_ASSERT_FALSE(d.web.write);
     TEST_ASSERT_EQUAL_STRING("admin", d.web.user);
     TEST_ASSERT_EQUAL_STRING("a:b c", d.web.password);
+}
+
+void test_parse_internet_check() {
+    config::Data d;
+    char error[config::kErrorSize] = {};
+    TEST_ASSERT_TRUE_MESSAGE(
+        ParseText(R"({"internet": {"check": false, "intervalSeconds": 30, "timeoutMs": 500,
+            "failures": 3, "targets": ["192.168.1.1"]}})", &d, error, sizeof error),
+        error);
+    TEST_ASSERT_FALSE(d.internet.check);
+    TEST_ASSERT_EQUAL_UINT16(30, d.internet.interval_seconds);
+    TEST_ASSERT_EQUAL_UINT16(500, d.internet.timeout_ms);
+    TEST_ASSERT_EQUAL_UINT8(3, d.internet.failures);
+    TEST_ASSERT_EQUAL_UINT8(1, d.internet.target_count);
+    TEST_ASSERT_EQUAL_STRING("192.168.1.1", d.internet.targets[0]);
+
+    TEST_ASSERT_TRUE(ParseText(R"({"internet": {"targets": []}})", &d, error, sizeof error));
+    TEST_ASSERT_EQUAL_UINT8(0, d.internet.target_count);
+
+    char json[config::kMaxFileSize];
+    config::FillDefaults(&d);
+    TEST_ASSERT_GREATER_THAN(0, config::Serialize(d, json, sizeof json));
+    config::Data out;
+    TEST_ASSERT_TRUE_MESSAGE(ParseText(json, &out, error, sizeof error), error);
+    TEST_ASSERT_EQUAL_MEMORY(&d.internet, &out.internet, sizeof d.internet);
+}
+
+void test_parse_rejects_bad_internet_check() {
+    AssertParseFails(R"({"internet": {"targets": ["dns.google"]}})", "internet.targets[0]");
+    AssertParseFails(R"({"internet": {"targets": ["1.1.1.1", "8.8.8.08"]}})", "internet.targets[1]");
+    AssertParseFails(R"({"internet": {"targets": ["1.1.1.1", "1.0.0.1", "8.8.8.8", "8.8.4.4",
+        "9.9.9.9"]}})", "internet.targets");
+    AssertParseFails(R"({"internet": {"targets": "8.8.8.8"}})", "internet.targets");
+    AssertParseFails(R"({"internet": {"intervalSeconds": 1}})", "internet.intervalSeconds");
+    AssertParseFails(R"({"internet": {"timeoutMs": 50}})", "internet.timeoutMs");
+    AssertParseFails(R"({"internet": {"failures": 0}})", "internet.failures");
+    AssertParseFails(R"({"internet": {"check": "yes"}})", "internet.check");
+    AssertParseFails(R"({"internet": []})", "internet");
 }
 
 void test_parse_ipv4() {
@@ -575,6 +620,8 @@ void RegisterConfigTests(void) {
     RUN_TEST(test_parse_rejects_duplicate_ssid);
     RUN_TEST(test_parse_rejects_bad_hostname);
     RUN_TEST(test_parse_rejects_bad_wifi_and_web_fields);
+    RUN_TEST(test_parse_internet_check);
+    RUN_TEST(test_parse_rejects_bad_internet_check);
     RUN_TEST(test_parse_ipv4);
     RUN_TEST(test_parse_static_ip);
     RUN_TEST(test_parse_rejects_bad_static_ip);

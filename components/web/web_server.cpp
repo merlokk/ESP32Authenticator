@@ -12,6 +12,7 @@
 #include "esp_heap_caps.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
+#include "esp_mac.h"
 #include "esp_system.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -232,12 +233,18 @@ esp_err_t StatusApi(httpd_req_t *request) {
     Escape(wifi.radio.ap_ssid, ap_ssid, sizeof ap_ssid);
     FormatIp(wifi.radio.ip, ip, sizeof ip);
     FormatIp(wifi.radio.ap_ip, ap_ip, sizeof ap_ip);
+    // The station MAC: what a router's DHCP table and a MAC filter show.
+    uint8_t mac_bytes[6] = {};
+    esp_read_mac(mac_bytes, ESP_MAC_WIFI_STA);
+    char mac[18];
+    std::snprintf(mac, sizeof mac, "%02x:%02x:%02x:%02x:%02x:%02x", mac_bytes[0], mac_bytes[1],
+                  mac_bytes[2], mac_bytes[3], mac_bytes[4], mac_bytes[5]);
 
     std::snprintf(
         g_json, sizeof g_json,
         "{\"firmware\":\"%s\",\"idf\":\"%s\",\"uptime_s\":%" PRIu32 ",\"heap_free\":%u"
         ",\"heap_low\":%u,\"psram_free\":%u,\"spiffs_used\":%u,\"spiffs_total\":%u"
-        ",\"wifi\":\"%s\",\"wifi_mode\":\"%s\",\"ssid\":\"%s\",\"rssi\":%d,\"ip\":\"%s\",\"ip_static\":%s"
+        ",\"wifi\":\"%s\",\"wifi_mode\":\"%s\",\"ssid\":\"%s\",\"rssi\":%d,\"ip\":\"%s\",\"ip_static\":%s,\"internet\":\"%s\",\"mac\":\"%s\""
         ",\"ap_ssid\":\"%s\",\"ap_ip\":\"%s\",\"ap_clients\":%u"
         ",\"ble\":\"%s\",\"ble_secure\":%s,\"kb_ready\":%s,\"fido_ready\":%s"
         ",\"fido_requests\":%" PRIu32 ",\"fido_errors\":%" PRIu32 "}",
@@ -247,7 +254,7 @@ esp_err_t StatusApi(httpd_req_t *request) {
         static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_SPIRAM)),
         static_cast<unsigned>(used), static_cast<unsigned>(total), wifimgr::Name(wifi.state),
         wifimgr::Name(wifi.desired), ssid, static_cast<int>(wifi.radio.rssi), ip,
-        wifi.radio.ip_is_static ? "true" : "false", ap_ssid, ap_ip,
+        wifi.radio.ip_is_static ? "true" : "false", wifimgr::Name(wifi.internet), mac, ap_ssid, ap_ip,
         static_cast<unsigned>(wifi.radio.clients),
         !ble_on ? "off" : ble_connected ? "connected" : "advertising",
         ble_connected && ble::LinkSecure() ? "true" : "false",

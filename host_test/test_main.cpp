@@ -8,6 +8,7 @@
 
 void RegisterConfigTests(void);
 void RegisterWifiPolicyTests(void);
+void RegisterReachabilityTests(void);
 void RegisterWebAuthTests(void);
 void RegisterWebPathTests(void);
 void RegisterWebSettingsTests(void);
@@ -42,6 +43,7 @@ int main(int argc, char **argv) {
     UNITY_BEGIN();
     if (Wanted("config")) RegisterConfigTests();
     if (Wanted("wifi_policy")) RegisterWifiPolicyTests();
+    if (Wanted("reachability")) RegisterReachabilityTests();
     if (Wanted("web_auth")) RegisterWebAuthTests();
     if (Wanted("web_paths")) RegisterWebPathTests();
     if (Wanted("web_settings")) RegisterWebSettingsTests();

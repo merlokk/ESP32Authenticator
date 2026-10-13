@@ -34,6 +34,7 @@ add_executable(host_test
     test_main.cpp
     test_config.cpp
     test_wifi_policy.cpp
+    test_reachability.cpp
     test_web_auth.cpp
     test_web_paths.cpp
     test_web_settings.cpp
@@ -42,6 +43,7 @@ add_executable(host_test
     # Under test.
     ../components/config/config.cpp
     ../components/wifimgr/wifi_policy.cpp
+    ../components/wifimgr/reachability.cpp
     ../components/web/web_auth.cpp
     ../components/web/web_paths.cpp
     ../components/web/web_policy.cpp

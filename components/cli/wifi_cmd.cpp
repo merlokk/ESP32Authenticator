@@ -8,6 +8,8 @@
 #include "config.h"
 #include "esp_mac.h"
 #include "esp_netif.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "subcommand.h"
 #include "web_server.h"
 #include "wifi_manager.h"
@@ -110,6 +112,27 @@ int CmdInfo(int, char **) {
             }
         }
     }
+    const config::InternetCheck &net = config::Get().internet;
+    printf("internet   %s", wifimgr::Name(s.internet));
+    if (s.internet_last_ok_ms != wifimgr::kNeverSucceeded) {
+        printf(", last reply %" PRIu32 " s ago", s.internet_last_ok_ms / 1000);
+    }
+    if (s.internet_failed_rounds > 0) {
+        printf(", %u round(s) failed", static_cast<unsigned>(s.internet_failed_rounds));
+    }
+    if (!net.check) {
+        printf(", check off ('wifi check on')");
+    } else if (net.target_count == 0) {
+        printf(", nothing to ping ('wifi check <ip> ...')");
+    } else if (s.internet_probing) {
+        printf(", asking %s", net.targets[s.internet_target < net.target_count
+                                              ? s.internet_target : 0]);
+    } else if (s.internet_next_probe_ms != wifimgr::kNeverSucceeded) {
+        printf(", next in %" PRIu32 " s", s.internet_next_probe_ms / 1000);
+    } else {
+        printf(" (no client link)");
+    }
+    printf("\n");
     if (s.radio.mode == wifi::Mode::kAp || s.radio.mode == wifi::Mode::kApSta) {
         printf("ap         '%s', %u client(s)\n", s.radio.ap_ssid,
                static_cast<unsigned>(s.radio.clients));
@@ -186,6 +209,71 @@ int CmdAp(int argc, char **argv) {
     snprintf(w.ap_password, sizeof w.ap_password, "%s", password);
     w.ap_channel = static_cast<uint8_t>(channel);
     return SaveAndApply();
+}
+
+// Asks now and waits for the round to finish.
+int CmdPing(int, char **) {
+    if (wifimgr::Get().radio.link != wifi::Link::kConnected) {
+        printf("no client link to ask through ('wifi info')\n");
+        return 1;
+    }
+    wifimgr::CheckInternetNow();
+    const config::InternetCheck &net = config::Get().internet;
+    const uint32_t budget_ms = (net.timeout_ms + 3500u) * (net.target_count + 1u);
+    for (uint32_t waited = 0; waited < budget_ms; waited += 100) {
+        vTaskDelay(pdMS_TO_TICKS(100));
+        const wifimgr::Snapshot s = wifimgr::Get();
+        if (s.internet_next_probe_ms != 0) {
+            break;  // the round finished and the next one is scheduled
+        }
+    }
+    return CmdInfo(0, nullptr);
+}
+
+// wifi check | check on|off | check <ip> [ip ...]
+int CmdCheck(int argc, char **argv) {
+    config::InternetCheck &net = config::Get().internet;
+    if (argc == 1) {
+        printf("check      %s, every %u s, %u ms timeout, offline after %u failed round(s)\n",
+               net.check ? "on" : "off", static_cast<unsigned>(net.interval_seconds),
+               static_cast<unsigned>(net.timeout_ms), static_cast<unsigned>(net.failures));
+        for (uint8_t i = 0; i < net.target_count; ++i) {
+            printf("           %s\n", net.targets[i]);
+        }
+        if (net.target_count == 0) {
+            printf("           (no targets: nothing to ping)\n");
+        }
+        return 0;
+    }
+    if (argc == 2 && (strcmp(argv[1], "on") == 0 || strcmp(argv[1], "off") == 0)) {
+        net.check = strcmp(argv[1], "on") == 0;
+    } else {
+        if (argc - 1 > static_cast<int>(config::kMaxProbeTargets)) {
+            printf("at most %u addresses\n", static_cast<unsigned>(config::kMaxProbeTargets));
+            return 1;
+        }
+        // All parsed before any is stored; a name could never answer a ping.
+        for (int i = 1; i < argc; ++i) {
+            uint32_t ignored = 0;
+            if (strlen(argv[i]) >= config::kIpTextSize || !config::ParseIpv4(argv[i], &ignored)) {
+                printf("'%s' is not an IPv4 address (pinged: no names)\n", argv[i]);
+                return 1;
+            }
+        }
+        for (int i = 1; i < argc; ++i) {
+            snprintf(net.targets[i - 1], config::kIpTextSize, "%s", argv[i]);
+        }
+        net.target_count = static_cast<uint8_t>(argc - 1);
+        net.check = true;
+    }
+    wifimgr::ApplyInternetCheck();  // the link is not touched
+    const esp_err_t err = config::Save();
+    if (err != ESP_OK) {
+        printf("applied, but config.json not saved: %s\n", esp_err_to_name(err));
+        return 1;
+    }
+    printf("internet check %s, saved %s\n", net.check ? "on" : "off", config::Path());
+    return 0;
 }
 
 int CmdRetry(int, char **) {
@@ -290,7 +378,7 @@ constexpr Subcommand kWifiSubcommands[] = {
     {"on", &CmdOn},       {"off", &CmdOff},           {"mode", &CmdMode},
     {"info", &CmdInfo},   {"scan", &CmdScan},         {"ap", &CmdAp},
     {"retry", &CmdRetry}, {"networks", &CmdNetworks}, {"set", &CmdSet},
-    {"static", &CmdStatic},
+    {"static", &CmdStatic},   {"ping", &CmdPing},       {"check", &CmdCheck},
     {"forget", &CmdForget},
 };
 
@@ -398,7 +486,8 @@ constexpr Subcommand kWebSubcommands[] = {
 // --- config -----------------------------------------------------------------------
 
 int CmdShow(int, char **) {
-    config::Data masked = config::Get();
+    static config::Data masked;  // over a kilobyte: not on the console's stack
+    masked = config::Get();
     for (uint8_t i = 0; i < masked.wifi.network_count; ++i) {
         if (masked.wifi.networks[i].password[0] != '\0') {
             snprintf(masked.wifi.networks[i].password, config::kPasswordSize, "***");
@@ -463,7 +552,7 @@ int CmdWifi(int argc, char **argv) {
                     "wifi on | off | mode <client|ap|apsta> | info | scan | "
                     "ap [<ssid> [password] [channel]] | retry | networks | "
                     "set <ssid> [password] | static <n> <ip> <mask> <gw> [dns1] [dns2] | "
-                    "static <n> off | forget <ssid|all>");
+                    "static <n> off | ping | check [on|off|<ip>...] | forget <ssid|all>");
 }
 
 int CmdWeb(int argc, char **argv) {

@@ -1,6 +1,7 @@
 #include "config.h"
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <initializer_list>
 
@@ -23,6 +24,13 @@ const char kDefaultJson[] = R"json({
       "channel": 6
     },
     "networks": []
+  },
+  "internet": {
+    "check": true,
+    "intervalSeconds": 60,
+    "timeoutMs": 2000,
+    "failures": 2,
+    "targets": ["8.8.8.8", "1.1.1.1", "9.9.9.9"]
   },
   "ble": {
     "active": false
@@ -243,6 +251,49 @@ bool ParseIp(const cJSON *network, StaticIp *out, const char *where, char *error
     return true;
 }
 
+bool ParseInternet(const cJSON *internet, InternetCheck *out, char *error, size_t size) {
+    uint32_t interval = out->interval_seconds;
+    uint32_t timeout = out->timeout_ms;
+    uint32_t failures = out->failures;
+    if (!GetBool(internet, "check", &out->check, "internet", error, size) ||
+        !GetUint(internet, "intervalSeconds", 5, 3600, &interval, "internet", error, size) ||
+        !GetUint(internet, "timeoutMs", 100, 10000, &timeout, "internet", error, size) ||
+        !GetUint(internet, "failures", 1, 10, &failures, "internet", error, size)) {
+        return false;
+    }
+    out->interval_seconds = static_cast<uint16_t>(interval);
+    out->timeout_ms = static_cast<uint16_t>(timeout);
+    out->failures = static_cast<uint8_t>(failures);
+    const cJSON *list = cJSON_GetObjectItemCaseSensitive(internet, "targets");
+    if (list == nullptr) {
+        return true;
+    }
+    char text[kErrorSize];
+    if (!cJSON_IsArray(list) || cJSON_GetArraySize(list) > static_cast<int>(kMaxProbeTargets)) {
+        snprintf(text, sizeof text, "internet.targets: an array of at most %u IPv4 addresses",
+                 static_cast<unsigned>(kMaxProbeTargets));
+        SetError(error, size, text);
+        return false;
+    }
+    // `out` is ParseInto's staging copy: a failure discards it whole.
+    InternetCheck &parsed = *out;
+    parsed.target_count = 0;
+    memset(parsed.targets, 0, sizeof parsed.targets);
+    const cJSON *item = nullptr;
+    cJSON_ArrayForEach(item, list) {
+        uint32_t ignored = 0;
+        if (!cJSON_IsString(item) || item->valuestring == nullptr ||
+            strlen(item->valuestring) >= kIpTextSize || !ParseIpv4(item->valuestring, &ignored)) {
+            snprintf(text, sizeof text, "internet.targets[%u]: an IPv4 address (no names)",
+                     static_cast<unsigned>(parsed.target_count));
+            SetError(error, size, text);
+            return false;
+        }
+        snprintf(parsed.targets[parsed.target_count++], kIpTextSize, "%s", item->valuestring);
+    }
+    return true;
+}
+
 bool ParseNetworks(const cJSON *wifi, Wifi *out, char *error, size_t size) {
     const cJSON *list = cJSON_GetObjectItemCaseSensitive(wifi, "networks");
     if (list == nullptr) {
@@ -259,7 +310,7 @@ bool ParseNetworks(const cJSON *wifi, Wifi *out, char *error, size_t size) {
         SetError(error, size, text);
         return false;
     }
-    Wifi parsed = *out;
+    Wifi &parsed = *out;  // ParseInto's staging copy, as above
     parsed.network_count = 0;
     memset(parsed.networks, 0, sizeof parsed.networks);
     int index = 0;
@@ -294,9 +345,10 @@ bool ParseNetworks(const cJSON *wifi, Wifi *out, char *error, size_t size) {
         }
         ++parsed.network_count;
     }
-    *out = parsed;
     return true;
 }
+
+bool ParseSections(const cJSON *root, Data *staged, char *error, size_t size);
 
 // Applies the members present in `root` over `out`. Changes `out` only on success.
 bool ParseInto(const cJSON *root, Data *out, char *error, size_t size) {
@@ -304,7 +356,25 @@ bool ParseInto(const cJSON *root, Data *out, char *error, size_t size) {
         SetError(error, size, "not a JSON object");
         return false;
     }
-    Data parsed = *out;
+    // Staged on the heap: Data is over a kilobyte and this runs on small task
+    // stacks (main, console, httpd).
+    Data *staged = static_cast<Data *>(malloc(sizeof(Data)));
+    if (staged == nullptr) {
+        SetError(error, size, "out of memory");
+        return false;
+    }
+    *staged = *out;
+    Data &parsed = *staged;
+    const bool ok = ParseSections(root, &parsed, error, size);
+    if (ok) {
+        *out = parsed;
+    }
+    free(staged);
+    return ok;
+}
+
+bool ParseSections(const cJSON *root, Data *staged, char *error, size_t size) {
+    Data &parsed = *staged;
     const cJSON *wifi = cJSON_GetObjectItemCaseSensitive(root, "wifi");
     if (wifi != nullptr) {
         if (!cJSON_IsObject(wifi)) {
@@ -313,6 +383,16 @@ bool ParseInto(const cJSON *root, Data *out, char *error, size_t size) {
         }
         if (!ParseWifi(wifi, &parsed.wifi, error, size) ||
             !ParseNetworks(wifi, &parsed.wifi, error, size)) {
+            return false;
+        }
+    }
+    const cJSON *internet = cJSON_GetObjectItemCaseSensitive(root, "internet");
+    if (internet != nullptr) {
+        if (!cJSON_IsObject(internet)) {
+            SetError(error, size, "internet: expected an object");
+            return false;
+        }
+        if (!ParseInternet(internet, &parsed.internet, error, size)) {
             return false;
         }
     }
@@ -336,7 +416,6 @@ bool ParseInto(const cJSON *root, Data *out, char *error, size_t size) {
             return false;
         }
     }
-    *out = parsed;
     return true;
 }
 
@@ -377,15 +456,22 @@ esp_err_t Load(Data *out) {
                  static_cast<unsigned>(kMaxFileSize));
         return ESP_ERR_INVALID_SIZE;
     }
-    Data parsed;
+    Data *staged = static_cast<Data *>(malloc(sizeof(Data)));  // not on the stack
+    if (staged == nullptr) {
+        snprintf(last_error, sizeof last_error, "out of memory");
+        return ESP_ERR_NO_MEM;
+    }
+    Data &parsed = *staged;
     FillDefaults(&parsed);
     char reason[kErrorSize] = {};
-    if (!Parse(file_buffer, length, &parsed, reason, sizeof reason)) {
+    const bool ok = Parse(file_buffer, length, &parsed, reason, sizeof reason);
+    if (ok) {
+        *out = parsed;
+    } else {
         snprintf(last_error, sizeof last_error, "%s", reason);
-        return ESP_ERR_INVALID_ARG;
     }
-    *out = parsed;
-    return ESP_OK;
+    free(staged);
+    return ok ? ESP_OK : ESP_ERR_INVALID_ARG;
 }
 
 }  // namespace
@@ -441,6 +527,15 @@ size_t Serialize(const Data &d, char *out, size_t size) {
             cJSON_AddStringToObject(block, "dns2", ip.dns2);
         }
         cJSON_AddItemToArray(list, n);
+    }
+    cJSON *internet = cJSON_AddObjectToObject(root, "internet");
+    cJSON_AddBoolToObject(internet, "check", d.internet.check);
+    cJSON_AddNumberToObject(internet, "intervalSeconds", d.internet.interval_seconds);
+    cJSON_AddNumberToObject(internet, "timeoutMs", d.internet.timeout_ms);
+    cJSON_AddNumberToObject(internet, "failures", d.internet.failures);
+    cJSON *targets = cJSON_AddArrayToObject(internet, "targets");
+    for (uint8_t i = 0; i < d.internet.target_count && i < kMaxProbeTargets; ++i) {
+        cJSON_AddItemToArray(targets, cJSON_CreateString(d.internet.targets[i]));
     }
     cJSON *ble = cJSON_AddObjectToObject(root, "ble");
     cJSON_AddBoolToObject(ble, "active", d.ble.active);
