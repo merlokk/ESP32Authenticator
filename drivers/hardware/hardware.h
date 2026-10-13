@@ -11,7 +11,7 @@ namespace hardware {
 void PrintInfo();
 
 // Prints a short summary: model, MACs, unique ID, flash size, CPU temperature,
-// reset reason, uptime (used by the `info` command).
+// USB host, reset reason, uptime (used by the `info` command).
 void PrintShortInfo();
 
 // Prints every named eFuse field (list generated from the IDF eFuse table).

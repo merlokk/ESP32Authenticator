@@ -1,7 +1,7 @@
 idf_component_register(SRCS "hardware.cpp" "efuse_dump.cpp"
                     INCLUDE_DIRS "."
                     PRIV_REQUIRES esp_driver_tsens app_update efuse spi_flash esp_psram esp_partition nvs_flash
-                                  bootloader_support esp_timer)
+                                  bootloader_support esp_timer esp_driver_usb_serial_jtag)
 
 # Full eFuse field list, generated from the IDF table for the current target.
 idf_build_get_property(python PYTHON)

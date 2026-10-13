@@ -120,9 +120,9 @@ Opening the port with RTS asserted resets the chip.
 | `help` | command list |
 | `term` / `term smart` / `term dumb` | ask the terminal / force line editing + up-arrow history (32 commands) on / off. Off at boot: nobody answers the probe then. Smart mode needs a terminal that answers cursor queries (PuTTY does); if the console goes silent, reset the board |
 | `version` | firmware version, build date, IDF version, ELF SHA256, chip, running slot |
-| `info` | short: model, MACs, unique ID, flash size, CPU temperature, reset reason, uptime |
+| `info` | short: model, MACs, unique ID, flash size, CPU temperature, USB host (connected = host sends SOF, port open or not), reset reason, uptime |
 | `reboot` | software reset (the USB console reconnects) |
-| `hwinfo` | chip, MACs, eFuse unique ID, flash JEDEC/size, PSRAM, heap, eFuse security/download/USB bits, key blocks, NVS stats, flash layout (bootloader version, partitions, image sizes, gaps), OTA state (running/boot/next slot, rollback, raw otadata), CPU temperature, reset reason, uptime |
+| `hwinfo` | chip, MACs, eFuse unique ID, flash JEDEC/size, PSRAM, heap, eFuse security/download/USB bits, key blocks, NVS stats, flash layout (bootloader version, partitions, image sizes, gaps), OTA state (running/boot/next slot, rollback, raw otadata), CPU temperature, USB host, reset reason, uptime |
 | `spiffs info` | partition address/size, mount point, total/used/free (esp_spiffs_info), file count |
 | `spiffs ls` | SPIFFS files: size, modification time, file/fs totals |
 | `spiffs cat <file>` | print a SPIFFS file as text |
