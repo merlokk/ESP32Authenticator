@@ -5,10 +5,10 @@
 | Layer | Choice |
 |---|---|
 | Framework | ESP-IDF (C/C++) |
-| UI | LVGL, rendered to the e-ink panel |
+| UI | LVGL on the e-ink panel (planned; today: USB console + web site) |
 | Host link | BLE HID keyboard (types credentials), BLE FIDO2 (CTAP2) |
 | Network | Wi-Fi (client / AP / AP+client) and a configuration web site |
-| Storage | encrypted file with settings and credentials |
+| Storage | `config.json` and `fido.bin` on SPIFFS, plain (encrypted storage planned) |
 
 Reference ESP-IDF + LVGL project: `../../ai-remote/approver-esp32` ([GitHub](https://github.com/merlokk/ai-remote/tree/main/approver-esp32)).
 
@@ -20,8 +20,8 @@ Reference ESP-IDF + LVGL project: `../../ai-remote/approver-esp32` ([GitHub](htt
 | `components/` | app components (`cli`: USB command line; `config`: config.json; `wifimgr`: Wi-Fi policy + manager; `web`: configuration site, see Wi-Fi and web; `fido_ctap`: CTAP 2.1 core, see FIDO2) |
 | `lib/` | third-party git submodules, used unmodified (`lionkey`) |
 | `host_test/` | host tests (Unity, MSVC), no board: see Tests |
-| `utils/` | host-side Python tools over the USB console (`spiffs.py`: ls/info/rm/get/put; `ble.py`: ble commands, `kb` text quoting) |
-| `drivers/` | hardware drivers, one component per device (`hardware`: SoC info; `spiffs_fs`: SPIFFS on `spiffs` at `/spiffs`, never formatted, it holds stock data on the X4 Pro; `ble`, `ble_kb`, `ble_fido`: see BLE; `wifi`: the radio (`wifi::Radio`), no decisions, stores nothing; `buttons`: GPIO buttons, polled; `crypto`: hardware RNG, SHA-256, AES-256-CBC via PSA) |
+| `utils/` | host-side Python tools over the USB console (`device.py`: console session; `spiffs.py`: ls/info/rm/get/put; `ble.py`: ble commands, `kb` text quoting) |
+| `drivers/` | hardware drivers, one component per device (`hardware`: SoC info, eFuse, USB host connected; `spiffs_fs`: SPIFFS on `spiffs` at `/spiffs`, never formatted, it holds stock data on the X4 Pro; `ble`, `ble_kb`, `ble_fido`: see BLE; `wifi`: the radio (`wifi::Radio`), no decisions, stores nothing; `buttons`: GPIO buttons, polled; `crypto`: hardware RNG, SHA-256, AES-256-CBC via PSA) |
 
 ## Config
 
@@ -35,6 +35,9 @@ Reference ESP-IDF + LVGL project: `../../ai-remote/approver-esp32` ([GitHub](htt
 - Save is atomic: `config.json.new`, remove, rename; boot finishes an
   interrupted write.
 - Plain text, Wi-Fi passwords included, until the encrypted storage exists.
+- `Data` is over a kilobyte: parsing stages it on the heap, never on a task
+  stack (main 3.5 KB, console and httpd 4 KB; a stack copy overflowed main
+  and boot-looped the board).
 
 ```json
 {
@@ -72,11 +75,13 @@ leading zeros. `internet`: `intervalSeconds` 5..3600, `timeoutMs` 100..10000,
 `host_test/`: plain CMake project built by MSVC (ESP-IDF's `linux` target
 cannot link on Windows), Unity from ESP-IDF, cJSON from `managed_components/`
 (run `idf.py build` once). `fakes/` shadows the few ESP-IDF headers used.
-Pattern from approver-esp32.
+Pattern from approver-esp32. Suites: `config`, `wifi_policy`, `reachability`,
+`web_auth`, `web_paths` (paths + server policy), `web_settings`; only code with
+no hardware (pure headers) is under test.
 
 ```powershell
-host_test\run.cmd            # all suites
-host_test\run.cmd config     # suites whose name contains "config"
+host_testun.cmd            # all suites
+host_testun.cmd config     # suites whose name contains "config"
 ```
 
 ## BLE
@@ -116,16 +121,20 @@ Modes (`wifi.mode`, `wifi.active` false = off):
   `apWindowSeconds` (held open while a station is on it, endless with no
   networks), then the walk again. A wrong password is skipped until the
   window ends or the list changes; a drop while online is not a refusal.
-- Static address per network: set on association (DHCP client stopped first);
-  a DHCP network after a static one starts the DHCP client again.
-- Internet check (client link only): a round when the link comes up, then
-  every `intervalSeconds`; targets in turn from the last one that answered,
-  one reply = online; `failures` consecutive failed rounds = offline;
-  unknown without a link or before the first answer. Never touches the link.
 - `ap`: the AP only.
 - `apsta`: the AP always, plus the client walk; instead of the AP window it
   rests `apWindowSeconds` between cycles. While the station scans/joins, the
   AP follows its channel (one radio).
+
+On a client link:
+- Static address per network: set on association (DHCP client stopped first);
+  a DHCP network after a static one starts the DHCP client again.
+- Internet check: a round when the link comes up, then every
+  `intervalSeconds`; targets in turn from the last one that answered, one
+  reply = online; `failures` consecutive failed rounds = offline; unknown
+  without a link or before the first answer. Never touches the link.
+- Settings edits restart the walk (`wifimgr::Apply`, drops the link); the
+  internet check settings do not (`ApplyInternetCheck`).
 
 Web site (`components/web`): `esp_http_server` on port 80, pages embedded in
 the firmware (`www/`), one stylesheet+script file fetched after the page.
@@ -136,7 +145,7 @@ and never starts without lwIP (an assert).
 
 | Route | |
 |---|---|
-| `GET /`, `/*.html`, `/app.js` | pages (whitelist of names/extensions; anything else, e.g. `/config.json`, is the 404 page) |
+| `GET /`, `/*.html`, `/app.js` | pages: front (network, BLE, device), Wi-Fi settings, device status, restart. Whitelist of names/extensions; anything else, e.g. `/config.json`, is the 404 page |
 | `GET /api/status` | firmware, heap, SPIFFS, Wi-Fi (IP, MAC, internet), AP, BLE, FIDO state (no secrets) |
 | `GET /api/devstatus` | the console's `devstatus` dump (stdout swapped for the request) |
 | `GET /api/settings`, `POST /api/settings` | Wi-Fi mode, AP, networks (with `ip`; absent `ip` keeps the current one). Whitelist; passwords write-only (absent/null keeps, `""` clears); all-or-nothing; memory only |
@@ -149,6 +158,8 @@ and never starts without lwIP (an assert).
   value, never decoded, constant-time. Not TLS.
 - `web.write` false: settings and actions refused (403), pages read-only.
 - Costs ~7 KB of internal heap while up.
+- Names from the air (SSIDs) are inserted as text, never as HTML; JSON strings
+  are escaped.
 
 ## FIDO2
 
