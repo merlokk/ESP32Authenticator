@@ -51,7 +51,7 @@ idf.py -p COM6 flash
 
 ## Utils
 
-`utils/` (Python 3, `pip install -r utils/requirements.txt`): console helpers, see [utils/README.md](utils/README.md).
+`utils/` (Python 3, `pip install -r utils/requirements.txt`): console helpers (`console.py`: any command or the raw log; `spiffs.py`; `ble.py`), see [utils/README.md](utils/README.md).
 Transfers are streamed in chunks, files are never loaded whole. `device.py` answers smart-mode cursor queries and switches the console to `term dumb` on connect.
 
 ```powershell

@@ -12,9 +12,26 @@ All tools take `-p <port>` (e.g. `COM6`) and exit with 1 when the device reports
 
 | File | Purpose |
 |---|---|
-| `device.py` | Console session used by the tools: opens the port with DTR/RTS released (RTS resets the chip), answers smart-mode cursor queries, switches the console to `term dumb`, streams command output line by line |
+| `device.py` | Console session used by the tools: opens the port with DTR/RTS released (RTS resets the chip), answers smart-mode cursor queries, switches the console to `term dumb`, streams command output line by line. Writes time out after 2 s (a hung app does not read its console) |
+| `console.py` | Any console command (`wifi`, `web`, `config`, `devstatus`, ...), or the raw log without writing |
 | `spiffs.py` | SPIFFS files |
 | `ble.py` | BLE stack, pairing, host switching, keyboard |
+
+## console.py
+
+```powershell
+python utils/console.py -p COM6 "wifi info" "web"       # several commands, in order
+python utils/console.py -p COM6 --wait 30 "wifi ping"   # longer silence allowed per command
+python utils/console.py -p COM6 --log [seconds]         # read only, default 10 s
+```
+
+- Prints each command's output (ESP log lines filtered); with several commands
+  each starts with `>>> <command>`.
+- `--log`: when commands time out ("the device does not read its console"),
+  read the boot log and panic backtrace; decode the addresses with
+  `xtensa-esp32s3-elf-addr2line` (see [build.md](../build.md)).
+- Secrets typed as arguments (`wifi set <ssid> <password>`) stay in the shell
+  history; type them yourself.
 
 ## spiffs.py
 

@@ -25,6 +25,9 @@ class Device:
         self.ser.port = port
         self.ser.baudrate = 115200
         self.ser.timeout = 0.1
+        # A hung or boot-looping app stops reading its console and a write
+        # would block forever: fail instead (`console.py --log` shows why).
+        self.ser.write_timeout = 2
         self.ser.dtr = False
         self.ser.rts = False
         self.ser.open()
@@ -52,7 +55,11 @@ class Device:
         unknown command.
         """
         self.ser.reset_input_buffer()
-        self.ser.write(CURSOR_REPLY + EOL)
+        try:
+            self.ser.write(CURSOR_REPLY + EOL)
+        except serial.SerialTimeoutException:
+            raise TimeoutError("the device does not read its console (hung or "
+                               "boot-looping?): try 'console.py --log'") from None
         self.read_until(PROMPT)
         time.sleep(0.2)
         while self.ser.in_waiting:
@@ -84,7 +91,11 @@ class Device:
         return data
 
     def send_command(self, line: str) -> None:
-        self.ser.write(line.encode() + EOL)
+        try:
+            self.ser.write(line.encode() + EOL)
+        except serial.SerialTimeoutException:
+            raise TimeoutError("the device does not read its console (hung or "
+                               "boot-looping?): try 'console.py --log'") from None
 
     def lines(self, skip_echo: bool = True):
         """Yields output lines of the running command until the prompt.
