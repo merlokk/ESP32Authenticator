@@ -32,6 +32,8 @@ ESP-IDF setup, build/flash, tests, web site access, CLI: [build.md](build.md).
 
 Windows 11 BLE FIDO2 fix (GATT tail service): [windows-ble-fido.md](windows-ble-fido.md).
 
+Credential store encryption, PSRAM store, SD for hundreds of keys (analysis): [storage-encryption.md](storage-encryption.md).
+
 ## Hardware
 
 Pinout, display controllers, devices: [hardware.md](hardware.md).

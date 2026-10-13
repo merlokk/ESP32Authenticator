@@ -192,6 +192,8 @@ submodule) behind `ble_fido`. API: `fido_ctap_init(hooks, store)`,
   run, button wait included; the console waits 1 s, then "busy"). The console
   reset is authenticatorReset without the 10 s / button rule. A delete only
   flags the item: the file shrinks at the next boot (compaction).
+- The store is plain text today (private keys, PIN hash): encryption and an SD
+  store for hundreds of keys are planned, see [storage-encryption.md](storage-encryption.md).
 - Tests: `tests/fido2` over BLE, all 67 pass on the dev board (see build.md).
 
 ## Flash layout
