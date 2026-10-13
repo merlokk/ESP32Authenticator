@@ -37,8 +37,10 @@ constexpr UBaseType_t kWorkerPriority = 5;
 // fidoServiceRevisionBitfield: bit 5 = FIDO2 (CTAP2) over BLE.
 constexpr uint8_t kRevisionFido2 = 0x20;
 
-// Max size of one fidoControlPoint write (20..512).
+// Max size of one fidoControlPoint write (20..512). Reported as MTU - 3 so a
+// frame fits one ATT write (no long writes); larger frames are still accepted.
 constexpr uint16_t kControlPointLength = 512;
+constexpr uint16_t kControlPointLengthMin = 20;
 // Max assembled request / response (CTAP2 messages are small; 7609 is the limit).
 constexpr size_t kMaxMessage = 2048;
 
@@ -218,8 +220,12 @@ int Access(uint16_t, uint16_t, ble_gatt_access_ctxt *ctxt, void *arg) {
         case 2:  // fidoStatus: notify only
             return BLE_ATT_ERR_READ_NOT_PERMITTED;
         case 3: {  // fidoControlPointLength, big-endian
-            ESP_LOGD(TAG, "control point length read");
-            const uint8_t v[2] = {kControlPointLength >> 8, kControlPointLength & 0xFF};
+            uint16_t n = ble::NotifyPayload();
+            n = n < kControlPointLengthMin ? kControlPointLengthMin
+                : n > kControlPointLength  ? kControlPointLength
+                                           : n;
+            ESP_LOGD(TAG, "control point length read: %u", n);
+            const uint8_t v[2] = {static_cast<uint8_t>(n >> 8), static_cast<uint8_t>(n)};
             return os_mbuf_append(ctxt->om, v, 2) == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
         }
         case 4:  // fidoServiceRevisionBitfield
