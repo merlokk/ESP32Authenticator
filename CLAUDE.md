@@ -14,8 +14,10 @@ Firmware: C/C++ on **ESP-IDF**.
 ## Status
 
 - Done: BLE keyboard + FIDO2 (CTAP 2.1, works with Chrome on Windows 11),
-  bonding and host switching; Wi-Fi client / AP / AP+client with static IPs and
-  an internet check; configuration web site; USB console; `config.json`.
+  bonding and host switching; FIDO2 credential management on the console
+  (`fido2 info|list|delete|reset`) and the store on the web front page; Wi-Fi
+  client / AP / AP+client with static IPs and an internet check; configuration
+  web site; USB console; `config.json`.
 - Not yet: e-ink UI (LVGL), encrypted storage, credential records
   (site/login/password/TOTP), sync over Wi-Fi, microSD config.
 
@@ -52,3 +54,7 @@ Reference projects (local paths + git): [sources.md](sources.md).
 - Passwords never in logs, console dumps or HTTP answers; the web write path is
   a whitelist; config changes from the site are memory-only until saved.
 - Verify on the board after flashing (console via `utils/`, HTTP via `curl`).
+- The board holds the user's real data (FIDO2 credentials, PIN, BLE bonds,
+  Wi-Fi passwords): `fido2 reset`, deleting non-test credentials, `ble unpair`,
+  `spiffs format` only when the user asks. Test leftovers (`ctap-test*.example`)
+  may be removed.
