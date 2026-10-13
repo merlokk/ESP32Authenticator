@@ -23,10 +23,18 @@ All tools take `-p <port>` (e.g. `COM6`) and exit with 1 when the device reports
 python utils/console.py -p COM6 "wifi info" "web"       # several commands, in order
 python utils/console.py -p COM6 --wait 30 "wifi ping"   # longer silence allowed per command
 python utils/console.py -p COM6 --log [seconds]         # read only, default 10 s
+python utils/console.py -p COM6 devstatus               # everything at once
+python utils/console.py -p COM6 "fido2 list"            # credentials: #, id, site, user
+python utils/console.py -p COM6 "fido2 delete 905f88d7" # by id prefix (numbers shift)
+python utils/console.py -p COM6 "wifi static 1 192.168.1.50 255.255.255.0 192.168.1.1"
 ```
 
+The command list is in [build.md](../build.md#cli) (`help` on the device).
+
 - Prints each command's output (ESP log lines filtered); with several commands
-  each starts with `>>> <command>`.
+  each starts with `>>> <command>`. Exit code 1 if any command failed; the
+  rest still run.
+- Several deletes: use ids, not `#` (the list renumbers after each one).
 - `--log`: when commands time out ("the device does not read its console"),
   read the boot log and panic backtrace; decode the addresses with
   `xtensa-esp32s3-elf-addr2line` (see [build.md](../build.md)).
