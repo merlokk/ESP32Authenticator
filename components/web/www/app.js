@@ -125,6 +125,14 @@
     el.firstElementChild.className = value <= badAt ? "bad" : value <= warnAt ? "warn" : "";
   }
 
+  // The bar is the used part: amber from warnFrom %, red from badFrom %.
+  function fill(el, percent, warnFrom, badFrom) {
+    if (!el || !el.firstElementChild) return;
+    var value = Math.max(0, Math.min(100, percent));
+    el.firstElementChild.style.width = value + "%";
+    el.firstElementChild.className = value >= badFrom ? "bad" : value >= warnFrom ? "warn" : "";
+  }
+
   function ask(method, url, body, onOk, onFail) {
     var r = new XMLHttpRequest();
     r.open(method, url, true);
@@ -205,7 +213,7 @@
              !d.fido_pin ? "faint" : d.fido_pin_retries <= 3 ? "warn" : "ok");
         text(by("fido-counter"), d.fido_counter + " signature(s)");
         by("fido-meter").style.display = "";
-        meter(by("fido-meter"), 100 - (d.fido_creds / d.fido_max) * 100, 20, 10);
+        fill(by("fido-meter"), (d.fido_creds / d.fido_max) * 100, 80, 90);
       } else {
         text(by("fido-store"), "busy", "faint");  // a request holds the store
         text(by("fido-pin"), "-", "faint");

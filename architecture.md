@@ -160,6 +160,13 @@ and never starts without lwIP (an assert).
 - Costs ~7 KB of internal heap while up.
 - Names from the air (SSIDs) are inserted as text, never as HTML; JSON strings
   are escaped.
+- Front page (polls `/api/status` every 5 s): Network (Wi-Fi state and mode,
+  network, signal, address static/dhcp, MAC, internet, AP), Bluetooth (BLE,
+  keyboard, FIDO2 readiness and counts; `stored` with a bar of the slots used,
+  amber from 80 %, red from 90 %; PIN and attempts left; signature counter),
+  Device (uptime, heap, PSRAM, SPIFFS with a bar of the free space, firmware).
+- Pages and `app.js` are cached for an hour: after a reflash, reload with
+  Ctrl+F5 to get the new script.
 
 ## FIDO2
 
