@@ -29,8 +29,17 @@ idf.py -p COM6 flash
   used until the X4 Pro is available.
 - A board running a TinyUSB app (PID 4001) ignores DTR/RTS. Enter download
   mode by hand: hold BOOT, press RESET.
+- Run `idf.py` from the project root or pass `-C <project>`: from a
+  subdirectory (e.g. `host_test/`) it configures a build there.
+- `flash` writes bootloader, partition table and app; SPIFFS (`config.json`,
+  `fido.bin`) and NVS (bonds) are kept.
 - If the app does not start after flashing, run
-  `python -m esptool -p COM6 --before no-reset --after watchdog-reset chip-id`.
+  `python -m esptool -p COM6 --before no-reset --after watchdog-reset chip-id`
+  (esptool is in the IDF Python env: run it inside the profile).
+- Console silent (commands time out, writes to COM6 block): the app is hung or
+  boot-looping. Read the port without writing (pyserial, DTR/RTS low) to get
+  the boot log and panic backtrace, then decode it:
+  `xtensa-esp32s3-elf-addr2line -pfiaC -e build/esp32-authenticator.elf <addr...>`.
 - On the X4 Pro the app `.bin` is flashed through the CrossPoint unlocker-tool
   (see [architecture.md](architecture.md)).
 
@@ -65,6 +74,9 @@ python utils/ble.py -p COM6 kb "text"          # or kb --stdin; quoting and spli
 ```powershell
 host_test\run.cmd [suite...]   # host tests, no board (MSVC); see architecture.md
 ```
+
+Suites: `config`, `wifi_policy`, `reachability`, `web_auth`, `web_paths`,
+`web_settings`. Run them after any change to those components.
 
 `tests/fido2/`: CTAP2 authenticator suite (pytest + python-fido2,
 `pip install -r tests/fido2/requirements.txt`). Transport-agnostic, checked
@@ -109,6 +121,19 @@ python -m pytest [-k name] [--transport ble] [--device YubiKey|<address>] [--con
   test (stack dump and exit). Run Python with `-u` when piping the output.
 - Touches: one for the shared credential, one each for `exclude_list` and
   `assertion_with_touch`, one for the discoverable credential.
+
+## Web site
+
+Up when `web` says `running`; `web` prints the address(es).
+
+- Default `web auto`: only while the device's own AP is up (`wifi mode ap` /
+  `apsta`, or client mode's temporary AP). Join the AP (`esp32-auth`, default
+  password `esp32-auth`: change it with `wifi ap`) and open http://192.168.4.1/.
+- On a home network: `wifi set <ssid> <password>`, `web on`, then the IP from
+  `web` / `wifi info`.
+- Open site by default; `web login <user> <password>` locks every route.
+- Quick API checks: `curl http://<ip>/api/status`, `/api/settings`,
+  `/api/wifi/scan`.
 
 ## CLI
 
@@ -156,7 +181,7 @@ Opening the port with RTS asserted resets the chip.
 | `web login <user> <password>` / `web login off` | basic auth for the whole site / open site (saved). Both or neither; no ':' in the user |
 | `web write on\|off` | allow / refuse settings changes from the site (saved) |
 | `devstatus` | `version`, `info`, `wifi info`, `web`, `ble info` in one dump (also the site's Device status page) |
-| `config show` | current config as JSON, passwords masked |
+| `config show` | current config as JSON, passwords masked (networks, AP, web) |
 | `config info` | file path, source (file / built-in defaults), why the file was not used |
-| `config reload` / `config save` | re-read config.json (keeps values on error) and apply Wi-Fi and web settings / write current values |
+| `config reload` / `config save` | re-read config.json (keeps values on error) and apply Wi-Fi (incl. internet check) and web settings / write current values |
 | `efuse` | every eFuse field (list generated at build time from IDF `esp_efuse_table.csv`) and raw blocks BLK0..BLK10 |
