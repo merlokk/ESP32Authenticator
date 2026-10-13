@@ -1,12 +1,16 @@
 #include "fido_ctap.h"
 
+#include <stdio.h>
 #include <string.h>
+#include <sys/stat.h>
 
 #include "ctap.h"
+#include "ctap_credentials_store.h"
 #include "ctap_file_storage.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 
 static const char *TAG = "fido_ctap";
@@ -18,9 +22,15 @@ static const char *TAG = "fido_ctap";
 #define UP_TIMEOUT_MS 30000
 #define KEEPALIVE_MS 300  // while processing / waiting for the user
 #define UP_POLL_MS 20
+#define ADMIN_WAIT_MS 1000  // console vs a running request
 
 static fido_ctap_hooks_t hooks;
 static bool ready = false;
+
+// One user of the core and its store at a time: the transport's request task
+// and the console. A request holds it for its whole run (button wait included).
+static StaticSemaphore_t lock_storage;
+static SemaphoreHandle_t lock = NULL;
 
 // Crypto table: ctap_crypto_esp.cpp (crypto driver + lionkey's micro-ecc).
 extern const ctap_crypto_t fido_ctap_crypto;
@@ -90,6 +100,9 @@ ctap_user_presence_result_t ctap_wait_for_user_presence(void) {
 // --- API
 
 esp_err_t fido_ctap_init(const fido_ctap_hooks_t *h, const char *store_path) {
+    if (lock == NULL) {
+        lock = xSemaphoreCreateMutexStatic(&lock_storage);
+    }
     hooks = *h;
     storage_ctx.path = store_path;
     if (storage.init(&storage) != CTAP_STORAGE_OK) {
@@ -130,6 +143,144 @@ size_t fido_ctap_request(const uint8_t *msg, size_t len, uint8_t *out, size_t ou
     };
     last_status = CTAP_STATUS_PROCESSING;
     last_keepalive_ms = now_ms();
+    xSemaphoreTake(lock, portMAX_DELAY);
     out[0] = ctap_request(&state, msg[0], len - 1, msg + 1, &response);
+    xSemaphoreGive(lock);
     return 1 + response.length;
+}
+
+// --- administration
+
+static esp_err_t admin_take(void) {
+    if (!ready) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    return xSemaphoreTake(lock, pdMS_TO_TICKS(ADMIN_WAIT_MS)) == pdTRUE ? ESP_OK
+                                                                         : ESP_ERR_TIMEOUT;
+}
+
+static void admin_give(void) { xSemaphoreGive(lock); }
+
+// A stored string (not NUL-terminated) into a C string, cut to fit.
+static void copy_text(char *out, const uint8_t *data, size_t size) {
+    if (size > FIDO_CTAP_TEXT_SIZE - 1) {
+        size = FIDO_CTAP_TEXT_SIZE - 1;
+    }
+    memcpy(out, data, size);
+    out[size] = '\0';
+}
+
+// The next valid credential after `item` (start with handle 0).
+static bool next_credential(ctap_storage_item_t *item, ctap_credential_handle_t *credential) {
+    while (storage.find_item(&storage, item) == CTAP_STORAGE_OK) {
+        if (item->size < sizeof(ctap_credential_source_t)) {
+            continue;
+        }
+        credential->source = (const ctap_credential_source_t *)item->data;
+        credential->item_handle = item->handle;
+        return true;
+    }
+    return false;
+}
+
+esp_err_t fido_ctap_info(fido_ctap_info_t *out) {
+    const esp_err_t err = admin_take();
+    if (err != ESP_OK) {
+        return err;
+    }
+    memset(out, 0, sizeof *out);
+    out->store_used = storage_ctx.mem.write_index;
+    out->store_size = sizeof store_memory;
+    out->max_credentials = storage_ctx.max_credentials;
+    out->persistent = storage_ctx.path != NULL;
+    struct stat st;
+    if (storage_ctx.path != NULL && stat(storage_ctx.path, &st) == 0) {
+        out->file_size = (size_t)st.st_size;
+    }
+    ctap_storage_item_t item = {.handle = 0, .key = CTAP_STORAGE_KEY_CREDENTIAL};
+    ctap_credential_handle_t credential;
+    while (next_credential(&item, &credential)) {
+        ++out->credentials;
+        if (ctap_credential_is_discoverable(&credential)) {
+            ++out->discoverable;
+        }
+    }
+    out->pin_set = ctap_is_pin_set(&state);
+    out->pin_retries = ctap_get_pin_total_remaining_attempts(&state);
+    out->sign_count = ctap_file_storage_counter();
+    admin_give();
+    return ESP_OK;
+}
+
+esp_err_t fido_ctap_list(fido_ctap_credential_t *out, size_t capacity, size_t *count) {
+    *count = 0;
+    const esp_err_t err = admin_take();
+    if (err != ESP_OK) {
+        return err;
+    }
+    ctap_storage_item_t item = {.handle = 0, .key = CTAP_STORAGE_KEY_CREDENTIAL};
+    ctap_credential_handle_t credential;
+    while (*count < capacity && next_credential(&item, &credential)) {
+        fido_ctap_credential_t *c = &out[(*count)++];
+        memset(c, 0, sizeof *c);
+        const ctap_credential_source_t *source = credential.source;
+        memcpy(c->id, source->id, sizeof c->id);
+        ctap_string_t rp_id;
+        ctap_credential_get_rp_id(&credential, &rp_id);
+        copy_text(c->rp_id, rp_id.data, rp_id.size);
+        CTAP_userEntity user;
+        ctap_credential_get_user(&credential, &user);
+        if (ctap_param_is_present(&user, CTAP_userEntity_name)) {
+            copy_text(c->user_name, user.name.data, user.name.size);
+        }
+        if (ctap_param_is_present(&user, CTAP_userEntity_displayName)) {
+            copy_text(c->display_name, user.displayName.data, user.displayName.size);
+        }
+        c->rp_id_truncated =
+            (source->flags & CTAP_CREDENTIAL_SOURCE_CTAP_flags_truncated_rp_id) != 0;
+        c->discoverable = ctap_credential_is_discoverable(&credential);
+        c->cred_protect = (uint8_t)(source->flags & CTAP_CREDENTIAL_SOURCE_CTAP_flags_credProtect);
+        c->size = item.size;
+    }
+    admin_give();
+    return ESP_OK;
+}
+
+esp_err_t fido_ctap_delete(const uint8_t id[FIDO_CTAP_CRED_ID_SIZE]) {
+    esp_err_t err = admin_take();
+    if (err != ESP_OK) {
+        return err;
+    }
+    err = ESP_ERR_NOT_FOUND;
+    ctap_storage_item_t item = {.handle = 0, .key = CTAP_STORAGE_KEY_CREDENTIAL};
+    ctap_credential_handle_t credential;
+    while (next_credential(&item, &credential)) {
+        if (memcmp(credential.source->id, id, FIDO_CTAP_CRED_ID_SIZE) == 0) {
+            err = ctap_delete_credential(&storage, &credential) == CTAP2_OK ? ESP_OK : ESP_FAIL;
+            break;
+        }
+    }
+    admin_give();
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "credential deleted from the console");
+    }
+    return err;
+}
+
+esp_err_t fido_ctap_reset(void) {
+    esp_err_t err = admin_take();
+    if (err != ESP_OK) {
+        return err;
+    }
+    // What authenticatorReset does after its checks: wipe the store (PIN
+    // included) and re-initialise the core's state.
+    err = storage.erase(&storage) == CTAP_STORAGE_OK ? ESP_OK : ESP_FAIL;
+    if (err == ESP_OK) {
+        ctap_init(&state);
+    }
+    admin_give();
+    if (err == ESP_OK) {
+        ESP_LOGW(TAG, "reset from the console: credentials and PIN deleted");
+    }
+    return err;
 }

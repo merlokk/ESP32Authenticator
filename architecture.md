@@ -179,6 +179,11 @@ submodule) behind `ble_fido`. API: `fido_ctap_init(hooks, store)`,
   board) within 30 s; KEEPALIVE every 300 ms; CANCEL aborts the wait.
 - Reset only within 10 s after boot (lionkey; the window restarts after a
   successful reset). No U2F/CTAP1.
+- Console (`fido2 info|list|delete|reset`): `fido_ctap_info/list/delete/reset`.
+  A mutex serialises them with CTAP requests (a request holds it for its whole
+  run, button wait included; the console waits 1 s, then "busy"). The console
+  reset is authenticatorReset without the 10 s / button rule. A delete only
+  flags the item: the file shrinks at the next boot (compaction).
 - Tests: `tests/fido2` over BLE, all 67 pass on the dev board (see build.md).
 
 ## Flash layout

@@ -22,6 +22,9 @@ size_t ctap_file_storage_estimate_num_remaining_items(const ctap_storage_t *stor
                                                      const ctap_storage_item_t *item);
 ctap_storage_status_t ctap_file_storage_erase(const ctap_storage_t *storage);
 
+// The global signature counter (NVS), 0 if never used.
+uint32_t ctap_file_storage_counter(void);
+
 #define CTAP_FILE_STORAGE_CONST_INIT(context_ptr)                                    \
     {                                                                                \
         .context = (context_ptr),                                                    \

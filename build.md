@@ -180,7 +180,11 @@ Opening the port with RTS asserted resets the chip.
 | `web on\|off\|auto` | serve on any network / never / only while the device's AP is up (saved) |
 | `web login <user> <password>` / `web login off` | basic auth for the whole site / open site (saved). Both or neither; no ':' in the user |
 | `web write on\|off` | allow / refuse settings changes from the site (saved) |
-| `devstatus` | `version`, `info`, `wifi info`, `web`, `ble info` in one dump (also the site's Device status page) |
+| `fido2 [info]` | credentials stored of max (resident), store bytes used of size, file size, PIN set and attempts left, signature counter |
+| `fido2 list` | credentials: #, id (first 8 hex digits), resident, site (RP ID, `...` if truncated), user name (display name) |
+| `fido2 delete <#\|id>` | delete one: number from `fido2 list` (1-2 digits) or a unique id prefix (4+ hex digits; numbers shift after a delete) |
+| `fido2 reset` / `fido2 reset confirm` | say what would go / delete every credential and the PIN (counter kept). Waits up to 1 s for a running FIDO request, else "busy" |
+| `devstatus` | `version`, `info`, `wifi info`, `web`, `ble info`, `fido2 info` in one dump (also the site's Device status page) |
 | `config show` | current config as JSON, passwords masked (networks, AP, web) |
 | `config info` | file path, source (file / built-in defaults), why the file was not used |
 | `config reload` / `config save` | re-read config.json (keeps values on error) and apply Wi-Fi (incl. internet check) and web settings / write current values |

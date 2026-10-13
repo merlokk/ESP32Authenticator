@@ -15,6 +15,7 @@
 #include "freertos/task.h"
 #include "ble.h"
 #include "ble_cmd.h"
+#include "fido_cmd.h"
 #include "wifi_cmd.h"
 #include "files.h"
 #include "hardware.h"
@@ -83,6 +84,8 @@ void PrintDevStatus() {
     PrintWebInfo();
     Section("ble info");
     ble::PrintInfo();
+    Section("fido2 info");
+    PrintFidoInfo();
 }
 
 int CmdDevStatus(int, char **) {
@@ -184,6 +187,15 @@ const esp_console_cmd_t kCommands[] = {
         .context = nullptr,
     },
     {
+        .command = "fido2",
+        .help = "FIDO2 credentials: info | list | delete <#|id> | reset [confirm]",
+        .hint = "<info|list|delete|reset> [args]",
+        .func = &CmdFido,
+        .argtable = nullptr,
+        .func_w_context = nullptr,
+        .context = nullptr,
+    },
+    {
         .command = "wifi",
         .help = "Wi-Fi: on | off | mode <client|ap|apsta> | info | scan | "
                 "ap [<ssid> [password] [channel]] | retry | networks | set <ssid> [password] | "
@@ -207,7 +219,7 @@ const esp_console_cmd_t kCommands[] = {
     },
     {
         .command = "devstatus",
-        .help = "Everything at once: version, info, wifi info, web, ble info "
+        .help = "Everything at once: version, info, wifi info, web, ble info, fido2 info "
                 "(also the site's Device status page)",
         .hint = nullptr,
         .func = &CmdDevStatus,

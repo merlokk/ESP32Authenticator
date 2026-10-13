@@ -159,6 +159,16 @@ ctap_storage_status_t ctap_file_storage_increment_counter(const ctap_storage_t *
     return CTAP_STORAGE_OK;
 }
 
+uint32_t ctap_file_storage_counter(void) {
+    nvs_handle_t h;
+    uint32_t value = 0;
+    if (nvs_open(kNvsNamespace, NVS_READONLY, &h) == ESP_OK) {
+        nvs_get_u32(h, kNvsCounter, &value);
+        nvs_close(h);
+    }
+    return value;
+}
+
 size_t ctap_file_storage_estimate_num_remaining_items(const ctap_storage_t *storage,
                                                      const ctap_storage_item_t *item) {
     size_t n = ctap_memory_storage_estimate_num_remaining_items(storage, item);
