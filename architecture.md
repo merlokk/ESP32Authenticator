@@ -45,7 +45,11 @@ Reference ESP-IDF + LVGL project: `../../ai-remote/approver-esp32` ([GitHub](htt
     "rounds": 2,
     "apWindowSeconds": 120,
     "ap": {"ssid": "esp32-auth", "password": "esp32-auth", "channel": 6},
-    "networks": [{"ssid": "Home", "password": "password123"}]
+    "networks": [
+      {"ssid": "Home", "password": "password123"},
+      {"ssid": "Office", "password": "", "ip": {"static": true, "address": "10.0.0.5",
+        "netmask": "255.255.255.0", "gateway": "10.0.0.1", "dns1": "10.0.0.1", "dns2": ""}}
+    ]
   },
   "ble": {"active": false},
   "web": {"mode": "auto", "write": true, "user": "", "password": ""}
@@ -55,7 +59,10 @@ Reference ESP-IDF + LVGL project: `../../ai-remote/approver-esp32` ([GitHub](htt
 `wifi.active` / `ble.active` start the radio at boot. Up to 4 networks, tried
 in order. Password: empty (open), 8..63 chars, or 64 hex digits. AP password:
 empty (open) or 8..63 chars; `rounds` 1..10, `apWindowSeconds` 30..3600,
-channel 1..13. Change the default AP password.
+channel 1..13. Change the default AP password. `ip` (optional, per network):
+`static` false or absent is DHCP (the typed fields are kept); with `static`
+true address/netmask/gateway are required, DNS optional; dotted quads, no
+leading zeros.
 
 ## Tests
 
@@ -105,6 +112,8 @@ Modes (`wifi.mode`, `wifi.active` false = off):
   `apWindowSeconds` (held open while a station is on it, endless with no
   networks), then the walk again. A wrong password is skipped until the
   window ends or the list changes; a drop while online is not a refusal.
+- Static address per network: set on association (DHCP client stopped first);
+  a DHCP network after a static one starts the DHCP client again.
 - `ap`: the AP only.
 - `apsta`: the AP always, plus the client walk; instead of the AP window it
   rests `apWindowSeconds` between cycles. While the station scans/joins, the
@@ -122,7 +131,7 @@ and never starts without lwIP (an assert).
 | `GET /`, `/*.html`, `/app.js` | pages (whitelist of names/extensions; anything else, e.g. `/config.json`, is the 404 page) |
 | `GET /api/status` | firmware, heap, SPIFFS, Wi-Fi, AP, BLE, FIDO state (no secrets) |
 | `GET /api/devstatus` | the console's `devstatus` dump (stdout swapped for the request) |
-| `GET /api/settings`, `POST /api/settings` | Wi-Fi mode, AP, networks. Whitelist; passwords write-only (absent/null keeps, `""` clears); all-or-nothing; memory only |
+| `GET /api/settings`, `POST /api/settings` | Wi-Fi mode, AP, networks (with `ip`; absent `ip` keeps the current one). Whitelist; passwords write-only (absent/null keeps, `""` clears); all-or-nothing; memory only |
 | `GET /api/wifi/scan` | access points (hidden/duplicate names dropped) |
 | `POST /api/action?do=save\|reload\|retry` | save config.json / reload it / put Wi-Fi settings on the radio |
 | `POST /api/reboot?confirm=reboot` | restart |

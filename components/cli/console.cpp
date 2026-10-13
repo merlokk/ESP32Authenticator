@@ -187,8 +187,8 @@ const esp_console_cmd_t kCommands[] = {
         .command = "wifi",
         .help = "Wi-Fi: on | off | mode <client|ap|apsta> | info | scan | "
                 "ap [<ssid> [password] [channel]] | retry | networks | set <ssid> [password] | "
-                "forget <ssid|all>",
-        .hint = "<on|off|mode|info|scan|ap|retry|networks|set|forget> [args]",
+                "static <n> <ip> <mask> <gw> [dns1] [dns2] | static <n> off | forget <ssid|all>",
+        .hint = "<on|off|mode|info|scan|ap|retry|networks|set|static|forget> [args]",
         .func = &CmdWifi,
         .argtable = nullptr,
         .func_w_context = nullptr,

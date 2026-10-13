@@ -95,6 +95,63 @@ bool ReadAp(const cJSON *ap, config::Wifi *wifi, const config::Wifi &before, Wri
                         config::ValidApPassword, out, "wifi.ap.password");
 }
 
+// Absent or null keeps `keep` (the page has no address fields); an object
+// replaces it whole, `"static": false` is DHCP.
+bool ReadIp(const cJSON *ip, config::StaticIp *into, const config::StaticIp &keep,
+            WriteOutcome *out) {
+    if (ip == nullptr || cJSON_IsNull(ip)) {
+        *into = keep;
+        return true;
+    }
+    *into = {};
+    if (!cJSON_IsObject(ip)) {
+        Say(out, WriteResult::kBadValue, "wifi.networks[].ip");
+        return false;
+    }
+    struct Field {
+        const char *name;
+        char *text;
+    };
+    const Field fields[] = {{"address", into->address}, {"netmask", into->netmask},
+                            {"gateway", into->gateway}, {"dns1", into->dns1},
+                            {"dns2", into->dns2}};
+    for (const cJSON *item = ip->child; item != nullptr; item = item->next) {
+        const char *key = item->string != nullptr ? item->string : "";
+        if (std::strcmp(key, "static") == 0) {
+            if (!cJSON_IsBool(item)) {
+                Say(out, WriteResult::kBadValue, "static");
+                return false;
+            }
+            into->enabled = cJSON_IsTrue(item);
+            continue;
+        }
+        const Field *field = nullptr;
+        for (const Field &candidate : fields) {
+            if (std::strcmp(key, candidate.name) == 0) {
+                field = &candidate;
+            }
+        }
+        if (field == nullptr) {
+            Say(out, WriteResult::kUnknownField, key);
+            return false;
+        }
+        if (!cJSON_IsNull(item) && !CopyField(item, field->text, config::kIpTextSize, out, key)) {
+            return false;
+        }
+    }
+    char reason[config::kErrorSize] = {};
+    if (!config::CheckStaticIp(*into, reason, sizeof reason)) {
+        // The reason starts with the field name ("gateway: ...").
+        char name[sizeof out->detail] = {};
+        for (size_t i = 0; i + 1 < sizeof name && reason[i] != '\0' && reason[i] != ':'; ++i) {
+            name[i] = reason[i];
+        }
+        Say(out, WriteResult::kBadValue, name);
+        return false;
+    }
+    return true;
+}
+
 bool ReadNetworks(const cJSON *list, config::Wifi *wifi, const config::Wifi &before,
                   WriteOutcome *out) {
     if (!cJSON_IsArray(list)) {
@@ -114,7 +171,8 @@ bool ReadNetworks(const cJSON *list, config::Wifi *wifi, const config::Wifi &bef
         }
         for (const cJSON *item = entry->child; item != nullptr; item = item->next) {
             const char *key = item->string != nullptr ? item->string : "";
-            if (std::strcmp(key, "ssid") != 0 && std::strcmp(key, "password") != 0) {
+            if (std::strcmp(key, "ssid") != 0 && std::strcmp(key, "password") != 0 &&
+                std::strcmp(key, "ip") != 0) {
                 Say(out, WriteResult::kUnknownField, key);
                 return false;
             }
@@ -129,9 +187,11 @@ bool ReadNetworks(const cJSON *list, config::Wifi *wifi, const config::Wifi &bef
             return false;
         }
         const char *keep = "";
+        config::StaticIp keep_ip = {};
         for (uint8_t i = 0; i < before.network_count; ++i) {
             if (std::strcmp(before.networks[i].ssid, network.ssid) == 0) {
                 keep = before.networks[i].password;
+                keep_ip = before.networks[i].ip;
             }
         }
         for (uint8_t i = 0; i < written; ++i) {
@@ -141,7 +201,8 @@ bool ReadNetworks(const cJSON *list, config::Wifi *wifi, const config::Wifi &bef
             }
         }
         if (!CopyPassword(entry, network.password, sizeof network.password, keep,
-                          config::ValidPassword, out, "wifi.networks[].password")) {
+                          config::ValidPassword, out, "wifi.networks[].password") ||
+            !ReadIp(cJSON_GetObjectItemCaseSensitive(entry, "ip"), &network.ip, keep_ip, out)) {
             return false;
         }
         ++written;

@@ -142,11 +142,12 @@ Opening the port with RTS asserted resets the chip.
 | `ble kb <text>` | type text on the connected host (US layout). esp_console drops single-backslash escapes: type `\\n` (Enter), `\\t` (Tab), `\\\\`; quote to keep spaces |
 | `wifi on` / `wifi off` | radio on in the configured mode / off (saved) |
 | `wifi mode client\|ap\|apsta` | set the mode and switch the radio on (saved) |
-| `wifi info` | config, policy state (asked vs actual, timers), network and round, last error, radio mode, channel, MACs, hostname, IP/netmask/gateway/DNS, AP and its clients |
+| `wifi info` | config, policy state (asked vs actual, timers), network and round, last error, radio mode, channel, MACs, hostname, IP (static/dhcp)/netmask/gateway/DNS, AP and its clients |
 | `wifi scan` | access points: RSSI, channel, auth, SSID (brings the radio up for it if off) |
 | `wifi ap [<ssid> [password] [channel]]` | show / set the device's own AP (empty password: open) |
 | `wifi retry` | restart the current mode from the top (re-reads the settings) |
-| `wifi networks` | configured networks, in try order, refused passwords marked |
+| `wifi networks` | configured networks, in try order, static addresses, refused passwords marked |
+| `wifi static <n> <ip> <mask> <gw> [dns1] [dns2]` / `wifi static <n> off` | fixed address for network n (all fields checked before saving) / back to DHCP, typed address kept |
 | `wifi set <ssid> [password]` / `wifi forget <ssid\|all>` | add/update / remove a network (quote an SSID with spaces; no password = open) |
 | `web [info]` | wanted mode, running, address(es), heap cost, auth, write, counters |
 | `web on\|off\|auto` | serve on any network / never / only while the device's AP is up (saved) |

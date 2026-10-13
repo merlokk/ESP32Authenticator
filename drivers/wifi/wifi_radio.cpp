@@ -213,9 +213,60 @@ void Radio::DropStation() {
     want_connect_ = false;
 }
 
+esp_err_t Radio::SetDns(uint32_t address, int type) {
+    if (address == 0) {
+        return ESP_OK;
+    }
+    esp_netif_dns_info_t dns = {};
+    dns.ip.type = ESP_IPADDR_TYPE_V4;
+    dns.ip.u_addr.ip4.addr = address;
+    return esp_netif_set_dns_info(static_cast<esp_netif_t *>(sta_netif_),
+                                  static_cast<esp_netif_dns_type_t>(type), &dns);
+}
+
+void Radio::ApplyAddressing() {
+    auto *netif = static_cast<esp_netif_t *>(sta_netif_);
+    if (netif == nullptr) {
+        return;
+    }
+    if (!static_ip_.enabled) {
+        // The netif outlives one association: a static network before this
+        // one stopped the DHCP client.
+        const esp_err_t err = esp_netif_dhcpc_start(netif);
+        if (err != ESP_OK && err != ESP_ERR_ESP_NETIF_DHCP_ALREADY_STARTED) {
+            ESP_LOGW(TAG, "dhcp client would not start: %s", esp_err_to_name(err));
+        }
+        return;
+    }
+    // Stop asking first: setting an address with the client running races a lease.
+    esp_err_t err = esp_netif_dhcpc_stop(netif);
+    if (err != ESP_OK && err != ESP_ERR_ESP_NETIF_DHCP_ALREADY_STOPPED) {
+        ESP_LOGE(TAG, "dhcp client would not stop: %s, staying on dhcp", esp_err_to_name(err));
+        return;
+    }
+    esp_netif_ip_info_t info = {};
+    info.ip.addr = static_ip_.address;
+    info.netmask.addr = static_ip_.netmask;
+    info.gw.addr = static_ip_.gateway;
+    // On an interface that is up this raises IP_EVENT_STA_GOT_IP itself, so
+    // the link becomes connected the same way as with DHCP.
+    err = esp_netif_set_ip_info(netif, &info);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "static address refused: %s", esp_err_to_name(err));
+        return;  // no address: the attempt times out and is reported
+    }
+    if (SetDns(static_ip_.dns1, ESP_NETIF_DNS_MAIN) != ESP_OK ||
+        SetDns(static_ip_.dns2, ESP_NETIF_DNS_BACKUP) != ESP_OK) {
+        ESP_LOGW(TAG, "static dns servers not fully set");
+    }
+    ESP_LOGI(TAG, "static address " IPSTR "/" IPSTR " gw " IPSTR, IP2STR(&info.ip),
+             IP2STR(&info.netmask), IP2STR(&info.gw));
+}
+
 // --- what the radio is asked to do ------------------------------------------
 
-esp_err_t Radio::StartClient(const char *ssid, const char *password, bool keep_ap) {
+esp_err_t Radio::StartClient(const char *ssid, const char *password, bool keep_ap,
+                             const StaticIp *ip) {
     if (!ready_ || scanning_) {
         return ESP_ERR_INVALID_STATE;  // a scan holds the radio: ask again
     }
@@ -253,9 +304,11 @@ esp_err_t Radio::StartClient(const char *ssid, const char *password, bool keep_a
         return err;
     }
     ap_up_ = ap;
+    static_ip_ = ip != nullptr ? *ip : StaticIp{};
 
     xSemaphoreTake(lock_, portMAX_DELAY);
     status_.mode = ap ? Mode::kApSta : Mode::kClient;
+    status_.ip_is_static = static_ip_.enabled;
     status_.link = Link::kConnecting;
     status_.failure = Failure::kNone;
     status_.reason = 0;
@@ -487,6 +540,10 @@ void Radio::OnEvent(const char *base, int32_t id, void *data) {
                 }
                 break;
 
+            case WIFI_EVENT_STA_CONNECTED:
+                ApplyAddressing();  // associated, no address yet
+                break;
+
             case WIFI_EVENT_STA_DISCONNECTED: {
                 if (suppress_disconnect_ > 0) {
                     suppress_disconnect_ = static_cast<uint8_t>(suppress_disconnect_ - 1);
@@ -544,7 +601,8 @@ void Radio::OnEvent(const char *base, int32_t id, void *data) {
         status_.ip = address.addr;
         ++status_.changes;
         xSemaphoreGive(lock_);
-        ESP_LOGI(TAG, "connected to '%s', ip " IPSTR, status_.ssid, IP2STR(&address));
+        ESP_LOGI(TAG, "connected to '%s', ip " IPSTR " (%s)", status_.ssid, IP2STR(&address),
+                 static_ip_.enabled ? "static" : "dhcp");
     }
 }
 

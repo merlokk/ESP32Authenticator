@@ -201,6 +201,48 @@ bool ParseWeb(const cJSON *web, Web *out, char *error, size_t size) {
                      "0..64 characters", "web", error, size);
 }
 
+bool AlwaysValid(const char *) { return true; }
+
+// Optional `ip` block of one network; checked as a whole by CheckStaticIp.
+bool ParseIp(const cJSON *network, StaticIp *out, const char *where, char *error, size_t size) {
+    const cJSON *ip = cJSON_GetObjectItemCaseSensitive(network, "ip");
+    if (ip == nullptr) {
+        return true;
+    }
+    char text[kErrorSize];
+    char ip_where[40];
+    snprintf(ip_where, sizeof ip_where, "%s.ip", where);
+    if (!cJSON_IsObject(ip)) {
+        snprintf(text, sizeof text, "%s: expected an object", ip_where);
+        SetError(error, size, text);
+        return false;
+    }
+    if (!GetBool(ip, "static", &out->enabled, ip_where, error, size)) {
+        return false;
+    }
+    struct Field {
+        const char *key;
+        char *out;
+    };
+    const Field fields[] = {{"address", out->address}, {"netmask", out->netmask},
+                            {"gateway", out->gateway}, {"dns1", out->dns1},
+                            {"dns2", out->dns2}};
+    for (const Field &field : fields) {
+        if (!GetString(ip, field.key, field.out, kIpTextSize, AlwaysValid, "an IPv4 address",
+                       ip_where, error, size)) {
+            return false;
+        }
+    }
+    char reason[kErrorSize] = {};
+    if (!CheckStaticIp(*out, reason, sizeof reason)) {
+        char full[sizeof ip_where + kErrorSize];  // cut to the caller's size by SetError
+        snprintf(full, sizeof full, "%s.%s", ip_where, reason);
+        SetError(error, size, full);
+        return false;
+    }
+    return true;
+}
+
 bool ParseNetworks(const cJSON *wifi, Wifi *out, char *error, size_t size) {
     const cJSON *list = cJSON_GetObjectItemCaseSensitive(wifi, "networks");
     if (list == nullptr) {
@@ -239,7 +281,8 @@ bool ParseNetworks(const cJSON *wifi, Wifi *out, char *error, size_t size) {
         if (!GetString(item, "ssid", n.ssid, sizeof n.ssid, ValidSsid, "1..32 bytes", where,
                        error, size) ||
             !GetString(item, "password", n.password, sizeof n.password, ValidPassword,
-                       "empty, 8..63 characters or 64 hex digits", where, error, size)) {
+                       "empty, 8..63 characters or 64 hex digits", where, error, size) ||
+            !ParseIp(item, &n.ip, where, error, size)) {
             return false;
         }
         for (uint8_t i = 0; i < parsed.network_count; ++i) {
@@ -385,6 +428,18 @@ size_t Serialize(const Data &d, char *out, size_t size) {
         cJSON *n = cJSON_CreateObject();
         cJSON_AddStringToObject(n, "ssid", d.wifi.networks[i].ssid);
         cJSON_AddStringToObject(n, "password", d.wifi.networks[i].password);
+        // Only when something is set: no empty block on every entry.
+        const StaticIp &ip = d.wifi.networks[i].ip;
+        if (ip.enabled || ip.address[0] != '\0' || ip.netmask[0] != '\0' ||
+            ip.gateway[0] != '\0' || ip.dns1[0] != '\0' || ip.dns2[0] != '\0') {
+            cJSON *block = cJSON_AddObjectToObject(n, "ip");
+            cJSON_AddBoolToObject(block, "static", ip.enabled);
+            cJSON_AddStringToObject(block, "address", ip.address);
+            cJSON_AddStringToObject(block, "netmask", ip.netmask);
+            cJSON_AddStringToObject(block, "gateway", ip.gateway);
+            cJSON_AddStringToObject(block, "dns1", ip.dns1);
+            cJSON_AddStringToObject(block, "dns2", ip.dns2);
+        }
         cJSON_AddItemToArray(list, n);
     }
     cJSON *ble = cJSON_AddObjectToObject(root, "ble");
@@ -471,6 +526,70 @@ bool ValidApPassword(const char *password) {
 // Basic auth separates user and password with the first ':'.
 bool ValidWebUser(const char *user) {
     return strlen(user) < kWebUserSize && strchr(user, ':') == nullptr;
+}
+
+bool ParseIpv4(const char *text, uint32_t *out) {
+    if (text == nullptr || out == nullptr) {
+        return false;
+    }
+    uint32_t value = 0;
+    const char *p = text;
+    for (int octet = 0; octet < 4; ++octet) {
+        if (octet > 0) {
+            if (*p != '.') {
+                return false;
+            }
+            ++p;
+        }
+        if (*p < '0' || *p > '9') {
+            return false;  // empty, "1..2", a sign or a space
+        }
+        if (*p == '0' && p[1] >= '0' && p[1] <= '9') {
+            return false;  // leading zero
+        }
+        uint32_t part = 0;
+        int digits = 0;
+        while (*p >= '0' && *p <= '9') {
+            part = part * 10 + static_cast<uint32_t>(*p - '0');
+            ++p;
+            if (++digits > 3 || part > 255) {
+                return false;
+            }
+        }
+        value |= part << (8 * octet);
+    }
+    if (*p != '\0') {
+        return false;
+    }
+    *out = value;
+    return true;
+}
+
+bool CheckStaticIp(const StaticIp &ip, char *error, size_t error_size) {
+    struct Field {
+        const char *name;
+        const char *text;
+        bool required;
+    };
+    const Field fields[] = {{"address", ip.address, true}, {"netmask", ip.netmask, true},
+                            {"gateway", ip.gateway, true}, {"dns1", ip.dns1, false},
+                            {"dns2", ip.dns2, false}};
+    for (const Field &field : fields) {
+        uint32_t ignored = 0;
+        char text[kErrorSize];
+        if (field.text[0] == '\0') {
+            if (ip.enabled && field.required) {
+                snprintf(text, sizeof text, "%s: required for a static address", field.name);
+                SetError(error, error_size, text);
+                return false;
+            }
+        } else if (!ParseIpv4(field.text, &ignored)) {
+            snprintf(text, sizeof text, "%s: '%s' is not an IPv4 address", field.name, field.text);
+            SetError(error, error_size, text);
+            return false;
+        }
+    }
+    return true;
 }
 
 const char *Name(WifiMode mode) {

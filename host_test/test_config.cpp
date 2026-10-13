@@ -140,6 +140,60 @@ void test_parse_full() {
     TEST_ASSERT_EQUAL_STRING("a:b c", d.web.password);
 }
 
+void test_parse_ipv4() {
+    uint32_t value = 0;
+    TEST_ASSERT_TRUE(config::ParseIpv4("192.168.1.42", &value));
+    TEST_ASSERT_EQUAL_HEX32(0x2A01A8C0, value);  // first octet in the low byte
+    TEST_ASSERT_TRUE(config::ParseIpv4("0.0.0.0", &value));
+    TEST_ASSERT_TRUE(config::ParseIpv4("255.255.255.255", &value));
+    TEST_ASSERT_EQUAL_HEX32(0xFFFFFFFF, value);
+    const char *bad[] = {"", "1.2.3", "1.2.3.4.5", "256.1.1.1", "010.1.1.1", "1..2.3",
+                         " 1.2.3.4", "1.2.3.4 ", "0x7f.0.0.1", "-1.2.3.4", "1.2.3.4\n",
+                         "1234.1.1.1"};
+    for (const char *text : bad) {
+        value = 7;
+        TEST_ASSERT_FALSE_MESSAGE(config::ParseIpv4(text, &value), text);
+        TEST_ASSERT_EQUAL_UINT32(7, value);
+    }
+    TEST_ASSERT_FALSE(config::ParseIpv4(nullptr, &value));
+}
+
+void test_parse_static_ip() {
+    config::Data d;
+    char error[config::kErrorSize] = {};
+    TEST_ASSERT_TRUE_MESSAGE(
+        ParseText(R"({"wifi": {"networks": [{"ssid": "Office", "ip": {"static": true,
+            "address": "10.0.0.5", "netmask": "255.255.255.0", "gateway": "10.0.0.1",
+            "dns1": "1.1.1.1"}}, {"ssid": "Home"}]}})",
+                  &d, error, sizeof error),
+        error);
+    const config::StaticIp &ip = d.wifi.networks[0].ip;
+    TEST_ASSERT_TRUE(ip.enabled);
+    TEST_ASSERT_EQUAL_STRING("10.0.0.5", ip.address);
+    TEST_ASSERT_EQUAL_STRING("255.255.255.0", ip.netmask);
+    TEST_ASSERT_EQUAL_STRING("10.0.0.1", ip.gateway);
+    TEST_ASSERT_EQUAL_STRING("1.1.1.1", ip.dns1);
+    TEST_ASSERT_EQUAL_STRING("", ip.dns2);
+    TEST_ASSERT_FALSE(d.wifi.networks[1].ip.enabled);
+
+    // Off, with the typed address kept.
+    TEST_ASSERT_TRUE(ParseText(R"({"wifi": {"networks": [{"ssid": "A", "ip": {"static": false,
+            "address": "10.0.0.5"}}]}})", &d, error, sizeof error));
+    TEST_ASSERT_FALSE(d.wifi.networks[0].ip.enabled);
+    TEST_ASSERT_EQUAL_STRING("10.0.0.5", d.wifi.networks[0].ip.address);
+}
+
+void test_parse_rejects_bad_static_ip() {
+    AssertParseFails(R"({"wifi": {"networks": [{"ssid": "A", "ip": {"static": true,
+        "address": "10.0.0.5", "netmask": "255.255.255.0"}}]}})", "gateway");
+    AssertParseFails(R"({"wifi": {"networks": [{"ssid": "A", "ip": {"static": true,
+        "address": "10.0.0.300", "netmask": "255.255.255.0", "gateway": "10.0.0.1"}}]}})",
+                     "address");
+    AssertParseFails(R"({"wifi": {"networks": [{"ssid": "A", "ip": {"dns1": "x"}}]}})", "dns1");
+    AssertParseFails(R"({"wifi": {"networks": [{"ssid": "A", "ip": []}]}})", "ip");
+    AssertParseFails(R"({"wifi": {"networks": [{"ssid": "A", "ip": {"static": 1}}]}})", "static");
+}
+
 void test_parse_rejects_bad_wifi_and_web_fields() {
     AssertParseFails(R"({"wifi": {"mode": "station"}})", "wifi.mode");
     AssertParseFails(R"({"wifi": {"rounds": 0}})", "wifi.rounds");
@@ -296,6 +350,40 @@ void test_serialize_round_trip() {
     TEST_ASSERT_EQUAL(in.web.write, out.web.write);
     TEST_ASSERT_EQUAL_STRING(in.web.user, out.web.user);
     TEST_ASSERT_EQUAL_STRING(in.web.password, out.web.password);
+}
+
+void test_serialize_static_ip_round_trip() {
+    config::Data in;
+    config::FillDefaults(&in);
+    char error[config::kErrorSize] = {};
+    TEST_ASSERT_TRUE(config::SetNetwork(&in.wifi, "Office", "password123", error, sizeof error));
+    TEST_ASSERT_TRUE(config::SetNetwork(&in.wifi, "Home", "", error, sizeof error));
+    config::StaticIp &ip = in.wifi.networks[0].ip;
+    ip.enabled = true;
+    std::snprintf(ip.address, sizeof ip.address, "10.0.0.5");
+    std::snprintf(ip.netmask, sizeof ip.netmask, "255.255.255.0");
+    std::snprintf(ip.gateway, sizeof ip.gateway, "10.0.0.1");
+    std::snprintf(ip.dns2, sizeof ip.dns2, "8.8.8.8");
+    char json[config::kMaxFileSize];
+    TEST_ASSERT_GREATER_THAN(0, config::Serialize(in, json, sizeof json));
+    config::Data out;
+    TEST_ASSERT_TRUE_MESSAGE(ParseText(json, &out, error, sizeof error), error);
+    TEST_ASSERT_EQUAL_MEMORY(&in.wifi.networks[0].ip, &out.wifi.networks[0].ip,
+                             sizeof(config::StaticIp));
+    TEST_ASSERT_FALSE(out.wifi.networks[1].ip.enabled);
+    // No empty ip block for a DHCP network.
+    TEST_ASSERT_NULL(std::strstr(std::strstr(json, "\"Home\""), "\"ip\""));
+}
+
+void test_set_network_keeps_the_static_ip() {
+    config::Wifi w = {};
+    char error[config::kErrorSize] = {};
+    TEST_ASSERT_TRUE(config::SetNetwork(&w, "Office", "password123", error, sizeof error));
+    w.networks[0].ip.enabled = true;
+    std::snprintf(w.networks[0].ip.address, config::kIpTextSize, "10.0.0.5");
+    TEST_ASSERT_TRUE(config::SetNetwork(&w, "Office", "newpassword", error, sizeof error));
+    TEST_ASSERT_TRUE(w.networks[0].ip.enabled);
+    TEST_ASSERT_EQUAL_STRING("10.0.0.5", w.networks[0].ip.address);
 }
 
 void test_serialize_escapes_strings() {
@@ -487,6 +575,11 @@ void RegisterConfigTests(void) {
     RUN_TEST(test_parse_rejects_duplicate_ssid);
     RUN_TEST(test_parse_rejects_bad_hostname);
     RUN_TEST(test_parse_rejects_bad_wifi_and_web_fields);
+    RUN_TEST(test_parse_ipv4);
+    RUN_TEST(test_parse_static_ip);
+    RUN_TEST(test_parse_rejects_bad_static_ip);
+    RUN_TEST(test_serialize_static_ip_round_trip);
+    RUN_TEST(test_set_network_keeps_the_static_ip);
     RUN_TEST(test_serialize_round_trip);
     RUN_TEST(test_serialize_escapes_strings);
     RUN_TEST(test_serialize_too_small_buffer);

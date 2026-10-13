@@ -53,6 +53,25 @@ Failure Translate(wifi::Failure failure) {
     }
 }
 
+// The address text of config.json to the driver's binary form. config has
+// already checked it; a disagreement falls back to DHCP, never half an address.
+wifi::StaticIp AddressFor(const config::Network &network) {
+    wifi::StaticIp ip;
+    if (!network.ip.enabled) {
+        return ip;
+    }
+    if (!config::ParseIpv4(network.ip.address, &ip.address) ||
+        !config::ParseIpv4(network.ip.netmask, &ip.netmask) ||
+        !config::ParseIpv4(network.ip.gateway, &ip.gateway)) {
+        ESP_LOGE(TAG, "'%s': static address does not parse, using dhcp", network.ssid);
+        return wifi::StaticIp{};
+    }
+    config::ParseIpv4(network.ip.dns1, &ip.dns1);  // optional: 0 stays 0
+    config::ParseIpv4(network.ip.dns2, &ip.dns2);
+    ip.enabled = true;
+    return ip;
+}
+
 Settings SettingsFromConfig() {
     const config::Wifi &w = config::Get().wifi;
     Settings settings;
@@ -122,13 +141,15 @@ bool ApplyAction(Action action, uint32_t now_ms) {
             }
             const config::Network &network = w.networks[index];
             const bool keep_ap = policy.GetDesired() == Desired::kApSta;
-            const esp_err_t err = radio.StartClient(network.ssid, network.password, keep_ap);
+            const wifi::StaticIp ip = AddressFor(network);
+            const esp_err_t err = radio.StartClient(network.ssid, network.password, keep_ap, &ip);
             if (err == ESP_ERR_INVALID_STATE) {
                 return false;  // not logged: retried every pass while a scan runs
             }
             // The SSID is logged, the password never.
-            ESP_LOGI(TAG, "joining '%s' (network %u, round %u)", network.ssid,
-                     static_cast<unsigned>(index + 1), static_cast<unsigned>(policy.Round() + 1));
+            ESP_LOGI(TAG, "joining '%s' (network %u, round %u, %s)", network.ssid,
+                     static_cast<unsigned>(index + 1), static_cast<unsigned>(policy.Round() + 1),
+                     ip.enabled ? network.ip.address : "dhcp");
             reported_connected = false;
             reported_failed = false;
             if (err != ESP_OK) {

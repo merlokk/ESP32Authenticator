@@ -50,6 +50,18 @@ enum class Failure : uint8_t {
     kOther,     // drop, timeout, anything else
 };
 
+// A fixed address for the network being joined, binary (esp_netif order:
+// first octet in the low byte). The text lives in config.json; the manager
+// converts. A zero DNS entry is not set.
+struct StaticIp {
+    bool enabled = false;
+    uint32_t address = 0;
+    uint32_t netmask = 0;
+    uint32_t gateway = 0;
+    uint32_t dns1 = 0;
+    uint32_t dns2 = 0;
+};
+
 struct Status {
     Mode mode = Mode::kOff;
     Link link = Link::kIdle;
@@ -60,6 +72,7 @@ struct Status {
     int8_t rssi = 0;
     uint8_t channel = 0;  // tuned channel (the AP follows the station's)
     uint32_t ip = 0;      // station IPv4 (esp_ip4_addr_t order), 0 when none
+    bool ip_is_static = false;
 
     char ap_ssid[kSsidSize] = {};
     uint32_t ap_ip = 0;
@@ -93,7 +106,10 @@ class Radio {
 
     // Join `ssid` (empty password: open network), replacing the current
     // attempt. `keep_ap`: keep our AP up (APSTA); otherwise it goes down.
-    esp_err_t StartClient(const char *ssid, const char *password, bool keep_ap);
+    // `ip` (copied) null or disabled: DHCP, put back if a previous network
+    // had switched it off.
+    esp_err_t StartClient(const char *ssid, const char *password, bool keep_ap,
+                          const StaticIp *ip = nullptr);
 
     // Become an access point (empty password: open; shorter than 8 chars is
     // refused). Ends any station attempt.
@@ -126,6 +142,9 @@ class Radio {
     esp_err_t EnsureStarted();
     // Ends the current station attempt; its disconnect event is ours.
     void DropStation();
+    // On association: the static address, or the DHCP client back on.
+    void ApplyAddressing();
+    esp_err_t SetDns(uint32_t address, int type);
 
     bool ready_ = false;
     bool stack_ready_ = false;  // esp_wifi_init done
@@ -138,6 +157,7 @@ class Radio {
     volatile uint8_t suppress_disconnect_ = 0;
 
     char hostname_[kHostnameSize] = "esp32-auth";
+    StaticIp static_ip_ = {};  // a copy: the config can change meanwhile
     Status status_ = {};
     // Short sections only, never held across an esp_wifi_* call (the event
     // task takes it too).

@@ -10,6 +10,8 @@
 //   wifi retry                   restart the current mode from the top
 //   wifi networks                configured networks
 //   wifi set <ssid> [password]   add/update a network (quote an SSID with spaces)
+//   wifi static <n> <ip> <mask> <gw> [dns1] [dns2] | static <n> off
+//                                fixed address for network n / back to DHCP
 //   wifi forget <ssid> | all     remove a network / all
 //
 // `web` command (the configuration site):

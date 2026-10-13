@@ -184,7 +184,7 @@
       if (online && typeof d.rssi === "number" && d.rssi < 0) {
         text(rssi, d.rssi + " dBm", d.rssi > -67 ? "ok" : d.rssi > -80 ? "warn" : "bad");
       } else { text(rssi, "-", "faint"); }
-      text(by("ip"), d.ip === "0.0.0.0" ? "-" : d.ip);
+      text(by("ip"), d.ip === "0.0.0.0" ? "-" : d.ip + (d.ip_static ? " (static)" : " (dhcp)"));
       text(by("ap"), apUp ? d.ap_ssid + " at " + d.ap_ip + ", " + d.ap_clients + " client(s)" : "off");
 
       text(by("ble"), d.ble + (d.ble === "connected" ? (d.ble_secure ? ", secure" : ", not secure") : ""),
@@ -336,6 +336,9 @@
         var card = el("div", "card");
         var head = el("div", "card-head");
         head.appendChild(el("b", "", String(index + 1)));
+        if (network.ip && network.ip.static) {
+          head.appendChild(el("span", "", "static " + network.ip.address));
+        }
         if (network.failed) head.appendChild(el("span", "bad", "password refused"));
         var drop = el("button", "drop", "×");
         drop.type = "button";

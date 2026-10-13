@@ -1,5 +1,6 @@
 // web_settings: the whitelist, write-only passwords, all-or-nothing, actions.
 
+#include <cstdio>
 #include <cstring>
 
 #include "config.h"
@@ -99,6 +100,48 @@ void test_the_ap_block(void) {
     TEST_ASSERT_EQUAL_STRING("", d.wifi.ap_password);
 }
 
+void test_an_absent_ip_keeps_the_static_address(void) {
+    config::Data d = Base();
+    config::StaticIp &ip = d.wifi.networks[0].ip;  // "home"
+    ip.enabled = true;
+    std::snprintf(ip.address, sizeof ip.address, "192.168.1.42");
+    std::snprintf(ip.netmask, sizeof ip.netmask, "255.255.255.0");
+    std::snprintf(ip.gateway, sizeof ip.gateway, "192.168.1.1");
+    const config::StaticIp before = ip;
+    // The page sends networks with no ip at all, reordered.
+    Apply(R"({"wifi":{"networks":[{"ssid":"office"},{"ssid":"home"}]}})", &d);
+    TEST_ASSERT_EQUAL_MEMORY(&before, &d.wifi.networks[1].ip, sizeof before);
+    TEST_ASSERT_FALSE(d.wifi.networks[0].ip.enabled);
+}
+
+void test_an_ip_block_replaces_and_static_false_is_dhcp(void) {
+    config::Data d = Base();
+    TEST_ASSERT_EQUAL_INT(
+        0, static_cast<int>(Apply(R"({"wifi":{"networks":[{"ssid":"home","ip":{"static":true,
+            "address":"10.0.0.5","netmask":"255.0.0.0","gateway":"10.0.0.1","dns1":null}}]}})",
+                                  &d)
+                                .result));
+    TEST_ASSERT_TRUE(d.wifi.networks[0].ip.enabled);
+    TEST_ASSERT_EQUAL_STRING("10.0.0.5", d.wifi.networks[0].ip.address);
+    TEST_ASSERT_EQUAL_STRING("", d.wifi.networks[0].ip.dns1);
+
+    Apply(R"({"wifi":{"networks":[{"ssid":"home","ip":{"static":false}}]}})", &d);
+    TEST_ASSERT_FALSE(d.wifi.networks[0].ip.enabled);
+}
+
+void test_a_bad_ip_block_is_refused(void) {
+    AssertRefused(R"({"wifi":{"networks":[{"ssid":"home","ip":{"static":true,
+        "address":"10.0.0.5","netmask":"255.0.0.0"}}]}})", WriteResult::kBadValue, "gateway");
+    AssertRefused(R"({"wifi":{"networks":[{"ssid":"home","ip":{"address":"010.0.0.5"}}]}})",
+                  WriteResult::kBadValue, "address");
+    AssertRefused(R"({"wifi":{"networks":[{"ssid":"home","ip":{"static":"yes"}}]}})",
+                  WriteResult::kBadValue, "static");
+    AssertRefused(R"({"wifi":{"networks":[{"ssid":"home","ip":{"mtu":1500}}]}})",
+                  WriteResult::kUnknownField, "mtu");
+    AssertRefused(R"({"wifi":{"networks":[{"ssid":"home","ip":"dhcp"}]}})", WriteResult::kBadValue,
+                  "wifi.networks[].ip");
+}
+
 void test_values_config_would_refuse_are_refused(void) {
     AssertRefused(R"({"wifi":{"ap":{"password":"short"}}})", WriteResult::kBadValue,
                   "wifi.ap.password");
@@ -128,8 +171,6 @@ void test_anything_off_the_whitelist_is_refused_by_name(void) {
     AssertRefused(R"({"wifi":{"hostname":"x"}})", WriteResult::kUnknownField, "hostname");
     AssertRefused(R"({"wifi":{"active":true}})", WriteResult::kUnknownField, "active");
     AssertRefused(R"({"wifi":{"ap":{"hidden":true}}})", WriteResult::kUnknownField, "hidden");
-    AssertRefused(R"({"wifi":{"networks":[{"ssid":"a","ip":{}}]}})", WriteResult::kUnknownField,
-                  "ip");
 }
 
 void test_one_bad_field_refuses_the_whole_document(void) {
@@ -172,6 +213,9 @@ void RegisterWebSettingsTests(void) {
     RUN_TEST(test_an_empty_password_clears_and_a_new_one_replaces);
     RUN_TEST(test_a_renamed_network_does_not_inherit_a_password);
     RUN_TEST(test_the_ap_block);
+    RUN_TEST(test_an_absent_ip_keeps_the_static_address);
+    RUN_TEST(test_an_ip_block_replaces_and_static_false_is_dhcp);
+    RUN_TEST(test_a_bad_ip_block_is_refused);
     RUN_TEST(test_values_config_would_refuse_are_refused);
     RUN_TEST(test_anything_off_the_whitelist_is_refused_by_name);
     RUN_TEST(test_one_bad_field_refuses_the_whole_document);

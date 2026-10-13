@@ -98,7 +98,7 @@ int CmdInfo(int, char **) {
     printf("hostname   %s\n", w.hostname);
     if (s.radio.link == wifi::Link::kConnected) {
         printf("joined     '%s', %d dBm\n", s.radio.ssid, s.radio.rssi);
-        PrintIp("ip", s.radio.ip);
+        PrintIp(s.radio.ip_is_static ? "ip static" : "ip dhcp", s.radio.ip);
         esp_netif_t *netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
         esp_netif_ip_info_t ip = {};
         if (netif != nullptr && esp_netif_get_ip_info(netif, &ip) == ESP_OK) {
@@ -203,12 +203,57 @@ int CmdNetworks(int, char **) {
     const wifimgr::Snapshot s = wifimgr::Get();
     printf(" #  password  ssid\n");
     for (uint8_t i = 0; i < w.network_count; ++i) {
+        const config::StaticIp &ip = w.networks[i].ip;
         printf("%2u  %-8s  %s%s\n", i + 1, w.networks[i].password[0] != '\0' ? "set" : "open",
                w.networks[i].ssid, s.auth_failed[i] ? "  (password refused)" : "");
+        if (ip.enabled) {
+            printf("    static    %s/%s gw %s", ip.address, ip.netmask, ip.gateway);
+            if (ip.dns1[0] != '\0') {
+                printf(" dns %s%s%s", ip.dns1, ip.dns2[0] != '\0' ? " " : "", ip.dns2);
+            }
+            printf("\n");
+        } else if (ip.address[0] != '\0') {
+            printf("    dhcp      (static %s kept, off)\n", ip.address);
+        }
     }
     printf("%u of %u, tried in this order\n", w.network_count,
            static_cast<unsigned>(config::kMaxNetworks));
     return 0;
+}
+
+// wifi static <n> <address> <netmask> <gateway> [dns1] [dns2] | wifi static <n> off
+int CmdStatic(int argc, char **argv) {
+    config::Wifi &w = config::Get().wifi;
+    const long n = argc >= 3 ? strtol(argv[1], nullptr, 10) : 0;
+    const bool off = argc == 3 && strcmp(argv[2], "off") == 0;
+    if (n < 1 || n > w.network_count || (!off && (argc < 5 || argc > 7))) {
+        printf("usage: wifi static <n> <address> <netmask> <gateway> [dns1] [dns2]\n");
+        printf("       wifi static <n> off      (n as listed by 'wifi networks')\n");
+        return 1;
+    }
+    config::StaticIp &target = w.networks[n - 1].ip;
+    if (off) {
+        target.enabled = false;  // the typed address is kept for next time
+        return SaveAndApply();
+    }
+    // Every field checked before any of it is stored.
+    config::StaticIp ip = {};
+    ip.enabled = true;
+    char *const fields[] = {ip.address, ip.netmask, ip.gateway, ip.dns1, ip.dns2};
+    for (int i = 2; i < argc; ++i) {
+        if (strlen(argv[i]) >= config::kIpTextSize) {
+            printf("'%s' is not an IPv4 address\n", argv[i]);
+            return 1;
+        }
+        snprintf(fields[i - 2], config::kIpTextSize, "%s", argv[i]);
+    }
+    char error[config::kErrorSize] = {};
+    if (!config::CheckStaticIp(ip, error, sizeof error)) {
+        printf("%s\n", error);
+        return 1;
+    }
+    target = ip;
+    return SaveAndApply();
 }
 
 int CmdSet(int argc, char **argv) {
@@ -245,6 +290,7 @@ constexpr Subcommand kWifiSubcommands[] = {
     {"on", &CmdOn},       {"off", &CmdOff},           {"mode", &CmdMode},
     {"info", &CmdInfo},   {"scan", &CmdScan},         {"ap", &CmdAp},
     {"retry", &CmdRetry}, {"networks", &CmdNetworks}, {"set", &CmdSet},
+    {"static", &CmdStatic},
     {"forget", &CmdForget},
 };
 
@@ -416,7 +462,8 @@ int CmdWifi(int argc, char **argv) {
     return Dispatch(kWifiSubcommands, argc, argv,
                     "wifi on | off | mode <client|ap|apsta> | info | scan | "
                     "ap [<ssid> [password] [channel]] | retry | networks | "
-                    "set <ssid> [password] | forget <ssid|all>");
+                    "set <ssid> [password] | static <n> <ip> <mask> <gw> [dns1] [dns2] | "
+                    "static <n> off | forget <ssid|all>");
 }
 
 int CmdWeb(int argc, char **argv) {

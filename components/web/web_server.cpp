@@ -237,7 +237,7 @@ esp_err_t StatusApi(httpd_req_t *request) {
         g_json, sizeof g_json,
         "{\"firmware\":\"%s\",\"idf\":\"%s\",\"uptime_s\":%" PRIu32 ",\"heap_free\":%u"
         ",\"heap_low\":%u,\"psram_free\":%u,\"spiffs_used\":%u,\"spiffs_total\":%u"
-        ",\"wifi\":\"%s\",\"wifi_mode\":\"%s\",\"ssid\":\"%s\",\"rssi\":%d,\"ip\":\"%s\""
+        ",\"wifi\":\"%s\",\"wifi_mode\":\"%s\",\"ssid\":\"%s\",\"rssi\":%d,\"ip\":\"%s\",\"ip_static\":%s"
         ",\"ap_ssid\":\"%s\",\"ap_ip\":\"%s\",\"ap_clients\":%u"
         ",\"ble\":\"%s\",\"ble_secure\":%s,\"kb_ready\":%s,\"fido_ready\":%s"
         ",\"fido_requests\":%" PRIu32 ",\"fido_errors\":%" PRIu32 "}",
@@ -246,7 +246,8 @@ esp_err_t StatusApi(httpd_req_t *request) {
         static_cast<unsigned>(heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL)),
         static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_SPIRAM)),
         static_cast<unsigned>(used), static_cast<unsigned>(total), wifimgr::Name(wifi.state),
-        wifimgr::Name(wifi.desired), ssid, static_cast<int>(wifi.radio.rssi), ip, ap_ssid, ap_ip,
+        wifimgr::Name(wifi.desired), ssid, static_cast<int>(wifi.radio.rssi), ip,
+        wifi.radio.ip_is_static ? "true" : "false", ap_ssid, ap_ip,
         static_cast<unsigned>(wifi.radio.clients),
         !ble_on ? "off" : ble_connected ? "connected" : "advertising",
         ble_connected && ble::LinkSecure() ? "true" : "false",
@@ -354,11 +355,16 @@ esp_err_t SettingsGet(httpd_req_t *request) {
         static_cast<unsigned>(w.ap_channel));
     for (uint8_t i = 0; i < w.network_count && written > 0 && written < kSize; ++i) {
         Escape(w.networks[i].ssid, ssid, sizeof ssid);
-        written += std::snprintf(g_body + written, sizeof g_body - static_cast<size_t>(written),
-                                 "%s{\"ssid\":\"%s\",\"secured\":%s,\"failed\":%s}",
-                                 i == 0 ? "" : ",", ssid,
-                                 w.networks[i].password[0] != '\0' ? "true" : "false",
-                                 now.auth_failed[i] ? "true" : "false");
+        // Addresses were validated as dotted quads: nothing to escape.
+        const config::StaticIp &ip = w.networks[i].ip;
+        written += std::snprintf(
+            g_body + written, sizeof g_body - static_cast<size_t>(written),
+            "%s{\"ssid\":\"%s\",\"secured\":%s,\"failed\":%s,\"ip\":{\"static\":%s"
+            ",\"address\":\"%s\",\"netmask\":\"%s\",\"gateway\":\"%s\",\"dns1\":\"%s\""
+            ",\"dns2\":\"%s\"}}",
+            i == 0 ? "" : ",", ssid, w.networks[i].password[0] != '\0' ? "true" : "false",
+            now.auth_failed[i] ? "true" : "false", ip.enabled ? "true" : "false", ip.address,
+            ip.netmask, ip.gateway, ip.dns1, ip.dns2);
     }
     if (written > 0 && written < kSize - 4) {
         std::snprintf(g_body + written, sizeof g_body - static_cast<size_t>(written), "]}}");

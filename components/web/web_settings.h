@@ -4,8 +4,10 @@
 // a JSON body applied to a config::Data, host-tested.
 //
 // - A whitelist, not a merge: `wifi.mode` (off/client/ap/apsta), `wifi.ap`
-//   {ssid, password, channel}, `wifi.networks[]` {ssid, password}. Anything
-//   else is refused by name (web.* included: the site cannot unlock itself).
+//   {ssid, password, channel}, `wifi.networks[]` {ssid, password, ip {static,
+//   address, netmask, gateway, dns1, dns2}}. Anything else is refused by name
+//   (web.* included: the site cannot unlock itself). An absent `ip` keeps the
+//   network's current one (matched by SSID).
 // - Passwords are write-only: GET never returns one. In a POST an absent or
 //   null password keeps the current one (networks matched by SSID), "" clears.
 // - All or nothing: any refusal leaves `into` untouched.
@@ -18,7 +20,7 @@
 
 namespace web {
 
-constexpr size_t kMaxSettingsBody = 1280;
+constexpr size_t kMaxSettingsBody = 2048;  // four networks with address blocks
 
 enum class WriteResult : uint8_t {
     kOk = 0,

@@ -35,9 +35,23 @@ constexpr size_t kWebUserSize = 33;      // 32 chars + NUL, no ':'
 constexpr size_t kWebPasswordSize = 65;  // 64 chars + NUL
 constexpr size_t kErrorSize = 96;
 
+constexpr size_t kIpTextSize = 16;  // "255.255.255.255" + NUL
+
+// A fixed address for one network (per network: home DHCP, office static).
+// Kept as typed; `enabled` false is DHCP and keeps the fields for later.
+struct StaticIp {
+    bool enabled;
+    char address[kIpTextSize];
+    char netmask[kIpTextSize];
+    char gateway[kIpTextSize];
+    char dns1[kIpTextSize];  // optional, empty: not set
+    char dns2[kIpTextSize];
+};
+
 struct Network {
     char ssid[kSsidSize];
     char password[kPasswordSize];  // empty: open network
+    StaticIp ip;
 };
 
 enum class WifiMode : uint8_t {
@@ -116,6 +130,15 @@ bool ValidSsid(const char *ssid);          // 1..32 bytes
 bool ValidPassword(const char *password);  // empty, 8..63 chars or 64 hex digits
 bool ValidApPassword(const char *password);  // empty or 8..63 chars
 bool ValidWebUser(const char *user);         // 0..32 chars, no ':'
+
+// Dotted quad to esp_netif's form (first octet in the low byte). Strict:
+// four decimal octets 0..255, no leading zeros ("010" is octal elsewhere),
+// nothing before or after.
+bool ParseIpv4(const char *text, uint32_t *out);
+
+// Checks a static block: with `enabled`, address/netmask/gateway required;
+// every non-empty field must parse. False with a reason naming the field.
+bool CheckStaticIp(const StaticIp &ip, char *error, size_t error_size);
 
 // "client" / "ap" / "apsta" and "off" / "on" / "auto".
 const char *Name(WifiMode mode);
