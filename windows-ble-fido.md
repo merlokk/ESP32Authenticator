@@ -31,7 +31,7 @@ mismatch: after a correct discovery it fails without sending Read By Type 0x2803
 ```
 before  → 06 0100 FFFF 0028 FDFF   ← 07 2B00 3400     → 06 3500 ...  ← 01 06 3500 0A
         (no more traffic, _GetFidoGattService 0x800710DF)
-after   → 06 0100 FFFF 0028 FDFF   ← 07 2B00 FFFF     → 08 2B00 FFFF 0328 (characteristics) → CTAP
+after   (same discovery, Windows cache re-read)  → 08 2B00 3400 0328 (characteristics) → CTAP
 ```
 
 ## Fix
