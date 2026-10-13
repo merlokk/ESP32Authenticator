@@ -15,6 +15,7 @@
 #include "esp_mac.h"
 #include "esp_system.h"
 #include "esp_timer.h"
+#include "fido_ctap.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
@@ -222,6 +223,9 @@ esp_err_t StatusApi(httpd_req_t *request) {
     uint32_t fido_requests = 0;
     uint32_t fido_errors = 0;
     ble_fido::Stats(&fido_requests, &fido_errors);
+    // The store, unless a request holds it (then the page shows a dash).
+    fido_ctap_info_t store = {};
+    const bool have_store = fido_ctap_info(&store) == ESP_OK;
     const bool ble_on = ble::IsOn();
     const bool ble_connected = ble_on && ble::ConnHandle() != BLE_HS_CONN_HANDLE_NONE;
 
@@ -247,7 +251,10 @@ esp_err_t StatusApi(httpd_req_t *request) {
         ",\"wifi\":\"%s\",\"wifi_mode\":\"%s\",\"ssid\":\"%s\",\"rssi\":%d,\"ip\":\"%s\",\"ip_static\":%s,\"internet\":\"%s\",\"mac\":\"%s\""
         ",\"ap_ssid\":\"%s\",\"ap_ip\":\"%s\",\"ap_clients\":%u"
         ",\"ble\":\"%s\",\"ble_secure\":%s,\"kb_ready\":%s,\"fido_ready\":%s"
-        ",\"fido_requests\":%" PRIu32 ",\"fido_errors\":%" PRIu32 "}",
+        ",\"fido_requests\":%" PRIu32 ",\"fido_errors\":%" PRIu32
+        ",\"fido_store\":%s,\"fido_creds\":%u,\"fido_resident\":%u,\"fido_max\":%u"
+        ",\"fido_used\":%u,\"fido_size\":%u,\"fido_pin\":%s,\"fido_pin_retries\":%u"
+        ",\"fido_counter\":%" PRIu32 "}",
         app->version, app->idf_ver, static_cast<uint32_t>(esp_timer_get_time() / 1000000),
         static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL)),
         static_cast<unsigned>(heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL)),
@@ -259,7 +266,11 @@ esp_err_t StatusApi(httpd_req_t *request) {
         !ble_on ? "off" : ble_connected ? "connected" : "advertising",
         ble_connected && ble::LinkSecure() ? "true" : "false",
         ble_kb::Ready() ? "true" : "false", ble_fido::Ready() ? "true" : "false", fido_requests,
-        fido_errors);
+        fido_errors, have_store ? "true" : "false", static_cast<unsigned>(store.credentials),
+        static_cast<unsigned>(store.discoverable), static_cast<unsigned>(store.max_credentials),
+        static_cast<unsigned>(store.store_used), static_cast<unsigned>(store.store_size),
+        store.pin_set ? "true" : "false", static_cast<unsigned>(store.pin_retries),
+        store.sign_count);
     return SendJson(request, nullptr, g_json);
 }
 

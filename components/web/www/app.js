@@ -196,6 +196,22 @@
       text(by("kb"), d.kb_ready ? "ready" : "not subscribed", d.kb_ready ? "ok" : "faint");
       text(by("fido"), (d.fido_ready ? "ready" : "not subscribed") + ", " + d.fido_requests +
            " request(s), " + d.fido_errors + " error(s)", d.fido_ready ? "ok" : "faint");
+      if (d.fido_store) {
+        text(by("fido-store"), d.fido_creds + " of " + d.fido_max + " credentials (" +
+             d.fido_resident + " resident), " + bytes(d.fido_used) + " of " +
+             bytes(d.fido_size));
+        text(by("fido-pin"), d.fido_pin ? "set, " + d.fido_pin_retries + " attempt(s) left"
+                                        : "not set",
+             !d.fido_pin ? "faint" : d.fido_pin_retries <= 3 ? "warn" : "ok");
+        text(by("fido-counter"), d.fido_counter + " signature(s)");
+        by("fido-meter").style.display = "";
+        meter(by("fido-meter"), 100 - (d.fido_creds / d.fido_max) * 100, 20, 10);
+      } else {
+        text(by("fido-store"), "busy", "faint");  // a request holds the store
+        text(by("fido-pin"), "-", "faint");
+        text(by("fido-counter"), "-", "faint");
+        by("fido-meter").style.display = "none";
+      }
 
       text(by("uptime"), duration(d.uptime_s));
       text(by("heap"), bytes(d.heap_free) + ", lowest " + bytes(d.heap_low));
