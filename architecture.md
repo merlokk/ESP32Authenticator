@@ -164,7 +164,8 @@ and never starts without lwIP (an assert).
   network, signal, address static/dhcp, MAC, internet, AP), Bluetooth (BLE,
   keyboard, FIDO2 readiness and counts; `stored` with a bar of the slots used,
   amber from 80 %, red from 90 %; PIN and attempts left; signature counter),
-  Device (uptime, heap, PSRAM, SPIFFS with a bar of the free space, firmware).
+  Device (uptime, heap, PSRAM, SPIFFS with a bar of the space used, amber
+  from 80 %, red from 95 %, firmware).
 - Pages and `app.js` are cached for an hour: after a reflash, reload with
   Ctrl+F5 to get the new script.
 

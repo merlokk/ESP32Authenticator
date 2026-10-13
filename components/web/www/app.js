@@ -118,13 +118,6 @@
     if (cls !== undefined) el.className = cls;
   }
 
-  function meter(el, percent, warnAt, badAt) {
-    if (!el || !el.firstElementChild) return;
-    var value = Math.max(0, Math.min(100, percent));
-    el.firstElementChild.style.width = value + "%";
-    el.firstElementChild.className = value <= badAt ? "bad" : value <= warnAt ? "warn" : "";
-  }
-
   // The bar is the used part: amber from warnFrom %, red from badFrom %.
   function fill(el, percent, warnFrom, badFrom) {
     if (!el || !el.firstElementChild) return;
@@ -227,7 +220,7 @@
       var used = d.spiffs_total > 0 ? (d.spiffs_used / d.spiffs_total) * 100 : 0;
       text(by("spiffs"), d.spiffs_total > 0 ? bytes(d.spiffs_used) + " of " +
            bytes(d.spiffs_total) + " (" + used.toFixed(0) + "%)" : "not mounted");
-      meter(by("spiffs-meter"), 100 - used, 20, 5);
+      fill(by("spiffs-meter"), used, 80, 95);
       text(by("firmware"), d.firmware + " on esp-idf " + d.idf);
     }
 
