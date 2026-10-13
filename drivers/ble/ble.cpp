@@ -226,9 +226,22 @@ void Advertise() {
     ble_gap_adv_params params = {};
     params.conn_mode = BLE_GAP_CONN_MODE_UND;
     params.disc_mode = BLE_GAP_DISC_MODE_GEN;
-    if (has_target && !PairingOpen()) {
-        // Only the target may scan and connect.
-        rc = ble_gap_wl_set(&target, 1);
+    if (!PairingOpen()) {
+        // Only the target, or else any bonded host, may scan and connect: a
+        // host with a stale bond would otherwise reconnect in a loop.
+        ble_addr_t peers[kMaxBonds];
+        int count = 0;
+        if (has_target) {
+            peers[0] = target;
+            count = 1;
+        } else {
+            ble_store_util_bonded_peers(peers, &count, kMaxBonds);
+        }
+        if (count == 0) {
+            ESP_LOGI(TAG, "no bonds, not advertising (run 'ble pair')");
+            return;
+        }
+        rc = ble_gap_wl_set(peers, count);
         if (rc == 0) {
             params.filter_policy = BLE_HCI_ADV_FILT_BOTH;
         } else {
@@ -591,7 +604,9 @@ esp_err_t Unpair(const char *which) {
         Drop();
         has_target = false;
         SaveTarget();
-        return ble_store_clear() == 0 ? ESP_OK : ESP_FAIL;
+        const int rc = ble_store_clear();
+        RestartAdvertising();  // the accept list holds the bonds
+        return rc == 0 ? ESP_OK : ESP_FAIL;
     }
     ble_addr_t addr;
     const esp_err_t err = FindBond(which, &addr);
@@ -604,9 +619,10 @@ esp_err_t Unpair(const char *which) {
     if (has_target && ble_addr_cmp(&addr, &target) == 0) {
         has_target = false;
         SaveTarget();
-        RestartAdvertising();
     }
-    return ble_gap_unpair(&addr) == 0 ? ESP_OK : ESP_FAIL;
+    const int rc = ble_gap_unpair(&addr);
+    RestartAdvertising();  // the accept list holds the bonds
+    return rc == 0 ? ESP_OK : ESP_FAIL;
 }
 
 esp_err_t UseBond(const char *which) {

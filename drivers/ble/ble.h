@@ -16,7 +16,8 @@
 // Switching hosts: UseBond() picks the target bond. The current link is
 // dropped (after drop listeners released held keys) and advertising is
 // filtered to the target (controller filter accept list), so only it
-// reconnects. The target is kept in NVS. A pairing window advertises to all.
+// reconnects. The target is kept in NVS. Without a target the accept list
+// holds all bonds (none: no advertising). A pairing window advertises to all.
 //
 // Profile drivers (ble_kb, ble_fido) add their GATT services and event
 // listeners before On(). The stack is off at boot.
