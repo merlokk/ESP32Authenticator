@@ -61,6 +61,20 @@ Windows caches the GATT table of a bonded device: after a layout change the host
 must re-read it (remove the device and pair again), otherwise WebAuthn still
 compares against the old cached range and fails the same way.
 
+## Workaround: Windows still fails after a firmware update
+
+Symptom: same `_GetFidoGattService` 0x800710DF loop although the firmware has the
+tail service. Cause: Windows uses its cached GATT table of the bonded device.
+
+1. Windows: Settings → Bluetooth & devices → ESP32 Auth → Remove device.
+2. `python utils/ble.py -p COM6 pair 90` (prints the passkey).
+3. Windows: Add device → Bluetooth → ESP32 Auth, type the passkey.
+4. Check that Windows re-read the table: the tail service has a devnode.
+
+```powershell
+Get-PnpDevice | ? InstanceId -match 'ac276ea4584a' | ? InstanceId -match '40E2955E'
+```
+
 Alternative (used first, commit 60ed7c3, removed): patch NimBLE
 `ble_att_svr_fill_type_value()` to report 0xFFFF for the last group in Find By
 Type Value too (`fill_type_value_entry(txom, first, 0xFFFF, ...)` instead of `prev`).
