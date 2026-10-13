@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.22)
 
 include(${CMAKE_CURRENT_LIST_DIR}/cmake/version.cmake)
+include(${CMAKE_CURRENT_LIST_DIR}/cmake/nimble_patch.cmake)
 
 # Hardware drivers live in drivers/, one component per device.
 set(EXTRA_COMPONENT_DIRS ${CMAKE_CURRENT_LIST_DIR}/drivers)
