@@ -101,6 +101,9 @@ python -m pytest [-k name] [--transport ble] [--device YubiKey|<address>] [--con
 ```
 
 - Never changes the PIN; sets one only with `--set-pin`, resets only with `--reset`.
+- Non-resident credentials of the test RPs (`ctap-test*.example`) can stay on
+  our firmware after a run: check with `fido2 list`, remove with
+  `fido2 delete <id>` (the store holds 10).
 - PIN: asked at start when the key has one (or `--pin` / `FIDO_PIN`); empty
   skips the PIN, UV and discoverable-credential tests. These use only the test
   RPs `ctap-test*.example` and delete their credentials.
@@ -134,6 +137,10 @@ Up when `web` says `running`; `web` prints the address(es).
 - Open site by default; `web login <user> <password>` locks every route.
 - Quick API checks: `curl http://<ip>/api/status`, `/api/settings`,
   `/api/wifi/scan`.
+- Front page: network (address, MAC, internet), BLE and the FIDO2 store
+  (credentials used of 10, PIN, counter), device; the bars show what is used.
+- Pages and `app.js` are cached for an hour: after a reflash reload with
+  Ctrl+F5.
 
 ## CLI
 
