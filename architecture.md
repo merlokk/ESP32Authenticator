@@ -80,8 +80,8 @@ Pattern from approver-esp32. Suites: `config`, `wifi_policy`, `reachability`,
 no hardware (pure headers) is under test.
 
 ```powershell
-host_testun.cmd            # all suites
-host_testun.cmd config     # suites whose name contains "config"
+host_test\run.cmd            # all suites
+host_test\run.cmd config     # suites whose name contains "config"
 ```
 
 ## BLE
