@@ -287,6 +287,14 @@ void OnEncChange(const ble_gap_event *event) {
         ESP_LOGW(TAG, "encryption failed: %d", event->enc_change.status);
         if (was_pairing) {
             PostPairing(PairingEvent::kFailed, 0, nullptr, "wrong passkey or host cancelled");
+            return;
+        }
+        if (!PairingOpen()) {
+            // Bond out of sync (key missing on one side): re-pairing is refused
+            // outside the window, so an unencrypted link would only answer
+            // Insufficient Authentication. Drop it.
+            ESP_LOGW(TAG, "bonded host failed to encrypt, dropping (run 'ble pair' to re-pair)");
+            ble_gap_terminate(desc.conn_handle, BLE_ERR_AUTH_FAIL);
         }
         return;
     }
@@ -368,6 +376,9 @@ int GapEvent(ble_gap_event *event, void *) {
         case BLE_GAP_EVENT_REPEAT_PAIRING: {
             // The host lost its keys and pairs again: allowed only in the window.
             if (!PairingOpen()) {
+                // The link would stay unencrypted and useless: drop it.
+                ESP_LOGW(TAG, "re-pairing refused: pairing window closed (run 'ble pair')");
+                ble_gap_terminate(event->repeat_pairing.conn_handle, BLE_ERR_AUTH_FAIL);
                 return BLE_GAP_REPEAT_PAIRING_IGNORE;
             }
             ble_gap_conn_desc desc = {};
