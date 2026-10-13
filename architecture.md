@@ -146,7 +146,7 @@ and never starts without lwIP (an assert).
 | Route | |
 |---|---|
 | `GET /`, `/*.html`, `/app.js` | pages: front (network, BLE, device), Wi-Fi settings, device status, restart. Whitelist of names/extensions; anything else, e.g. `/config.json`, is the 404 page |
-| `GET /api/status` | firmware, heap, SPIFFS, Wi-Fi (IP, MAC, internet), AP, BLE, FIDO state (no secrets) |
+| `GET /api/status` | firmware, heap, SPIFFS, Wi-Fi (IP, MAC, internet), AP, BLE, FIDO (readiness, requests, credentials stored of max, store bytes, PIN set and attempts, signature counter; `fido_store` false while a request holds the store). No secrets |
 | `GET /api/devstatus` | the console's `devstatus` dump (stdout swapped for the request) |
 | `GET /api/settings`, `POST /api/settings` | Wi-Fi mode, AP, networks (with `ip`; absent `ip` keeps the current one). Whitelist; passwords write-only (absent/null keeps, `""` clears); all-or-nothing; memory only |
 | `GET /api/wifi/scan` | access points (hidden/duplicate names dropped) |
