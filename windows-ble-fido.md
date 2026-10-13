@@ -57,14 +57,21 @@ const ble_gatt_svc_def kTailServices[] = {
     rc = rc == 0 ? ble_gatts_add_svcs(kTailServices) : rc;  // must stay last
 ```
 
-Windows caches the GATT table of a bonded device: after a layout change the host
-must re-read it (remove the device and pair again), otherwise WebAuthn still
-compares against the old cached range and fails the same way.
+Windows caches the GATT table of a bonded device and would keep comparing against
+the old range. The firmware therefore indicates Service Changed on layout changes
+(`CheckGattLayout()` in `drivers/ble/ble.cpp`): an FNV-1a hash of all service
+tables is kept in NVS (`ble/gatt_hash`); when it differs at stack sync,
+`ble_svc_gatt_changed(0x0001, 0xFFFF)` marks every bonded host subscribed to
+Service Changed, and NimBLE sends the indication after re-encryption. Verified:
+Windows confirms and re-runs Read By Group Type; added/removed services get/lose
+their devnodes without re-pairing. The range lives in RAM only, so it is set again
+at boot while an indication is still pending.
 
 ## Workaround: Windows still fails after a firmware update
 
 Symptom: same `_GetFidoGattService` 0x800710DF loop although the firmware has the
-tail service. Cause: Windows uses its cached GATT table of the bonded device.
+tail service. Cause: Windows uses its cached GATT table of the bonded device
+(firmware without Service Changed, or the host never subscribed to it).
 
 1. Windows: Settings → Bluetooth & devices → ESP32 Auth → Remove device.
 2. `python utils/ble.py -p COM6 pair 90` (prints the passkey).

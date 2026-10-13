@@ -204,6 +204,102 @@ const ble_gatt_svc_def kTailServices[] = {
     {},
 };
 
+// --- Service Changed --------------------------------------------------------
+
+// Bonded hosts cache the GATT table (Windows keeps using stale handle ranges).
+// A fingerprint of the layout is kept in NVS; when it changes, Service Changed
+// (0x0001-0xFFFF) is indicated to every bonded host that subscribed to it.
+// NimBLE persists the pending flag per host and sends the indication after
+// re-encryption. The handle range itself lives in RAM only, so it is set again
+// at boot while any host still has the indication pending.
+
+constexpr const char *kNvsGattHash = "gatt_hash";
+
+void HashBytes(uint32_t *h, const void *data, size_t len) {
+    const uint8_t *p = static_cast<const uint8_t *>(data);
+    for (size_t i = 0; i < len; ++i) {
+        *h = (*h ^ p[i]) * 16777619u;  // FNV-1a
+    }
+}
+
+void HashUuid(uint32_t *h, const ble_uuid_t *uuid) {
+    HashBytes(h, &uuid->type, 1);
+    switch (uuid->type) {
+        case BLE_UUID_TYPE_16: HashBytes(h, &BLE_UUID16(uuid)->value, 2); break;
+        case BLE_UUID_TYPE_32: HashBytes(h, &BLE_UUID32(uuid)->value, 4); break;
+        default: HashBytes(h, BLE_UUID128(uuid)->value, 16); break;
+    }
+}
+
+void HashServices(uint32_t *h, const ble_gatt_svc_def *svcs) {
+    for (const ble_gatt_svc_def *svc = svcs; svc->type != 0; ++svc) {
+        HashBytes(h, &svc->type, sizeof svc->type);
+        HashUuid(h, svc->uuid);
+        for (const ble_gatt_chr_def *chr = svc->characteristics; chr && chr->uuid; ++chr) {
+            HashUuid(h, chr->uuid);
+            HashBytes(h, &chr->flags, sizeof chr->flags);
+            for (const ble_gatt_dsc_def *dsc = chr->descriptors; dsc && dsc->uuid; ++dsc) {
+                HashUuid(h, dsc->uuid);
+                HashBytes(h, &dsc->att_flags, sizeof dsc->att_flags);
+            }
+        }
+    }
+}
+
+// Tables in registration order (GAP and GATT services are fixed by NimBLE).
+uint32_t GattLayoutHash() {
+    uint32_t h = 2166136261u;
+    HashServices(&h, kCoreServices);
+    for (size_t i = 0; i < service_table_count; ++i) {
+        HashServices(&h, service_tables[i]);
+    }
+    HashServices(&h, kTailServices);
+    return h;
+}
+
+// True if some bonded host has not received a Service Changed indication yet.
+bool ServiceChangedPending() {
+    const ble_uuid16_t gatt = BLE_UUID16_INIT(0x1801);
+    const ble_uuid16_t changed = BLE_UUID16_INIT(0x2A05);
+    uint16_t handle = 0;
+    if (ble_gatts_find_chr(&gatt.u, &changed.u, nullptr, &handle) != 0) {
+        return false;
+    }
+    ble_store_key_cccd key = {};  // peer_addr all zero: BLE_ADDR_ANY, every host
+    key.chr_val_handle = handle;
+    ble_store_value_cccd value;
+    for (key.idx = 0; ble_store_read_cccd(&key, &value) == 0; ++key.idx) {
+        if (value.value_changed) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void CheckGattLayout() {
+    const uint32_t hash = GattLayoutHash();
+    uint32_t stored = 0;
+    nvs_handle_t nvs;
+    const bool have_nvs = nvs_open(kNvsNamespace, NVS_READWRITE, &nvs) == ESP_OK;
+    const bool known = have_nvs && nvs_get_u32(nvs, kNvsGattHash, &stored) == ESP_OK;
+    if (known && stored == hash) {
+        if (ServiceChangedPending()) {
+            ble_svc_gatt_changed(0x0001, 0xFFFF);  // restore the range lost on reboot
+        }
+    } else {
+        ESP_LOGI(TAG, "GATT layout changed (%08" PRIx32 " -> %08" PRIx32 "): Service Changed",
+                 stored, hash);
+        ble_svc_gatt_changed(0x0001, 0xFFFF);
+        if (have_nvs) {
+            nvs_set_u32(nvs, kNvsGattHash, hash);
+            nvs_commit(nvs);
+        }
+    }
+    if (have_nvs) {
+        nvs_close(nvs);
+    }
+}
+
 // --- GAP --------------------------------------------------------------------
 
 bool PairingOpen() { return esp_timer_get_time() < pairing_until_us; }
@@ -441,6 +537,7 @@ void OnSync() {
     ble_hs_util_ensure_addr(0);
     ble_hs_id_infer_auto(0, &own_addr_type);
     synced = true;
+    CheckGattLayout();
     Advertise();
     xSemaphoreGive(synced_sem);
 }

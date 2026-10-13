@@ -78,6 +78,7 @@ Security:
 - One connection at a time. `ble use` picks the target bond: keys released on the old host, link dropped, advertising filtered (accept list) to the target; a non-target bonded host that still gets through is dropped after encryption. Without a target the accept list holds all bonds (no bonds: no advertising), so a host with a stale bond cannot reconnect in a loop; a bonded host that fails to encrypt is dropped.
 - Unauthenticated (Just Works) links are dropped; HID reports and FIDO characteristics require an authenticated link.
 - Windows 11 WebAuthn finds the FIDO service by Find By Type Value and fails (`_GetFidoGattService` 0x800710DF) unless its end handle matches Read By Group Type (NimBLE: 0xFFFF for the last service only): a tail service is registered after all profiles, see [windows-ble-fido.md](windows-ble-fido.md).
+- GATT layout changes (hash in NVS `ble/gatt_hash`) are indicated to bonded hosts as Service Changed, so they re-read the table without re-pairing.
 
 ## FIDO2
 
