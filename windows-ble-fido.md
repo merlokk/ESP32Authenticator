@@ -1,7 +1,9 @@
 # Windows 11: BLE FIDO2 not usable from Chrome
 
-Fixed 2026-10-13. Verified: Chrome on webauthn.io (register + authenticate,
-cross-platform), python-fido2 `WindowsClient`, full CTAP2 suite over BLE.
+Fixed 2026-10-13 (tail service 6a400d6, Service Changed 86a64f2). Verified on that
+firmware: Chrome on webauthn.io (register + authenticate, cross-platform, with PIN),
+python-fido2 `WindowsClient`, full CTAP2 suite over BLE (59 passed, 8 skipped:
+`--destructive` / `--reset` only).
 
 ## Symptom
 
@@ -64,7 +66,15 @@ tables is kept in NVS (`ble/gatt_hash`); when it differs at stack sync,
 `ble_svc_gatt_changed(0x0001, 0xFFFF)` marks every bonded host subscribed to
 Service Changed, and NimBLE sends the indication after re-encryption. Verified:
 Windows confirms and re-runs Read By Group Type; added/removed services get/lose
-their devnodes without re-pairing. The range lives in RAM only, so it is set again
+their devnodes without re-pairing:
+
+```
+← 1D 0800 0100 FFFF   (Handle Value Indication: Service Changed, 0x0001–0xFFFF)
+→ 1E                  (confirmation)
+→ 10 0100 FFFF 0028   (Read By Group Type: Windows rediscovers)
+```
+
+ The range lives in RAM only, so it is set again
 at boot while an indication is still pending.
 
 ## Workaround: Windows still fails after a firmware update
@@ -105,7 +115,14 @@ MTU − 3), bonding / re-encryption, HID on the same device, stale bond.
 
 ## Notes
 
-- Intermediate WebAuthN events 2270 with 0x773 / 0x52E in `_IsBleAutoSelectedDevice`
-  during device selection precede a successful retry; they are not failures.
+- WebAuthN 2270 errors in `_IsBleAutoSelectedDevice` during device selection are
+  followed by a successful retry; they are not failures: 0x52E on every request,
+  0x773 (ERROR_PASSWORD_MUST_CHANGE) when the key had no PIN (Windows then has the
+  user set one; inferred, not verified).
+- 0x8009000F (NTE_EXISTS) on MakeCredential: the key already holds a credential
+  from the RP's `excludeCredentials` (CTAP2_ERR_CREDENTIAL_EXCLUDED), e.g. the
+  same webauthn.io user name registered twice. Expected.
+- Tests: Windows hides FFFD from non-elevated processes, run the BLE suite from an
+  elevated shell.
 - Public reports of commercial BLE keys (Feitian K41, SpearID) failing on Win11 but
   working on Win10 may share this cause (unconfirmed).
