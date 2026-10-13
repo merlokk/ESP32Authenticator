@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0b0d0c">
+<title>Restart</title>
+<style>html,body{margin:0;background:#0b0d0c;color:#d6ded8;
+font:16px/1.5 system-ui,-apple-system,sans-serif}
+body{padding:0 16px 40px}</style>
+</head>
+<body data-page="reboot">
+<div class="wrap">
+<header>
+  <h1>Restart</h1>
+  <span class="lamp" id="lamp">up</span>
+</header>
+
+<p class="notice">
+  Anything set and not saved is lost: settings live in memory until they are
+  saved to <code>config.json</code>.
+</p>
+
+<nav>
+  <a class="btn" href="/">
+    <span class="chev">&lsaquo;</span>
+    <span class="grow"><span class="name">Back</span></span>
+  </a>
+  <button class="btn warn" type="button" id="go">
+    <span class="grow"><span class="name" id="go-name">Restart the device</span>
+      <span class="sub" id="go-sub">tap, then confirm</span></span>
+  </button>
+</nav>
+
+<h2>What happens</h2>
+<table>
+  <tr><th>keeps</th><td>BLE bonds, FIDO2 credentials, everything in
+      <code>config.json</code></td></tr>
+  <tr><th>loses</th><td>unsaved settings, the BLE link (the host reconnects)</td></tr>
+  <tr><th>takes</th><td>a few seconds, plus rejoining the network</td></tr>
+</table>
+</div>
+<script src="/app.js"></script>
+</body>
+</html>

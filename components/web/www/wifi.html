@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0b0d0c">
+<title>Wi-Fi</title>
+<style>html,body{margin:0;background:#0b0d0c;color:#d6ded8;
+font:16px/1.5 system-ui,-apple-system,sans-serif}
+body{padding:0 16px 40px}</style>
+</head>
+<body data-page="wifi">
+<div class="wrap">
+<header>
+  <h1>Wi-Fi</h1>
+  <span class="lamp" id="lamp">reading&hellip;</span>
+</header>
+
+<p class="lead" id="state">&nbsp;</p>
+
+<nav>
+  <a class="btn" href="/">
+    <span class="chev">&lsaquo;</span>
+    <span class="grow"><span class="name">Back</span></span>
+  </a>
+</nav>
+
+<h2>Radio</h2>
+<div class="seg" id="mode">
+  <button type="button" data-mode="off">Off</button>
+  <button type="button" data-mode="client">Client</button>
+  <button type="button" data-mode="ap">AP</button>
+  <button type="button" data-mode="apsta">AP + Client</button>
+</div>
+<p class="hint"><b>Client</b> joins the networks below in turn and raises its own
+access point for a while when none answers. <b>AP</b> is only the device's own
+network. <b>AP + Client</b> keeps the access point up and joins a network too.</p>
+
+<h2>Networks</h2>
+<p class="hint">Up to four, tried in order (the last one that worked first).</p>
+<div id="networks"></div>
+<div class="row-actions">
+  <button class="btn small" type="button" id="add">Add a network</button>
+  <button class="btn small" type="button" id="scan">See what is on the air</button>
+</div>
+<div id="scan-list"></div>
+
+<h2>This device's access point</h2>
+<p class="hint">Empty password: open network; otherwise 8 to 63 characters.</p>
+<div class="field">
+  <label for="ap-ssid">Name</label>
+  <input id="ap-ssid" type="text" autocapitalize="off" autocomplete="off" spellcheck="false">
+</div>
+<div class="field">
+  <label for="ap-pass">Password</label>
+  <input id="ap-pass" type="password" placeholder="unchanged" autocomplete="new-password">
+  <button class="reveal" type="button" data-for="ap-pass">show</button>
+</div>
+<div class="field">
+  <label for="ap-channel">Channel</label>
+  <input id="ap-channel" type="number" min="1" max="13" inputmode="numeric">
+</div>
+
+<div class="sticky">
+  <div class="notice" id="said" hidden></div>
+  <button class="btn" type="button" id="apply">Apply</button>
+  <button class="btn" type="button" id="save">Apply and save</button>
+  <button class="btn small" type="button" id="retry">Reconnect now</button>
+</div>
+
+<footer>
+  Passwords are never sent back by the device: a box left empty keeps the one it
+  has. <b>Apply</b> changes memory, <b>Apply and save</b> also writes
+  <code>config.json</code>. The radio takes the new settings on
+  <b>Reconnect now</b> (or the next restart); over Wi-Fi that can take this page
+  away.
+</footer>
+</div>
+<script src="/app.js"></script>
+</body>
+</html>

@@ -18,6 +18,7 @@
 #include "wifi_cmd.h"
 #include "files.h"
 #include "hardware.h"
+#include "web_server.h"
 #include "linenoise/linenoise.h"
 
 namespace console {
@@ -64,6 +65,28 @@ int CmdEfuse(int, char **) {
 
 int CmdInfo(int, char **) {
     hardware::PrintShortInfo();
+    return 0;
+}
+
+void Section(const char *command) { printf("\n== %s ==\n", command); }
+
+// Composed of the other readouts, not a second copy of them. Also served as
+// /api/devstatus (web::SetDiagnostics).
+void PrintDevStatus() {
+    Section("version");
+    CmdVersion(0, nullptr);
+    Section("info");
+    hardware::PrintShortInfo();
+    Section("wifi info");
+    PrintWifiInfo();
+    Section("web");
+    PrintWebInfo();
+    Section("ble info");
+    ble::PrintInfo();
+}
+
+int CmdDevStatus(int, char **) {
+    PrintDevStatus();
     return 0;
 }
 
@@ -162,10 +185,31 @@ const esp_console_cmd_t kCommands[] = {
     },
     {
         .command = "wifi",
-        .help = "Wi-Fi station: on | off | info | scan | networks | set <ssid> [password] | "
+        .help = "Wi-Fi: on | off | mode <client|ap|apsta> | info | scan | "
+                "ap [<ssid> [password] [channel]] | retry | networks | set <ssid> [password] | "
                 "forget <ssid|all>",
-        .hint = "<on|off|info|scan|networks|set|forget> [args]",
+        .hint = "<on|off|mode|info|scan|ap|retry|networks|set|forget> [args]",
         .func = &CmdWifi,
+        .argtable = nullptr,
+        .func_w_context = nullptr,
+        .context = nullptr,
+    },
+    {
+        .command = "web",
+        .help = "Configuration site: info | on | off | auto | login <user> <password> | "
+                "login off | write on|off",
+        .hint = "<info|on|off|auto|login|write> [args]",
+        .func = &CmdWeb,
+        .argtable = nullptr,
+        .func_w_context = nullptr,
+        .context = nullptr,
+    },
+    {
+        .command = "devstatus",
+        .help = "Everything at once: version, info, wifi info, web, ble info "
+                "(also the site's Device status page)",
+        .hint = nullptr,
+        .func = &CmdDevStatus,
         .argtable = nullptr,
         .func_w_context = nullptr,
         .context = nullptr,
@@ -234,6 +278,8 @@ esp_err_t Init() {
         ESP_LOGE(TAG, "console init failed: %s", esp_err_to_name(err));
         return err;
     }
+
+    web::SetDiagnostics(&PrintDevStatus);
 
     ESP_ERROR_CHECK(esp_console_register_help_command());
     for (const esp_console_cmd_t &cmd : kCommands) {

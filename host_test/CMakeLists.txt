@@ -33,10 +33,19 @@ endif()
 add_executable(host_test
     test_main.cpp
     test_config.cpp
+    test_wifi_policy.cpp
+    test_web_auth.cpp
+    test_web_paths.cpp
+    test_web_settings.cpp
     fakes/fake_platform.cpp
 
     # Under test.
     ../components/config/config.cpp
+    ../components/wifimgr/wifi_policy.cpp
+    ../components/web/web_auth.cpp
+    ../components/web/web_paths.cpp
+    ../components/web/web_policy.cpp
+    ../components/web/web_settings.cpp
 
     "${CJSON_DIR}/cJSON.c"
     "${UNITY_DIR}/unity.c"
@@ -46,6 +55,8 @@ target_include_directories(host_test PRIVATE
     .
     fakes  # before anything that could be real ESP-IDF
     ../components/config
+    ../components/wifimgr
+    ../components/web
     "${CJSON_DIR}"
     "${UNITY_DIR}"
 )

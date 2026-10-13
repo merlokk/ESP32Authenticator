@@ -31,6 +31,8 @@ constexpr size_t kMaxNetworks = 4;
 constexpr size_t kSsidSize = 33;      // 32 bytes + NUL
 constexpr size_t kPasswordSize = 65;  // 8..63 chars, or 64 hex digits + NUL
 constexpr size_t kHostnameSize = 33;
+constexpr size_t kWebUserSize = 33;      // 32 chars + NUL, no ':'
+constexpr size_t kWebPasswordSize = 65;  // 64 chars + NUL
 constexpr size_t kErrorSize = 96;
 
 struct Network {
@@ -38,20 +40,46 @@ struct Network {
     char password[kPasswordSize];  // empty: open network
 };
 
+enum class WifiMode : uint8_t {
+    kClient,  // join the networks in order; fallback AP window when none answers
+    kAp,      // own access point only
+    kApSta,   // own access point always, and join the networks too
+};
+
 struct Wifi {
-    bool active;  // start the station at boot
+    bool active;  // radio on at boot (and the on/off switch for `mode`)
+    WifiMode mode;
     char hostname[kHostnameSize];
     Network networks[kMaxNetworks];  // tried in order
     uint8_t network_count;
+    uint8_t rounds;              // client: full passes over the list before the fallback AP
+    uint16_t ap_window_seconds;  // client: how long the fallback AP stays up with nobody on it
+    char ap_ssid[kSsidSize];
+    char ap_password[kPasswordSize];  // empty: open AP, else 8..63 chars
+    uint8_t ap_channel;
 };
 
 struct Ble {
     bool active;  // start BLE at boot
 };
 
+enum class WebMode : uint8_t {
+    kOff,
+    kOn,    // whenever there is a network
+    kAuto,  // only while the device's own access point is up
+};
+
+struct Web {
+    WebMode mode;
+    bool write;  // false: settings and actions are refused (pages read-only)
+    char user[kWebUserSize];  // basic auth when both user and password are set
+    char password[kWebPasswordSize];
+};
+
 struct Data {
     Wifi wifi;
     Ble ble;
+    Web web;
 };
 
 enum class Source : uint8_t {
@@ -82,6 +110,18 @@ bool SetNetwork(Wifi *wifi, const char *ssid, const char *password, char *error,
 
 // Removes the network with `ssid`. Returns false if there is none.
 bool RemoveNetwork(Wifi *wifi, const char *ssid);
+
+// Field rules, shared with the web settings write path.
+bool ValidSsid(const char *ssid);          // 1..32 bytes
+bool ValidPassword(const char *password);  // empty, 8..63 chars or 64 hex digits
+bool ValidApPassword(const char *password);  // empty or 8..63 chars
+bool ValidWebUser(const char *user);         // 0..32 chars, no ':'
+
+// "client" / "ap" / "apsta" and "off" / "on" / "auto".
+const char *Name(WifiMode mode);
+bool ParseWifiMode(const char *text, WifiMode *out);
+const char *Name(WebMode mode);
+bool ParseWebMode(const char *text, WebMode *out);
 
 // --- File -------------------------------------------------------------------
 

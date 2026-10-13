@@ -9,7 +9,8 @@
 #include "fido_ctap.h"
 #include "nvs_flash.h"
 #include "spiffs_fs.h"
-#include "wifimgr.h"
+#include "web_server.h"
+#include "wifi_manager.h"
 
 namespace {
 
@@ -67,7 +68,10 @@ extern "C" void app_main() {
     InitFido();
     ESP_ERROR_CHECK(console::Init());
 
-    wifimgr::Start();  // starts the radio if wifi.active
+    // The web server reconciles on the Wi-Fi manager's tick (hook first); the
+    // manager task follows config.json (radio off unless wifi.active).
+    ESP_ERROR_CHECK(web::Init());
+    ESP_ERROR_CHECK(wifimgr::Init());
     if (config::Get().ble.active) {
         ble::On();
     }

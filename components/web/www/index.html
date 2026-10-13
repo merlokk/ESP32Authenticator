@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0b0d0c">
+<title>ESP32 Auth</title>
+<style>html,body{margin:0;background:#0b0d0c;color:#d6ded8;
+font:16px/1.5 system-ui,-apple-system,sans-serif}
+body{padding:0 16px 40px}</style>
+</head>
+<body data-page="front">
+<div class="wrap">
+<header>
+  <h1>ESP32 Auth</h1>
+  <span class="lamp" id="lamp">asking&hellip;</span>
+</header>
+
+<p class="lead">Hardware authenticator: BLE keyboard and FIDO2.</p>
+
+<nav>
+  <a class="btn" href="/devstatus.html">
+    <span class="grow"><span class="name">Device status</span>
+      <span class="sub">what the USB console prints, in one page</span></span>
+    <span class="chev">&rsaquo;</span>
+  </a>
+  <a class="btn" href="/wifi.html">
+    <span class="grow"><span class="name">Wi-Fi</span>
+      <span class="sub">mode, networks, access point, what is on the air</span></span>
+    <span class="chev">&rsaquo;</span>
+  </a>
+  <a class="btn warn" href="/reboot.html">
+    <span class="grow"><span class="name">Restart</span>
+      <span class="sub">anything set and not saved is lost</span></span>
+    <span class="chev">&rsaquo;</span>
+  </a>
+</nav>
+
+<h2>Network</h2>
+<table>
+  <tr><th>wi-fi</th><td id="wifi">&hellip;</td></tr>
+  <tr><th>network</th><td id="ssid">&hellip;</td></tr>
+  <tr><th>signal</th><td id="rssi">&hellip;</td></tr>
+  <tr><th>address</th><td id="ip">&hellip;</td></tr>
+  <tr><th>access point</th><td id="ap">&hellip;</td></tr>
+</table>
+
+<h2>Bluetooth</h2>
+<table>
+  <tr><th>ble</th><td id="ble">&hellip;</td></tr>
+  <tr><th>keyboard</th><td id="kb">&hellip;</td></tr>
+  <tr><th>fido2</th><td id="fido">&hellip;</td></tr>
+</table>
+
+<h2>Device</h2>
+<table>
+  <tr><th>uptime</th><td id="uptime">&hellip;</td></tr>
+  <tr><th>free memory</th><td id="heap">&hellip;</td></tr>
+  <tr><th>psram free</th><td id="psram">&hellip;</td></tr>
+  <tr><th>filesystem</th><td><span id="spiffs">&hellip;</span>
+      <div class="meter" id="spiffs-meter"><i></i></div></td></tr>
+  <tr><th>firmware</th><td id="firmware">&hellip;</td></tr>
+</table>
+
+<footer>
+  Only the Wi-Fi page changes what this device does. Credentials and keys never
+  leave it through this site.
+</footer>
+</div>
+<script src="/app.js"></script>
+</body>
+</html>

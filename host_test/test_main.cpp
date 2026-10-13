@@ -7,6 +7,10 @@
 #include "unity.h"
 
 void RegisterConfigTests(void);
+void RegisterWifiPolicyTests(void);
+void RegisterWebAuthTests(void);
+void RegisterWebPathTests(void);
+void RegisterWebSettingsTests(void);
 
 void setUp(void) {}
 
@@ -37,5 +41,9 @@ int main(int argc, char **argv) {
 
     UNITY_BEGIN();
     if (Wanted("config")) RegisterConfigTests();
+    if (Wanted("wifi_policy")) RegisterWifiPolicyTests();
+    if (Wanted("web_auth")) RegisterWebAuthTests();
+    if (Wanted("web_paths")) RegisterWebPathTests();
+    if (Wanted("web_settings")) RegisterWebSettingsTests();
     return UNITY_END();
 }

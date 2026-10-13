@@ -140,12 +140,20 @@ Opening the port with RTS asserted resets the chip.
 | `ble disconnect` | drop the link (keys released first); the host may reconnect |
 | `ble unpair <#>` / `<addr>` / `all` | delete a bond by number from `ble bonds`, by address, or all; a connected host is disconnected |
 | `ble kb <text>` | type text on the connected host (US layout). esp_console drops single-backslash escapes: type `\\n` (Enter), `\\t` (Tab), `\\\\`; quote to keep spaces |
-| `wifi on` / `wifi off` | start the station (tries the configured networks in order, retries every 2 s) / stop and unload the driver |
-| `wifi info` | state, network being tried/joined, last error (wrong password / network not found / signal lost + code), MAC, hostname, BSSID, channel, RSSI, IP, netmask, gateway, DNS |
-| `wifi scan` | access points: RSSI, channel, auth, SSID (radio must be on) |
-| `wifi networks` | configured networks, in try order |
-| `wifi set <ssid> [password]` / `wifi forget <ssid\|all>` | add/update / remove a network in config.json and save (quote an SSID with spaces; no password = open) |
+| `wifi on` / `wifi off` | radio on in the configured mode / off (saved) |
+| `wifi mode client\|ap\|apsta` | set the mode and switch the radio on (saved) |
+| `wifi info` | config, policy state (asked vs actual, timers), network and round, last error, radio mode, channel, MACs, hostname, IP/netmask/gateway/DNS, AP and its clients |
+| `wifi scan` | access points: RSSI, channel, auth, SSID (brings the radio up for it if off) |
+| `wifi ap [<ssid> [password] [channel]]` | show / set the device's own AP (empty password: open) |
+| `wifi retry` | restart the current mode from the top (re-reads the settings) |
+| `wifi networks` | configured networks, in try order, refused passwords marked |
+| `wifi set <ssid> [password]` / `wifi forget <ssid\|all>` | add/update / remove a network (quote an SSID with spaces; no password = open) |
+| `web [info]` | wanted mode, running, address(es), heap cost, auth, write, counters |
+| `web on\|off\|auto` | serve on any network / never / only while the device's AP is up (saved) |
+| `web login <user> <password>` / `web login off` | basic auth for the whole site / open site (saved). Both or neither; no ':' in the user |
+| `web write on\|off` | allow / refuse settings changes from the site (saved) |
+| `devstatus` | `version`, `info`, `wifi info`, `web`, `ble info` in one dump (also the site's Device status page) |
 | `config show` | current config as JSON, passwords masked |
 | `config info` | file path, source (file / built-in defaults), why the file was not used |
-| `config reload` / `config save` | re-read config.json (keeps values on error) and apply Wi-Fi settings / write current values |
+| `config reload` / `config save` | re-read config.json (keeps values on error) and apply Wi-Fi and web settings / write current values |
 | `efuse` | every eFuse field (list generated at build time from IDF `esp_efuse_table.csv`) and raw blocks BLK0..BLK10 |

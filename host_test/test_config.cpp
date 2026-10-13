@@ -64,19 +64,34 @@ void AssertDefaults(const config::Data &d) {
     TEST_ASSERT_FALSE(d.wifi.active);
     TEST_ASSERT_EQUAL_STRING("esp32-auth", d.wifi.hostname);
     TEST_ASSERT_EQUAL_UINT8(0, d.wifi.network_count);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(config::WifiMode::kClient), static_cast<int>(d.wifi.mode));
+    TEST_ASSERT_EQUAL_UINT8(2, d.wifi.rounds);
+    TEST_ASSERT_EQUAL_UINT16(120, d.wifi.ap_window_seconds);
+    TEST_ASSERT_EQUAL_STRING("esp32-auth", d.wifi.ap_ssid);
+    TEST_ASSERT_EQUAL_STRING("esp32-auth", d.wifi.ap_password);
+    TEST_ASSERT_EQUAL_UINT8(6, d.wifi.ap_channel);
     TEST_ASSERT_FALSE(d.ble.active);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(config::WebMode::kAuto), static_cast<int>(d.web.mode));
+    TEST_ASSERT_TRUE(d.web.write);
+    TEST_ASSERT_EQUAL_STRING("", d.web.user);
+    TEST_ASSERT_EQUAL_STRING("", d.web.password);
 }
 
 constexpr const char *kFullJson = R"json({
   "wifi": {
     "active": true,
+    "mode": "apsta",
     "hostname": "auth-1",
+    "rounds": 3,
+    "apWindowSeconds": 300,
+    "ap": {"ssid": "My AP", "password": "", "channel": 11},
     "networks": [
       {"ssid": "Home", "password": "password123"},
       {"ssid": "Office WiFi", "password": ""}
     ]
   },
-  "ble": {"active": true}
+  "ble": {"active": true},
+  "web": {"mode": "on", "write": false, "user": "admin", "password": "a:b c"}
 })json";
 
 // --- Defaults ------------------------------------------------------------------
@@ -112,7 +127,32 @@ void test_parse_full() {
     TEST_ASSERT_EQUAL_STRING("password123", d.wifi.networks[0].password);
     TEST_ASSERT_EQUAL_STRING("Office WiFi", d.wifi.networks[1].ssid);
     TEST_ASSERT_EQUAL_STRING("", d.wifi.networks[1].password);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(config::WifiMode::kApSta), static_cast<int>(d.wifi.mode));
+    TEST_ASSERT_EQUAL_UINT8(3, d.wifi.rounds);
+    TEST_ASSERT_EQUAL_UINT16(300, d.wifi.ap_window_seconds);
+    TEST_ASSERT_EQUAL_STRING("My AP", d.wifi.ap_ssid);
+    TEST_ASSERT_EQUAL_STRING("", d.wifi.ap_password);
+    TEST_ASSERT_EQUAL_UINT8(11, d.wifi.ap_channel);
     TEST_ASSERT_TRUE(d.ble.active);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(config::WebMode::kOn), static_cast<int>(d.web.mode));
+    TEST_ASSERT_FALSE(d.web.write);
+    TEST_ASSERT_EQUAL_STRING("admin", d.web.user);
+    TEST_ASSERT_EQUAL_STRING("a:b c", d.web.password);
+}
+
+void test_parse_rejects_bad_wifi_and_web_fields() {
+    AssertParseFails(R"({"wifi": {"mode": "station"}})", "wifi.mode");
+    AssertParseFails(R"({"wifi": {"rounds": 0}})", "wifi.rounds");
+    AssertParseFails(R"({"wifi": {"rounds": 1.5}})", "wifi.rounds");
+    AssertParseFails(R"({"wifi": {"apWindowSeconds": 10}})", "wifi.apWindowSeconds");
+    AssertParseFails(R"({"wifi": {"ap": []}})", "wifi.ap");
+    AssertParseFails(R"({"wifi": {"ap": {"ssid": ""}}})", "wifi.ap.ssid");
+    AssertParseFails(R"({"wifi": {"ap": {"password": "short"}}})", "wifi.ap.password");
+    AssertParseFails(R"({"wifi": {"ap": {"channel": 14}}})", "wifi.ap.channel");
+    AssertParseFails(R"({"web": {"mode": "always"}})", "web.mode");
+    AssertParseFails(R"({"web": {"write": 1}})", "web.write");
+    AssertParseFails(R"({"web": {"user": "a:b"}})", "web.user");
+    AssertParseFails(R"({"web": []})", "web");
 }
 
 void test_parse_empty_object_keeps_defaults() {
@@ -246,6 +286,16 @@ void test_serialize_round_trip() {
         TEST_ASSERT_EQUAL_STRING(in.wifi.networks[i].password, out.wifi.networks[i].password);
     }
     TEST_ASSERT_EQUAL(in.ble.active, out.ble.active);
+    TEST_ASSERT_EQUAL(static_cast<int>(in.wifi.mode), static_cast<int>(out.wifi.mode));
+    TEST_ASSERT_EQUAL_UINT8(in.wifi.rounds, out.wifi.rounds);
+    TEST_ASSERT_EQUAL_UINT16(in.wifi.ap_window_seconds, out.wifi.ap_window_seconds);
+    TEST_ASSERT_EQUAL_STRING(in.wifi.ap_ssid, out.wifi.ap_ssid);
+    TEST_ASSERT_EQUAL_STRING(in.wifi.ap_password, out.wifi.ap_password);
+    TEST_ASSERT_EQUAL_UINT8(in.wifi.ap_channel, out.wifi.ap_channel);
+    TEST_ASSERT_EQUAL(static_cast<int>(in.web.mode), static_cast<int>(out.web.mode));
+    TEST_ASSERT_EQUAL(in.web.write, out.web.write);
+    TEST_ASSERT_EQUAL_STRING(in.web.user, out.web.user);
+    TEST_ASSERT_EQUAL_STRING(in.web.password, out.web.password);
 }
 
 void test_serialize_escapes_strings() {
@@ -436,6 +486,7 @@ void RegisterConfigTests(void) {
     RUN_TEST(test_parse_rejects_too_many_networks);
     RUN_TEST(test_parse_rejects_duplicate_ssid);
     RUN_TEST(test_parse_rejects_bad_hostname);
+    RUN_TEST(test_parse_rejects_bad_wifi_and_web_fields);
     RUN_TEST(test_serialize_round_trip);
     RUN_TEST(test_serialize_escapes_strings);
     RUN_TEST(test_serialize_too_small_buffer);

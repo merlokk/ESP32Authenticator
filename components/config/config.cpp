@@ -2,6 +2,7 @@
 
 #include <cstdio>
 #include <cstring>
+#include <initializer_list>
 
 #include "cJSON.h"
 #include "esp_log.h"
@@ -12,11 +13,25 @@ namespace config {
 const char kDefaultJson[] = R"json({
   "wifi": {
     "active": false,
+    "mode": "client",
     "hostname": "esp32-auth",
+    "rounds": 2,
+    "apWindowSeconds": 120,
+    "ap": {
+      "ssid": "esp32-auth",
+      "password": "esp32-auth",
+      "channel": 6
+    },
     "networks": []
   },
   "ble": {
     "active": false
+  },
+  "web": {
+    "mode": "auto",
+    "write": true,
+    "user": "",
+    "password": ""
   }
 })json";
 
@@ -42,27 +57,7 @@ bool IsHex(char c) {
     return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
 }
 
-bool ValidSsid(const char *ssid) {
-    const size_t n = strlen(ssid);
-    return n >= 1 && n < kSsidSize;
-}
-
-// Empty (open network), a WPA passphrase of 8..63 chars, or a 64-hex-digit PSK.
-bool ValidPassword(const char *password) {
-    const size_t n = strlen(password);
-    if (n == 0 || (n >= 8 && n <= 63)) {
-        return true;
-    }
-    if (n != 64) {
-        return false;
-    }
-    for (size_t i = 0; i < n; ++i) {
-        if (!IsHex(password[i])) {
-            return false;
-        }
-    }
-    return true;
-}
+bool ValidWebPassword(const char *password) { return strlen(password) < kWebPasswordSize; }
 
 // RFC 1123 label: letters, digits, '-', not at either end.
 bool ValidHostname(const char *name) {
@@ -119,6 +114,91 @@ bool GetString(const cJSON *obj, const char *key, char *out, size_t out_size,
     }
     snprintf(out, out_size, "%s", item->valuestring);
     return true;
+}
+
+// Optional integer member in [min, max].
+bool GetUint(const cJSON *obj, const char *key, uint32_t min, uint32_t max, uint32_t *out,
+             const char *where, char *error, size_t size) {
+    const cJSON *item = cJSON_GetObjectItemCaseSensitive(obj, key);
+    if (item == nullptr) {
+        return true;
+    }
+    const double value = cJSON_IsNumber(item) ? item->valuedouble : -1;
+    if (value < min || value > max || value != static_cast<double>(static_cast<uint32_t>(value))) {
+        char text[kErrorSize];
+        snprintf(text, sizeof text, "%s.%s: an integer %u..%u", where, key,
+                 static_cast<unsigned>(min), static_cast<unsigned>(max));
+        SetError(error, size, text);
+        return false;
+    }
+    *out = static_cast<uint32_t>(value);
+    return true;
+}
+
+// Optional string member naming one of an enum's words.
+template <typename Mode>
+bool GetMode(const cJSON *obj, const char *key, bool (*parse)(const char *, Mode *), Mode *out,
+             const char *words, const char *where, char *error, size_t size) {
+    const cJSON *item = cJSON_GetObjectItemCaseSensitive(obj, key);
+    if (item == nullptr) {
+        return true;
+    }
+    if (!cJSON_IsString(item) || item->valuestring == nullptr || !parse(item->valuestring, out)) {
+        char text[kErrorSize];
+        snprintf(text, sizeof text, "%s.%s: one of %s", where, key, words);
+        SetError(error, size, text);
+        return false;
+    }
+    return true;
+}
+
+bool ParseAp(const cJSON *wifi, Wifi *out, char *error, size_t size) {
+    const cJSON *ap = cJSON_GetObjectItemCaseSensitive(wifi, "ap");
+    if (ap == nullptr) {
+        return true;
+    }
+    if (!cJSON_IsObject(ap)) {
+        SetError(error, size, "wifi.ap: expected an object");
+        return false;
+    }
+    uint32_t channel = out->ap_channel;
+    if (!GetString(ap, "ssid", out->ap_ssid, sizeof out->ap_ssid, ValidSsid, "1..32 bytes",
+                   "wifi.ap", error, size) ||
+        !GetString(ap, "password", out->ap_password, sizeof out->ap_password, ValidApPassword,
+                   "empty or 8..63 characters", "wifi.ap", error, size) ||
+        !GetUint(ap, "channel", 1, 13, &channel, "wifi.ap", error, size)) {
+        return false;
+    }
+    out->ap_channel = static_cast<uint8_t>(channel);
+    return true;
+}
+
+bool ParseWifi(const cJSON *wifi, Wifi *out, char *error, size_t size) {
+    uint32_t rounds = out->rounds;
+    uint32_t window = out->ap_window_seconds;
+    if (!GetBool(wifi, "active", &out->active, "wifi", error, size) ||
+        !GetMode(wifi, "mode", ParseWifiMode, &out->mode, "client, ap, apsta", "wifi", error,
+                 size) ||
+        !GetString(wifi, "hostname", out->hostname, sizeof out->hostname, ValidHostname,
+                   "1..32 of a-z A-Z 0-9 '-', not starting/ending with '-'", "wifi", error,
+                   size) ||
+        !GetUint(wifi, "rounds", 1, 10, &rounds, "wifi", error, size) ||
+        !GetUint(wifi, "apWindowSeconds", 30, 3600, &window, "wifi", error, size) ||
+        !ParseAp(wifi, out, error, size)) {
+        return false;
+    }
+    out->rounds = static_cast<uint8_t>(rounds);
+    out->ap_window_seconds = static_cast<uint16_t>(window);
+    return true;
+}
+
+bool ParseWeb(const cJSON *web, Web *out, char *error, size_t size) {
+    return GetMode(web, "mode", ParseWebMode, &out->mode, "off, on, auto", "web", error, size) &&
+           GetBool(web, "write", &out->write, "web", error, size) &&
+           GetString(web, "user", out->user, sizeof out->user, ValidWebUser,
+                     "0..32 characters, no ':'", "web", error, size) &&
+           GetString(web, "password", out->password, sizeof out->password, ValidWebPassword,
+                     "0..64 characters", "web", error, size);
 }
 
 bool ParseNetworks(const cJSON *wifi, Wifi *out, char *error, size_t size) {
@@ -188,11 +268,18 @@ bool ParseInto(const cJSON *root, Data *out, char *error, size_t size) {
             SetError(error, size, "wifi: expected an object");
             return false;
         }
-        if (!GetBool(wifi, "active", &parsed.wifi.active, "wifi", error, size) ||
-            !GetString(wifi, "hostname", parsed.wifi.hostname, sizeof parsed.wifi.hostname,
-                       ValidHostname, "1..32 of a-z A-Z 0-9 '-', not starting/ending with '-'",
-                       "wifi", error, size) ||
+        if (!ParseWifi(wifi, &parsed.wifi, error, size) ||
             !ParseNetworks(wifi, &parsed.wifi, error, size)) {
+            return false;
+        }
+    }
+    const cJSON *web = cJSON_GetObjectItemCaseSensitive(root, "web");
+    if (web != nullptr) {
+        if (!cJSON_IsObject(web)) {
+            SetError(error, size, "web: expected an object");
+            return false;
+        }
+        if (!ParseWeb(web, &parsed.web, error, size)) {
             return false;
         }
     }
@@ -285,7 +372,14 @@ size_t Serialize(const Data &d, char *out, size_t size) {
     cJSON *root = cJSON_CreateObject();
     cJSON *wifi = cJSON_AddObjectToObject(root, "wifi");
     cJSON_AddBoolToObject(wifi, "active", d.wifi.active);
+    cJSON_AddStringToObject(wifi, "mode", Name(d.wifi.mode));
     cJSON_AddStringToObject(wifi, "hostname", d.wifi.hostname);
+    cJSON_AddNumberToObject(wifi, "rounds", d.wifi.rounds);
+    cJSON_AddNumberToObject(wifi, "apWindowSeconds", d.wifi.ap_window_seconds);
+    cJSON *ap = cJSON_AddObjectToObject(wifi, "ap");
+    cJSON_AddStringToObject(ap, "ssid", d.wifi.ap_ssid);
+    cJSON_AddStringToObject(ap, "password", d.wifi.ap_password);
+    cJSON_AddNumberToObject(ap, "channel", d.wifi.ap_channel);
     cJSON *list = cJSON_AddArrayToObject(wifi, "networks");
     for (uint8_t i = 0; i < d.wifi.network_count && i < kMaxNetworks; ++i) {
         cJSON *n = cJSON_CreateObject();
@@ -295,6 +389,11 @@ size_t Serialize(const Data &d, char *out, size_t size) {
     }
     cJSON *ble = cJSON_AddObjectToObject(root, "ble");
     cJSON_AddBoolToObject(ble, "active", d.ble.active);
+    cJSON *web = cJSON_AddObjectToObject(root, "web");
+    cJSON_AddStringToObject(web, "mode", Name(d.web.mode));
+    cJSON_AddBoolToObject(web, "write", d.web.write);
+    cJSON_AddStringToObject(web, "user", d.web.user);
+    cJSON_AddStringToObject(web, "password", d.web.password);
 
     // cJSON wants 5 spare bytes to be sure it fits.
     const bool ok = size > 5 && cJSON_PrintPreallocated(root, out, static_cast<int>(size - 5), 1);
@@ -336,6 +435,76 @@ bool RemoveNetwork(Wifi *wifi, const char *ssid) {
             }
             --wifi->network_count;
             memset(&wifi->networks[wifi->network_count], 0, sizeof(Network));
+            return true;
+        }
+    }
+    return false;
+}
+
+bool ValidSsid(const char *ssid) {
+    const size_t n = strlen(ssid);
+    return n >= 1 && n < kSsidSize;
+}
+
+// Empty (open network), a WPA passphrase of 8..63 chars, or a 64-hex-digit PSK.
+bool ValidPassword(const char *password) {
+    const size_t n = strlen(password);
+    if (n == 0 || (n >= 8 && n <= 63)) {
+        return true;
+    }
+    if (n != 64) {
+        return false;
+    }
+    for (size_t i = 0; i < n; ++i) {
+        if (!IsHex(password[i])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool ValidApPassword(const char *password) {
+    const size_t n = strlen(password);
+    return n == 0 || (n >= 8 && n <= 63);
+}
+
+// Basic auth separates user and password with the first ':'.
+bool ValidWebUser(const char *user) {
+    return strlen(user) < kWebUserSize && strchr(user, ':') == nullptr;
+}
+
+const char *Name(WifiMode mode) {
+    switch (mode) {
+        case WifiMode::kClient: return "client";
+        case WifiMode::kAp: return "ap";
+        case WifiMode::kApSta: return "apsta";
+    }
+    return "client";
+}
+
+bool ParseWifiMode(const char *text, WifiMode *out) {
+    for (WifiMode mode : {WifiMode::kClient, WifiMode::kAp, WifiMode::kApSta}) {
+        if (strcmp(text, Name(mode)) == 0) {
+            *out = mode;
+            return true;
+        }
+    }
+    return false;
+}
+
+const char *Name(WebMode mode) {
+    switch (mode) {
+        case WebMode::kOff: return "off";
+        case WebMode::kOn: return "on";
+        case WebMode::kAuto: return "auto";
+    }
+    return "auto";
+}
+
+bool ParseWebMode(const char *text, WebMode *out) {
+    for (WebMode mode : {WebMode::kOff, WebMode::kOn, WebMode::kAuto}) {
+        if (strcmp(text, Name(mode)) == 0) {
+            *out = mode;
             return true;
         }
     }
