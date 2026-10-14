@@ -10,7 +10,7 @@ Target and status. Screen design and the open questions: [x4-design.md](x4-desig
 | FIDO2 over USB | not yet |
 | BLE keyboard: types login / password / TOTP | keyboard done; typing records not yet |
 | TOTP codes | done (`crypto::Totp`, console `totp`) |
-| PIN lock of the screen; the PIN also derives the storage key | not yet |
+| PIN lock (6 digits, lockout after 10 tries, wipe PIN); the PIN also derives the storage key | not yet |
 | Password manager records (site, login, password, TOTP) | not yet |
 | Encrypted store: one `.bin`, records + settings, counter + modification time, rollback counter in NVS | not yet (plan: storage-encryption.md) |
 | Sync over the internet, the later modification time wins | not yet; service not chosen |

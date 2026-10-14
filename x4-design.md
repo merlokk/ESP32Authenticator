@@ -47,10 +47,21 @@ Portrait, 480x800. The panel scans landscape (hardware.md): the driver rotates.
 - **Pages**: pages of the credential list; switcher at the bottom, 4 pages
   for now, the Left / Right buttons flip them as well.
 - **Lock screen**: PIN pad (touch), shown at boot and after an idle timeout.
+  See PIN below.
 - **Settings**: frontlight, Wi-Fi.
 
 E-ink: 1-bit LVGL, redraw at most every 200 ms; partial updates for list and
 status changes, a full refresh now and then against ghosting (driver's choice).
+
+## PIN
+
+- 6 digits. Unlocks the screen and derives the storage key.
+- 10 wrong PINs in a row: locked for `lockMinutes` (config); then 10 more
+  tries. The failure count and the lock deadline live in NVS, so a reboot
+  does not reset them.
+- A special **wipe PIN** (config) erases the store when typed on the PIN pad.
+  It has to be checked before anything is decrypted, so config keeps only a
+  salted hash of it, never the PIN; it must differ from the real PIN.
 
 ## Store file and sync
 
@@ -73,4 +84,5 @@ status changes, a full refresh now and then against ghosting (driver's choice).
 ## Open questions
 
 - Sync service.
-- PIN: length, attempts before wipe / delay; whether FIDO2 also waits for unlock.
+- Whether FIDO2 waits for the unlock; whether the wipe PIN also erases the
+  FIDO2 credentials.
