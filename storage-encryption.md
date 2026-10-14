@@ -41,12 +41,13 @@ eFuse HMAC key (`CONFIG_NVS_SEC_KEY_PROTECT_USING_HMAC`): fits A or C.
   any length, no padding (no 16-byte boundary); 16-byte tag = integrity (a
   tampered or truncated file is refused). CBC (in `crypto` now) would need
   PKCS#7 padding and a separate HMAC.
-- File: `magic+version (4) | nonce (12, random per write) | ciphertext | tag (16)`:
-  +32 B. Never reuse a nonce with the same key.
-- Rollback to an older valid file is not detected by GCM: the header carries a
-  counter and a modification time (authenticated as GCM associated data), the
-  highest accepted counter is kept in NVS, and a file below it is invalid.
-  Sync: the later modification time wins (x4-design.md).
+- File: the store header (`store_header.h`, 40 bytes, already in front of
+  `fido.bin`: version, modification time, length, cipher, nonce) |
+  ciphertext | tag (16). The header is the GCM associated data. Never reuse a
+  nonce with the same key.
+- Rollback to an older valid file is not detected by GCM: the header's
+  version is checked against the highest one kept in NVS (done for the plain
+  `fido.bin`). Sync: the later modification time wins (x4-design.md).
 
 ## Speed
 

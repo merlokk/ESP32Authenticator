@@ -12,7 +12,8 @@ Target and status. Screen design and the open questions: [x4-design.md](x4-desig
 | TOTP codes | done (`crypto::Totp`, console `totp`) |
 | PIN lock (6 digits, lockout after 10 tries, wipe PIN); the PIN also derives the storage key | not yet |
 | Password manager records (site, login, password, TOTP) | not yet |
-| Encrypted store: one `.bin`, records + settings, counter + modification time, rollback counter in NVS | not yet (plan: storage-encryption.md) |
+| Store file header (version, modification time) and rollback check (highest version in NVS) | done for `fido.bin` (`storefile`) |
+| Encrypted store: one `.bin`, records + settings, behind the same header | not yet (plan: storage-encryption.md) |
 | Sync over the internet, the later modification time wins | not yet; service not chosen |
 | X4 Pro screen: status bar, credential list, pages, settings | not yet (LVGL up, no display driver) |
 | Settings: frontlight, Wi-Fi | Wi-Fi on the console and the site; frontlight not yet |
@@ -229,7 +230,7 @@ and never starts without lwIP (an assert).
 | Route | |
 |---|---|
 | `GET /`, `/*.html`, `/app.js` | pages: front (network, BLE, device), Wi-Fi settings, device status, hardware info (from device status), restart. Whitelist of names/extensions; anything else, e.g. `/config.json`, is the 404 page |
-| `GET /api/status` | firmware, heap, SPIFFS, Wi-Fi (IP, MAC, internet), AP, BLE, FIDO (readiness, requests, credentials stored of max, store bytes, PIN set and attempts, signature counter; `fido_store` false while a request holds the store). No secrets |
+| `GET /api/status` | firmware, heap, SPIFFS, Wi-Fi (IP, MAC, internet), AP, BLE, FIDO (readiness, requests, credentials stored of max, store bytes, PIN set and attempts, signature counter, file version and modification time; `fido_store` false while a request holds the store, `fido_off` why FIDO2 is off). No secrets |
 | `GET /api/devstatus` | the console's `devstatus` dump (stdout swapped for the request) |
 | `GET /api/hwinfo` | the console's `hwinfo` dump, the same way (eFuse key purposes and flags only, no NVS values) |
 | `GET /api/settings`, `POST /api/settings` | Wi-Fi mode, AP, networks (with `ip`; absent `ip` keeps the current one). Whitelist; passwords write-only (absent/null keeps, `""` clears); all-or-nothing; memory only |
@@ -248,7 +249,8 @@ and never starts without lwIP (an assert).
   reads it at once): Network (Wi-Fi state and mode,
   network, signal, address static/dhcp, MAC, internet, AP), Bluetooth (BLE,
   keyboard, FIDO2 readiness and counts; `stored` with a bar of the slots used,
-  amber from 80 %, red from 90 %; PIN and attempts left; signature counter),
+  amber from 80 %, red from 90 %; PIN and attempts left; signature counter;
+  file version and change time; why FIDO2 is off, if it is),
   Device (local time and zone, time sync, uptime, heap, PSRAM, SPIFFS with a bar of the space used, amber
   from 80 %, red from 95 %, firmware).
 - Pages and `app.js` are cached for an hour: after a reflash, reload with
@@ -264,8 +266,20 @@ submodule) behind `ble_fido`. API: `fido_ctap_init(hooks, store)`,
 - Crypto: lionkey's table with RNG, SHA-256, AES from the `crypto` driver;
   P-256 on lionkey's micro-ecc (no ECC accelerator on the S3; its `uECC_*`
   symbols are renamed `lk_uECC_*`, NimBLE's tinycrypt has the same names).
-- Store: `/spiffs/fido.bin` = lionkey's RAM log, rewritten whole through a
-  temp file on every change, compacted at boot. Max credentials: the board's
+- Store: `/spiffs/fido.bin` = store header + lionkey's RAM log, rewritten
+  whole through a temp file on every change, compacted at boot.
+- Store header (`components/storefile/store_header.h`, pure, host-tested):
+  40 bytes, plain, in front of every store file: magic `ESAF`, format, kind,
+  cipher (0 plain; AES-256-GCM later, the header then being its associated
+  data), **version**, payload length, **modification time** (UTC, 0 unknown),
+  nonce. Every write: version = max(file, NVS) + 1; NVS `fido/store_ver`
+  keeps the highest version accepted (written after the file, only when it
+  grows). At boot a file below it, or without a header once a version is
+  kept, is a rollback: refused and left as is, FIDO2 off
+  (`fido_ctap_stopped_reason`, console and site); `fido2 reset confirm`
+  writes an empty store over it. A file above NVS (power loss after the file,
+  or a synced copy) is accepted. A header-less file before any version is
+  migrated once. `Newer()` holds the sync rule. Max credentials: the board's
   `fido_max_credentials` (10 on both boards, 1..50); lionkey stores
   non-discoverable ones too, one more gets KEY_STORE_FULL. The RAM log
   (`FIDO_CTAP_STORE_BYTES`: 1 KB per credential + 2 KB, 12 KB for 10) and the

@@ -95,6 +95,11 @@
 
   var by = function (id) { return document.getElementById(id); };
 
+  // Unix seconds as the device's local time (UTC shifted by its zone offset).
+  function localTime(utc, offset) {
+    return new Date((utc + offset) * 1000).toISOString().slice(0, 19).replace("T", " ");
+  }
+
   function bytes(n) {
     if (typeof n !== "number" || !isFinite(n)) return "-";
     if (n < 1024) return n + " B";
@@ -205,19 +210,24 @@
                                         : "not set",
              !d.fido_pin ? "faint" : d.fido_pin_retries <= 3 ? "warn" : "ok");
         text(by("fido-counter"), d.fido_counter + " signature(s)");
+        // Version: +1 per write; an older copy is refused (rollback).
+        text(by("fido-file"), d.fido_version ? "version " + d.fido_version + ", changed " +
+             (d.fido_modified > 0 ? localTime(d.fido_modified, d.time_offset) : "?") : "none yet");
         by("fido-meter").style.display = "";
         fill(by("fido-meter"), (d.fido_creds / d.fido_max) * 100, 80, 90);
       } else {
-        text(by("fido-store"), "busy", "faint");  // a request holds the store
+        // Off: the store file was refused (rollback...); else a request holds it.
+        text(by("fido-store"), d.fido_off ? "off: " + d.fido_off : "busy", d.fido_off ? "bad" : "faint");
         text(by("fido-pin"), "-", "faint");
         text(by("fido-counter"), "-", "faint");
+        text(by("fido-file"), "-", "faint");
         by("fido-meter").style.display = "none";
       }
 
       if (d.time_utc > 0) {
         // The device's local time: UTC shifted by its zone, printed as UTC.
         var off = d.time_offset, a = Math.abs(off);
-        var local = new Date((d.time_utc + off) * 1000).toISOString().slice(0, 19).replace("T", " ");
+        var local = localTime(d.time_utc, off);
         text(by("time"), local + " " + d.time_zone + " (UTC" + (off < 0 ? "-" : "+") +
              ("0" + Math.floor(a / 3600)).slice(-2) + ":" + ("0" + Math.floor(a % 3600 / 60)).slice(-2) + ")");
       } else { text(by("time"), "not set", "warn"); }

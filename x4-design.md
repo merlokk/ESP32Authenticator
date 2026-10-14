@@ -71,10 +71,11 @@ status changes, a full refresh now and then against ghosting (driver's choice).
 
 ## Store file and sync
 
-- One encrypted `.bin` (records and settings). Header: format version,
-  **counter**, **modification time** (UTC), then AES-256-GCM (format:
-  storage-encryption.md). The header is authenticated (GCM associated data):
-  counter and time cannot be edited without the key.
+- One encrypted `.bin` (records and settings). Header (`store_header.h`, as
+  on `fido.bin` now): format, **counter** (version), **modification time**
+  (UTC), then AES-256-GCM (format: storage-encryption.md). The header is
+  authenticated (GCM associated data): counter and time cannot be edited
+  without the key.
 - Every change: counter + 1, modification time = now. The X4 Pro always has
   a time (the BM8563 RTC, corrected by SNTP), maybe off by some drift. A board
   with no believable time (the dev board before its first sync) still saves

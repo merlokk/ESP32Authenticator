@@ -187,10 +187,10 @@ Opening the port with RTS asserted resets the chip.
 | `web on\|off\|auto` | serve on any network / never / only while the device's AP is up (saved) |
 | `web login <user> <password>` / `web login off` | basic auth for the whole site / open site (saved). Both or neither; no ':' in the user |
 | `web write on\|off` | allow / refuse settings changes from the site (saved) |
-| `fido2 [info]` | credentials stored of max (resident), store bytes used of size, file size, PIN set and attempts left, signature counter |
+| `fido2 [info]` | credentials stored of max (resident), store bytes used of size, file size, file version (and the highest seen here) and change time, PIN set and attempts left, signature counter; when FIDO2 is off, why (e.g. an old store file: rollback) |
 | `fido2 list` | credentials: #, id (first 8 hex digits), resident, site (RP ID, `...` if truncated), user name (display name), its origin: `made <local time> on <authenticator base MAC> by <host BLE identity address>` (`?` for what was not recorded, e.g. credentials made before) |
 | `fido2 delete <#\|id>` | delete one: number from `fido2 list` (1-2 digits) or a unique id prefix (4+ hex digits; numbers shift after a delete) |
-| `fido2 reset` / `fido2 reset confirm` | say what would go / delete every credential and the PIN (counter kept). Waits up to 1 s for a running FIDO request, else "busy" |
+| `fido2 reset` / `fido2 reset confirm` | say what would go / delete every credential and the PIN (counter kept; the file becomes an empty store with the next version). Waits up to 1 s for a running FIDO request, else "busy". Also the way out of a refused store file |
 | `board` | the board built for (`devices/config.h`): clock, display, touch, LED, battery, SD, frontlight, button and device pins |
 | `led [info]` / `led <colour> [effect] [seconds]` | the board's WS2812: pin, UART, what it shows, ceilings, writes, task stack / show a colour (off white red green blue amber yellow cyan magenta) and effect (solid beacon slow blink fast breathe) for 1..600 s (default 5), then back |
 | `led brightness [<n> [idle]]` | show / set the brightness ceilings in percent, normal and idle (saved) |

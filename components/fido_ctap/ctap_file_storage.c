@@ -1,9 +1,14 @@
 // LionKey storage on ESP-IDF: lionkey's RAM log (ctap_memory_storage, an
 // append-only list of items, deleted ones only flagged) is the working copy;
-// the file holds its used part [0, write_index).
+// the file is a store header (store_header.h: version, modification time)
+// followed by the log's used part [0, write_index).
 //
 // - Every change rewrites the file through a temp file + rename, so a power
 //   loss leaves either the old or the new store.
+// - Rollback: every write takes a version above the file's and NVS's, and
+//   NVS (`fido/store_ver`) keeps the highest one accepted, written after the
+//   file. A file below it (an old copy put back) is refused and left as is;
+//   so is a file without a header once a version is kept.
 // - Deleted items are dropped (compaction) only at init: later the core keeps
 //   item handles (offsets), which compaction would move.
 // - The global signature counter lives in NVS: otherwise every assertion
@@ -19,6 +24,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <time.h>
 
 #include "ctap_credentials_store.h"
@@ -26,11 +32,13 @@
 #include "esp_mac.h"
 #include "esp_log.h"
 #include "nvs.h"
+#include "store_header_c.h"
 
 static const char *TAG = "ctap_store";
 
 static const char *kNvsNamespace = "fido";
 static const char *kNvsCounter = "sign_count";
+static const char *kNvsVersion = "store_ver";
 // 2024-01-01: an earlier clock was never set (rtc::Believable).
 static const time_t kBelievableTime = 1704067200;
 
@@ -38,11 +46,65 @@ static ctap_file_storage_context_t *ctx_of(const ctap_storage_t *storage) {
     return (ctap_file_storage_context_t *)storage->context;
 }
 
-static ctap_storage_status_t save(const ctap_storage_t *storage) {
+static bool nvs_version(uint32_t *out) {
+    *out = 0;
+    nvs_handle_t h;
+    if (nvs_open(kNvsNamespace, NVS_READONLY, &h) != ESP_OK) {
+        return false;
+    }
+    const bool found = nvs_get_u32(h, kNvsVersion, out) == ESP_OK;
+    nvs_close(h);
+    return found;
+}
+
+// Written only when it grows (NVS wear: storage-encryption.md).
+static void keep_version(uint32_t version) {
+    uint32_t kept;
+    if (nvs_version(&kept) && kept >= version) {
+        return;
+    }
+    nvs_handle_t h;
+    esp_err_t err = nvs_open(kNvsNamespace, NVS_READWRITE, &h);
+    if (err == ESP_OK) {
+        err = nvs_set_u32(h, kNvsVersion, version);
+        if (err == ESP_OK) {
+            err = nvs_commit(h);
+        }
+        nvs_close(h);
+    }
+    if (err != ESP_OK) {
+        // The file is newer than NVS: it is still accepted at the next boot.
+        ESP_LOGE(TAG, "store version %u not kept: %s", (unsigned)version, esp_err_to_name(err));
+    }
+}
+
+uint32_t ctap_file_storage_nvs_version(void) {
+    uint32_t v;
+    nvs_version(&v);
+    return v;
+}
+
+// Writes the file with the next version. `changed`: the credentials or PIN
+// changed (the modification time moves); false: only the layout (compaction).
+static ctap_storage_status_t save(const ctap_storage_t *storage, bool changed) {
     ctap_file_storage_context_t *ctx = ctx_of(storage);
     if (ctx->path == NULL) {
         return CTAP_STORAGE_OK;
     }
+    uint32_t kept;
+    nvs_version(&kept);
+    store_header_t header = {
+        .cipher = 0,
+        .version = store_header_next_version(ctx->version, kept),
+        .length = (uint32_t)ctx->mem.write_index,
+        .modified_utc = ctx->modified_utc,
+    };
+    if (changed) {
+        const time_t now = time(NULL);
+        header.modified_utc = now >= kBelievableTime ? (int64_t)now : 0;
+    }
+    uint8_t head[STORE_HEADER_SIZE];
+    store_header_encode(STORE_KIND_FIDO, &header, head);
     char tmp[64];
     snprintf(tmp, sizeof tmp, "%s.tmp", ctx->path);
     FILE *f = fopen(tmp, "wb");
@@ -51,7 +113,8 @@ static ctap_storage_status_t save(const ctap_storage_t *storage) {
         return CTAP_STORAGE_ERROR;
     }
     const size_t n = ctx->mem.write_index;
-    const bool ok = fwrite(ctx->mem.memory, 1, n, f) == n;
+    const bool ok = fwrite(head, 1, sizeof head, f) == sizeof head &&
+                    fwrite(ctx->mem.memory, 1, n, f) == n;
     if (fclose(f) != 0 || !ok) {
         ESP_LOGE(TAG, "write %s failed", tmp);
         remove(tmp);
@@ -62,6 +125,9 @@ static ctap_storage_status_t save(const ctap_storage_t *storage) {
         ESP_LOGE(TAG, "rename %s failed", tmp);
         return CTAP_STORAGE_ERROR;
     }
+    ctx->version = header.version;
+    ctx->modified_utc = header.modified_utc;
+    keep_version(header.version);  // after the file: a power loss between is a newer file
     return CTAP_STORAGE_OK;
 }
 
@@ -99,38 +165,99 @@ static bool compact(const ctap_storage_t *storage) {
     return true;
 }
 
+// Reads the file into the RAM log. Returns false (with ctx->refused) if it
+// must not be loaded; *migrate: a file from before the header.
+static bool load(ctap_file_storage_context_t *ctx, bool *migrate) {
+    *migrate = false;
+    struct stat st;
+    if (stat(ctx->path, &st) != 0) {
+        if (errno == ENOENT) {
+            return true;  // no file: empty, the next write takes the next version
+        }
+        ESP_LOGE(TAG, "cannot stat %s: errno %d", ctx->path, errno);
+        ctx->refused = "the store file cannot be read";
+        return false;
+    }
+    FILE *f = fopen(ctx->path, "rb");
+    if (f == NULL) {
+        ESP_LOGE(TAG, "cannot read %s: errno %d", ctx->path, errno);
+        ctx->refused = "the store file cannot be read";
+        return false;
+    }
+    const size_t file_size = (size_t)st.st_size;
+    uint8_t head[STORE_HEADER_SIZE];
+    const size_t got = fread(head, 1, sizeof head, f);
+    store_header_t header = {0};
+    const store_parse_t parse =
+        store_header_decode(head, got, file_size, STORE_KIND_FIDO, &header);
+    uint32_t kept;
+    const bool has_kept = nvs_version(&kept);
+    bool ok = false;
+    size_t payload = 0;
+    if (parse == STORE_PARSE_BAD) {
+        ctx->refused = "the store file is damaged or of an unknown format";
+    } else if (store_header_check(parse, header.version, has_kept, kept) == STORE_ROLLBACK) {
+        ESP_LOGE(TAG, "%s: version %u, but %u was seen", ctx->path, (unsigned)header.version,
+                 (unsigned)kept);
+        ctx->refused = "the store file is older than one this device has used (rollback)";
+    } else if (parse == STORE_PARSE_OK && header.cipher != 0) {
+        ctx->refused = "the store file is encrypted: not supported by this firmware";
+    } else {
+        *migrate = parse == STORE_PARSE_NO_HEADER;
+        payload = *migrate ? file_size : header.length;
+        // More than fits: the limit was lowered. Truncating would lose
+        // credentials on the next save, so the file is left as it is.
+        if (payload > ctx->mem.memory_size) {
+            ESP_LOGE(TAG, "%s: %u bytes, larger than the %u-byte store", ctx->path,
+                     (unsigned)payload, (unsigned)ctx->mem.memory_size);
+            ctx->refused = "the store file is larger than the store (credential limit lowered)";
+        } else {
+            ok = (!*migrate || fseek(f, 0, SEEK_SET) == 0) &&
+                 fread(ctx->mem.memory, 1, payload, f) == payload;
+            if (!ok) {
+                ctx->refused = "the store file cannot be read";
+            }
+        }
+    }
+    fclose(f);
+    if (!ok) {
+        ESP_LOGE(TAG, "%s not loaded: %s", ctx->path, ctx->refused);
+        memset(ctx->mem.memory, 0, ctx->mem.memory_size);
+        return false;
+    }
+    ctx->mem.write_index = payload;  // find_item only looks at [0, write_index)
+    ctx->version = header.version;
+    ctx->modified_utc = header.modified_utc;
+    if (parse == STORE_PARSE_OK) {
+        keep_version(header.version);  // above NVS: written before a power loss, or synced
+    }
+    return true;
+}
+
 ctap_storage_status_t ctap_file_storage_init(const ctap_storage_t *storage) {
     ctap_file_storage_context_t *ctx = ctx_of(storage);
     memset(ctx->mem.memory, 0, ctx->mem.memory_size);
     ctx->mem.write_index = 0;
-    size_t loaded = 0;
-    if (ctx->path != NULL) {
-        FILE *f = fopen(ctx->path, "rb");
-        if (f != NULL) {
-            loaded = fread(ctx->mem.memory, 1, ctx->mem.memory_size, f);
-            // More than fits: the limit was lowered. Truncating would lose
-            // credentials on the next save, so the file is left as it is.
-            const bool too_big = loaded == ctx->mem.memory_size && fgetc(f) != EOF;
-            fclose(f);
-            if (too_big) {
-                ESP_LOGE(TAG, "%s is larger than the %u-byte store: not loaded", ctx->path,
-                         (unsigned)ctx->mem.memory_size);
-                return CTAP_STORAGE_ERROR;
-            }
-        } else if (errno != ENOENT) {
-            ESP_LOGE(TAG, "cannot read %s: errno %d", ctx->path, errno);
-            return CTAP_STORAGE_ERROR;
-        }
-    } else {
+    ctx->version = 0;
+    ctx->modified_utc = 0;
+    ctx->refused = NULL;
+    bool migrate = false;
+    if (ctx->path == NULL) {
         ESP_LOGW(TAG, "no store file: credentials are lost on reboot");
+    } else if (!load(ctx, &migrate)) {
+        return CTAP_STORAGE_ERROR;
     }
-    ctx->mem.write_index = loaded;  // find_item only looks at [0, write_index)
+    const size_t loaded = ctx->mem.write_index;
     if (!compact(storage)) {
         return CTAP_STORAGE_ERROR;
     }
-    ESP_LOGI(TAG, "%s: %u bytes, %u live", ctx->path ? ctx->path : "RAM", (unsigned)loaded,
-             (unsigned)ctx->mem.write_index);
-    return ctx->mem.write_index != loaded ? save(storage) : CTAP_STORAGE_OK;
+    ESP_LOGI(TAG, "%s: version %u, %u bytes, %u live", ctx->path ? ctx->path : "RAM",
+             (unsigned)ctx->version, (unsigned)loaded, (unsigned)ctx->mem.write_index);
+    if (migrate) {
+        ESP_LOGW(TAG, "store without a header: rewritten with one");
+        return save(storage, true);
+    }
+    return ctx->mem.write_index != loaded ? save(storage, false) : CTAP_STORAGE_OK;
 }
 
 static size_t count_credentials(const ctap_storage_t *storage) {
@@ -268,7 +395,7 @@ ctap_storage_status_t ctap_file_storage_create_or_update_item(const ctap_storage
         }
         add_origin(storage, new_id);
     }
-    return save(storage);
+    return save(storage, true);
 }
 
 ctap_storage_status_t ctap_file_storage_delete_item(const ctap_storage_t *storage,
@@ -285,7 +412,7 @@ ctap_storage_status_t ctap_file_storage_delete_item(const ctap_storage_t *storag
     if (credential) {
         delete_origin(storage, id);
     }
-    return save(storage);
+    return save(storage, true);
 }
 
 ctap_storage_status_t ctap_file_storage_increment_counter(const ctap_storage_t *storage,
@@ -337,8 +464,8 @@ size_t ctap_file_storage_estimate_num_remaining_items(const ctap_storage_t *stor
 ctap_storage_status_t ctap_file_storage_erase(const ctap_storage_t *storage) {
     ctap_file_storage_context_t *ctx = ctx_of(storage);
     ctap_memory_storage_erase(storage);
-    if (ctx->path != NULL) {
-        remove(ctx->path);
-    }
-    return CTAP_STORAGE_OK;
+    ctx->refused = NULL;
+    // An empty store with the next version, not no file: an old copy put
+    // back after a reset is still refused.
+    return save(storage, true);
 }

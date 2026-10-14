@@ -232,6 +232,8 @@ esp_err_t StatusApi(httpd_req_t *request) {
     // The store, unless a request holds it (then the page shows a dash).
     fido_ctap_info_t store = {};
     const bool have_store = fido_ctap_info(&store) == ESP_OK;
+    // Fixed text from the store code (no quotes); "" while it runs.
+    const char *fido_off = fido_ctap_stopped_reason();
     const bool ble_on = ble::IsOn();
     const bool ble_connected = ble_on && ble::ConnHandle() != BLE_HS_CONN_HANDLE_NONE;
 
@@ -271,9 +273,10 @@ esp_err_t StatusApi(httpd_req_t *request) {
         ",\"ap_ssid\":\"%s\",\"ap_ip\":\"%s\",\"ap_clients\":%u"
         ",\"ble\":\"%s\",\"ble_secure\":%s,\"kb_ready\":%s,\"fido_ready\":%s"
         ",\"fido_requests\":%" PRIu32 ",\"fido_errors\":%" PRIu32
-        ",\"fido_store\":%s,\"fido_creds\":%u,\"fido_resident\":%u,\"fido_max\":%u"
+        ",\"fido_off\":\"%s\",\"fido_store\":%s"
+        ",\"fido_creds\":%u,\"fido_resident\":%u,\"fido_max\":%u"
         ",\"fido_used\":%u,\"fido_size\":%u,\"fido_pin\":%s,\"fido_pin_retries\":%u"
-        ",\"fido_counter\":%" PRIu32
+        ",\"fido_counter\":%" PRIu32 ",\"fido_version\":%" PRIu32 ",\"fido_modified\":%lld"
         ",\"time_utc\":%lld,\"time_offset\":%d,\"time_zone\":\"%s\",\"time_sync\":\"%s\""
         ",\"time_sync_ago_s\":%ld}",
         app->version, app->idf_ver, static_cast<uint32_t>(esp_timer_get_time() / 1000000),
@@ -287,11 +290,13 @@ esp_err_t StatusApi(httpd_req_t *request) {
         !ble_on ? "off" : ble_connected ? "connected" : "advertising",
         ble_connected && ble::LinkSecure() ? "true" : "false",
         ble_kb::Ready() ? "true" : "false", ble_fido::Ready() ? "true" : "false", fido_requests,
-        fido_errors, have_store ? "true" : "false", static_cast<unsigned>(store.credentials),
+        fido_errors, fido_off != nullptr ? fido_off : "", have_store ? "true" : "false",
+        static_cast<unsigned>(store.credentials),
         static_cast<unsigned>(store.discoverable), static_cast<unsigned>(store.max_credentials),
         static_cast<unsigned>(store.store_used), static_cast<unsigned>(store.store_size),
         store.pin_set ? "true" : "false", static_cast<unsigned>(store.pin_retries),
-        store.sign_count, time_set ? static_cast<long long>(now) : 0LL,
+        store.sign_count, store.file_version, static_cast<long long>(store.modified_utc),
+        time_set ? static_cast<long long>(now) : 0LL,
         time_set ? tz::OffsetSeconds(now) : 0, zone, sync_state,
         sync.since_last_ms == timesync::kNever ? -1L : static_cast<long>(sync.since_last_ms / 1000));
     return SendJson(request, nullptr, g_json);

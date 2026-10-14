@@ -10,6 +10,11 @@ typedef struct {
     const char *path;                   // NULL: RAM only
     size_t max_credentials;             // KEY_STORE_FULL beyond it
     bool (*client)(fido_ctap_client_t *out);  // creator of new credentials, may be NULL
+    // The file's header (store_header.h): version and modification time of
+    // what is loaded / last written; 0 before the first write.
+    uint32_t version;
+    int64_t modified_utc;
+    const char *refused;  // why the file was not loaded (init failed), else NULL
 } ctap_file_storage_context_t;
 
 // Our own item next to each credential (lionkey ignores unknown keys), made,
@@ -41,6 +46,9 @@ ctap_storage_status_t ctap_file_storage_erase(const ctap_storage_t *storage);
 
 // The global signature counter (NVS), 0 if never used.
 uint32_t ctap_file_storage_counter(void);
+
+// The highest store version this device has accepted (NVS), 0 if none.
+uint32_t ctap_file_storage_nvs_version(void);
 
 #define CTAP_FILE_STORAGE_CONST_INIT(context_ptr)                                    \
     {                                                                                \

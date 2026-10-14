@@ -44,6 +44,7 @@ add_executable(host_test
     test_timezone.cpp
     test_led.cpp
     test_totp.cpp
+    test_storefile.cpp
     fakes/fake_platform.cpp
 
     # Under test.
@@ -58,6 +59,7 @@ add_executable(host_test
     ../components/timezone/zones.cpp
     ../devices/led/led_frames.cpp
     ../components/totp/totp.cpp
+    ../components/storefile/store_header.cpp
 
     "${CJSON_DIR}/cJSON.c"
     "${UNITY_DIR}/unity.c"
@@ -76,6 +78,7 @@ target_include_directories(host_test PRIVATE
     ../devices/led
     ../devices/crypto
     ../components/totp
+    ../components/storefile
     "${CJSON_DIR}"
     "${UNITY_DIR}"
 )

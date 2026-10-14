@@ -25,11 +25,31 @@ int Failed(esp_err_t err, const char *what) {
     if (err == ESP_ERR_TIMEOUT) {
         printf("%s: busy, a FIDO request is running (waiting for the button?)\n", what);
     } else if (err == ESP_ERR_INVALID_STATE) {
-        printf("%s: the FIDO core is not running\n", what);
+        const char *why = fido_ctap_stopped_reason();
+        if (why != nullptr) {
+            printf("%s: FIDO2 is off: %s\n", what, why);
+            printf("'fido2 reset confirm' replaces it with an empty store (credentials lost)\n");
+        } else {
+            printf("%s: the FIDO core is not running\n", what);
+        }
     } else {
         printf("%s: %s\n", what, esp_err_to_name(err));
     }
     return 1;
+}
+
+// Local time, or "?" when not recorded.
+void PrintTime(int64_t utc) {
+    if (utc <= 0) {
+        printf("?");
+        return;
+    }
+    const time_t when = static_cast<time_t>(utc);
+    struct tm local = {};
+    localtime_r(&when, &local);
+    char text[20];
+    strftime(text, sizeof text, "%Y-%m-%d %H:%M", &local);
+    printf("%s", text);
 }
 
 void PrintId(const uint8_t *id, size_t bytes) {
@@ -51,6 +71,10 @@ int CmdInfo(int, char **) {
            static_cast<unsigned>(info.store_size ? info.store_used * 100 / info.store_size : 0));
     if (info.persistent) {
         printf("file       /spiffs/fido.bin, %u bytes\n", static_cast<unsigned>(info.file_size));
+        printf("version    %" PRIu32 " (highest seen here %" PRIu32 "), changed ", info.file_version,
+               info.kept_version);
+        PrintTime(info.modified_utc);
+        printf("\n");
     } else {
         printf("file       none: RAM only, lost on reboot\n");
     }
@@ -72,16 +96,7 @@ void PrintMac(const uint8_t *mac) {
 // "made <local time> on <authenticator> by <host>"; parts not recorded: "?".
 void PrintOrigin(const fido_ctap_origin_t &o) {
     printf("                   made ");
-    if (o.created_utc > 0) {
-        const time_t when = static_cast<time_t>(o.created_utc);
-        struct tm local = {};
-        localtime_r(&when, &local);
-        char text[20];
-        strftime(text, sizeof text, "%Y-%m-%d %H:%M", &local);
-        printf("%s", text);
-    } else {
-        printf("?");
-    }
+    PrintTime(o.created_utc);
     printf(" on ");
     if (o.has_device) {
         PrintMac(o.device);

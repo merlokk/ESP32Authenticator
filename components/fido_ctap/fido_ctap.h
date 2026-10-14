@@ -54,9 +54,10 @@ typedef struct {
 
 // Loads the credential store from `store_path` (NULL: RAM only, lost on
 // reboot) and starts the core; up to `max_credentials` (the board's
-// fido_max_credentials; the 1+th gets KEY_STORE_FULL). A store file larger than
-// the RAM log (the limit was lowered) is not loaded and not touched: FIDO2
-// stays off. The reset window (10 s) starts here.
+// fido_max_credentials; the 1+th gets KEY_STORE_FULL). A store file that is
+// refused (older than the version kept in NVS, damaged, larger than the RAM
+// log) is not touched: FIDO2 stays off (fido_ctap_stopped_reason). The reset
+// window (10 s) starts here.
 esp_err_t fido_ctap_init(const fido_ctap_hooks_t *hooks, const char *store_path,
                          size_t max_credentials);
 
@@ -83,7 +84,14 @@ typedef struct {
     uint8_t pin_retries;    // remaining PIN attempts
     uint32_t sign_count;    // global signature counter (NVS, survives reset)
     bool persistent;        // false: RAM only, lost on reboot
+    uint32_t file_version;  // the store file's version (+1 per write), 0 if none yet
+    uint32_t kept_version;  // highest version this device accepted (NVS)
+    int64_t modified_utc;   // last change, Unix seconds; 0 unknown
 } fido_ctap_info_t;
+
+// Why the core is not running (the store file was refused: rollback, damaged,
+// too large), NULL if it runs or init was not called.
+const char *fido_ctap_stopped_reason(void);
 
 typedef struct {
     uint8_t id[FIDO_CTAP_CRED_ID_SIZE];     // credential ID
@@ -108,7 +116,8 @@ esp_err_t fido_ctap_delete(const uint8_t id[FIDO_CTAP_CRED_ID_SIZE]);
 
 // Deletes every credential and the PIN, as authenticatorReset does (but
 // without its 10 s / button rule: the console is the authority). The
-// signature counter is kept.
+// signature counter is kept. Also works when the store file was refused
+// (fido_ctap_stopped_reason): writes an empty store over it and starts the core.
 esp_err_t fido_ctap_reset(void);
 
 #ifdef __cplusplus

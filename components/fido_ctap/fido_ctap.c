@@ -99,6 +99,19 @@ ctap_user_presence_result_t ctap_wait_for_user_presence(void) {
 
 // --- API
 
+// The core on a loaded store.
+static esp_err_t start(void) {
+    if (fido_ctap_crypto.init(&fido_ctap_crypto, 0) != CTAP_CRYPTO_OK) {
+        return ESP_FAIL;
+    }
+    ctap_init(&state);
+    ready = true;
+    ESP_LOGI(TAG, "ready, store %u of %u bytes, up to %u credentials",
+             (unsigned)ctx->mem.write_index, (unsigned)ctx->mem.memory_size,
+             (unsigned)ctx->max_credentials);
+    return ESP_OK;
+}
+
 esp_err_t fido_ctap_init(const fido_ctap_hooks_t *h, const char *store_path,
                          size_t max_credentials) {
     if (max_credentials == 0 || ready) {
@@ -133,15 +146,10 @@ esp_err_t fido_ctap_init(const fido_ctap_hooks_t *h, const char *store_path,
     if (storage.init(&storage) != CTAP_STORAGE_OK) {
         return ESP_FAIL;
     }
-    if (fido_ctap_crypto.init(&fido_ctap_crypto, 0) != CTAP_CRYPTO_OK) {
-        return ESP_FAIL;
-    }
-    ctap_init(&state);
-    ready = true;
-    ESP_LOGI(TAG, "ready, store %u of %u bytes, up to %u credentials",
-             (unsigned)ctx->mem.write_index, (unsigned)size, (unsigned)max_credentials);
-    return ESP_OK;
+    return start();
 }
+
+const char *fido_ctap_stopped_reason(void) { return ready ? NULL : ctx->refused; }
 
 size_t fido_ctap_request(const uint8_t *msg, size_t len, uint8_t *out, size_t out_size) {
     if (out_size < 2) {
@@ -233,6 +241,9 @@ esp_err_t fido_ctap_info(fido_ctap_info_t *out) {
     out->pin_set = ctap_is_pin_set(&state);
     out->pin_retries = ctap_get_pin_total_remaining_attempts(&state);
     out->sign_count = ctap_file_storage_counter();
+    out->file_version = ctx->version;
+    out->kept_version = ctap_file_storage_nvs_version();
+    out->modified_utc = ctx->modified_utc;
     admin_give();
     return ESP_OK;
 }
@@ -293,7 +304,19 @@ esp_err_t fido_ctap_delete(const uint8_t id[FIDO_CTAP_CRED_ID_SIZE]) {
     return err;
 }
 
+// A refused store file: an empty store over it, then the core.
+static esp_err_t reset_refused(void) {
+    if (storage.erase(&storage) != CTAP_STORAGE_OK) {
+        return ESP_FAIL;
+    }
+    ESP_LOGW(TAG, "reset from the console: the refused store file replaced by an empty one");
+    return start();
+}
+
 esp_err_t fido_ctap_reset(void) {
+    if (!ready && ctx->refused != NULL) {
+        return reset_refused();
+    }
     esp_err_t err = admin_take();
     if (err != ESP_OK) {
         return err;
