@@ -8,7 +8,8 @@
 // - Rollback: every write takes a version above the file's and NVS's, and
 //   NVS (`fido/store_ver`) keeps the highest one accepted, written after the
 //   file. A file below it (an old copy put back) is refused and left as is;
-//   so is a file without a header once a version is kept.
+//   so is a file without a header once a version is kept. No file at all
+//   (SPIFFS formatted): an empty one, the kept version back to 0.
 // - Deleted items are dropped (compaction) only at init: later the core keeps
 //   item handles (offsets), which compaction would move.
 // - The global signature counter lives in NVS: otherwise every assertion
@@ -57,10 +58,10 @@ static bool nvs_version(uint32_t *out) {
     return found;
 }
 
-// Written only when it grows (NVS wear: storage-encryption.md).
-static void keep_version(uint32_t version) {
+// Written only when it grows (NVS wear: storage-encryption.md), unless `force`.
+static void set_version(uint32_t version, bool force) {
     uint32_t kept;
-    if (nvs_version(&kept) && kept >= version) {
+    if (!force && nvs_version(&kept) && kept >= version) {
         return;
     }
     nvs_handle_t h;
@@ -76,6 +77,13 @@ static void keep_version(uint32_t version) {
         // The file is newer than NVS: it is still accepted at the next boot.
         ESP_LOGE(TAG, "store version %u not kept: %s", (unsigned)version, esp_err_to_name(err));
     }
+}
+
+static void keep_version(uint32_t version) { set_version(version, false); }
+
+// The file saves write next to it first.
+static void tmp_path(const char *path, char *out, size_t size) {
+    snprintf(out, size, "%s.tmp", path);
 }
 
 uint32_t ctap_file_storage_nvs_version(void) {
@@ -106,7 +114,7 @@ static ctap_storage_status_t save(const ctap_storage_t *storage, bool changed) {
     uint8_t head[STORE_HEADER_SIZE];
     store_header_encode(STORE_KIND_FIDO, &header, head);
     char tmp[64];
-    snprintf(tmp, sizeof tmp, "%s.tmp", ctx->path);
+    tmp_path(ctx->path, tmp, sizeof tmp);
     FILE *f = fopen(tmp, "wb");
     if (f == NULL) {
         ESP_LOGE(TAG, "cannot write %s", tmp);
@@ -165,14 +173,45 @@ static bool compact(const ctap_storage_t *storage) {
     return true;
 }
 
+// A save is: write .tmp, remove the file, rename .tmp. A power loss leaves
+// either a partial .tmp next to the file (dropped) or a complete .tmp and no
+// file (taken: the remove only follows a good write).
+static void recover_tmp(const char *path) {
+    char tmp[64];
+    tmp_path(path, tmp, sizeof tmp);
+    struct stat st;
+    if (stat(tmp, &st) != 0) {
+        return;
+    }
+    if (stat(path, &st) == 0) {
+        ESP_LOGW(TAG, "%s: an unfinished save, dropped", tmp);
+        remove(tmp);
+    } else if (rename(tmp, path) == 0) {
+        ESP_LOGW(TAG, "%s: a save cut before its rename, taken", tmp);
+    } else {
+        ESP_LOGE(TAG, "rename %s failed", tmp);
+    }
+}
+
 // Reads the file into the RAM log. Returns false (with ctx->refused) if it
-// must not be loaded; *migrate: a file from before the header.
-static bool load(ctap_file_storage_context_t *ctx, bool *migrate) {
-    *migrate = false;
+// must not be loaded; *rewrite: write the file at once (a file from before
+// the header, or no file).
+static bool load(ctap_file_storage_context_t *ctx, bool *rewrite) {
+    *rewrite = false;
+    recover_tmp(ctx->path);
     struct stat st;
     if (stat(ctx->path, &st) != 0) {
         if (errno == ENOENT) {
-            return true;  // no file: empty, the next write takes the next version
+            // No file (first boot, SPIFFS formatted): an empty store. A version
+            // kept from an earlier file starts again from 0.
+            uint32_t kept;
+            if (nvs_version(&kept) && kept != 0) {
+                ESP_LOGW(TAG, "%s missing, version %u: an empty store from version 0", ctx->path,
+                         (unsigned)kept);
+                set_version(0, true);
+            }
+            *rewrite = true;
+            return true;
         }
         ESP_LOGE(TAG, "cannot stat %s: errno %d", ctx->path, errno);
         ctx->refused = "the store file cannot be read";
@@ -203,8 +242,8 @@ static bool load(ctap_file_storage_context_t *ctx, bool *migrate) {
     } else if (parse == STORE_PARSE_OK && header.cipher != 0) {
         ctx->refused = "the store file is encrypted: not supported by this firmware";
     } else {
-        *migrate = parse == STORE_PARSE_NO_HEADER;
-        payload = *migrate ? file_size : header.length;
+        const bool headerless = parse == STORE_PARSE_NO_HEADER;
+        payload = headerless ? file_size : header.length;
         // More than fits: the limit was lowered. Truncating would lose
         // credentials on the next save, so the file is left as it is.
         if (payload > ctx->mem.memory_size) {
@@ -212,10 +251,13 @@ static bool load(ctap_file_storage_context_t *ctx, bool *migrate) {
                      (unsigned)payload, (unsigned)ctx->mem.memory_size);
             ctx->refused = "the store file is larger than the store (credential limit lowered)";
         } else {
-            ok = (!*migrate || fseek(f, 0, SEEK_SET) == 0) &&
+            ok = (!headerless || fseek(f, 0, SEEK_SET) == 0) &&
                  fread(ctx->mem.memory, 1, payload, f) == payload;
             if (!ok) {
                 ctx->refused = "the store file cannot be read";
+            } else if (headerless) {
+                ESP_LOGW(TAG, "store without a header: rewritten with one");
+                *rewrite = true;
             }
         }
     }
@@ -241,10 +283,10 @@ ctap_storage_status_t ctap_file_storage_init(const ctap_storage_t *storage) {
     ctx->version = 0;
     ctx->modified_utc = 0;
     ctx->refused = NULL;
-    bool migrate = false;
+    bool rewrite = false;
     if (ctx->path == NULL) {
         ESP_LOGW(TAG, "no store file: credentials are lost on reboot");
-    } else if (!load(ctx, &migrate)) {
+    } else if (!load(ctx, &rewrite)) {
         return CTAP_STORAGE_ERROR;
     }
     const size_t loaded = ctx->mem.write_index;
@@ -253,8 +295,7 @@ ctap_storage_status_t ctap_file_storage_init(const ctap_storage_t *storage) {
     }
     ESP_LOGI(TAG, "%s: version %u, %u bytes, %u live", ctx->path ? ctx->path : "RAM",
              (unsigned)ctx->version, (unsigned)loaded, (unsigned)ctx->mem.write_index);
-    if (migrate) {
-        ESP_LOGW(TAG, "store without a header: rewritten with one");
+    if (rewrite) {
         return save(storage, true);
     }
     return ctx->mem.write_index != loaded ? save(storage, false) : CTAP_STORAGE_OK;
