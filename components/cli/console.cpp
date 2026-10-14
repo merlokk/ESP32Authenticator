@@ -90,6 +90,8 @@ void PrintDevStatus() {
     CmdBoard(0, nullptr);
     Section("date");
     PrintDateInfo();
+    Section("led info");
+    PrintLedInfo();
     Section("wifi info");
     PrintWifiInfo();
     Section("web");
@@ -270,7 +272,7 @@ const esp_console_cmd_t kCommands[] = {
     },
     {
         .command = "devstatus",
-        .help = "Everything at once: version, info, board, date, wifi info, web, ble info, fido2 info "
+        .help = "Everything at once: version, info, board, date, led info, wifi info, web, ble info, fido2 info "
                 "(also the site's Device status page)",
         .hint = nullptr,
         .func = &CmdDevStatus,
@@ -344,6 +346,7 @@ esp_err_t Init() {
     }
 
     web::SetDiagnostics(&PrintDevStatus);
+    web::SetHardwareInfo([] { CmdHwInfo(0, nullptr); });
 
     ESP_ERROR_CHECK(esp_console_register_help_command());
     for (const esp_console_cmd_t &cmd : kCommands) {

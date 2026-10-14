@@ -47,6 +47,7 @@ static_assert(config::kWebUserSize - 1 + 1 + config::kWebPasswordSize - 1 + 1 ==
 WWW_FILE(index_page, index_html)
 WWW_FILE(wifi_page, wifi_html)
 WWW_FILE(devstatus_page, devstatus_html)
+WWW_FILE(hwinfo_page, hwinfo_html)
 WWW_FILE(reboot_page, reboot_html)
 WWW_FILE(not_found_page, 404_html)
 WWW_FILE(unauthorised_page, 401_html)
@@ -62,6 +63,7 @@ const Page kPages[] = {
     {"index.html", index_page_start, index_page_end},
     {"wifi.html", wifi_page_start, wifi_page_end},
     {"devstatus.html", devstatus_page_start, devstatus_page_end},
+    {"hwinfo.html", hwinfo_page_start, hwinfo_page_end},
     {"reboot.html", reboot_page_start, reboot_page_end},
     {"404.html", not_found_page_start, not_found_page_end},
     {"401.html", unauthorised_page_start, unauthorised_page_end},
@@ -104,6 +106,7 @@ char g_auth[kMaxAuthHeader];
 Status g_status;
 Desired g_desired = Desired::kAuto;
 DiagnosticsPrinter g_diagnostics = nullptr;
+DiagnosticsPrinter g_hardware_info = nullptr;
 
 // A failed start is retried every 5 s, not every tick.
 constexpr uint32_t kRetryAfterMs = 5000;
@@ -326,12 +329,13 @@ int SinkWrite(void *cookie, const char *data, int size) {
     return size;
 }
 
-esp_err_t DevStatusApi(httpd_req_t *request) {
+// A console readout as text/plain, streamed as it is printed.
+esp_err_t Dump(httpd_req_t *request, DiagnosticsPrinter printer) {
     if (!Allowed(request)) {
         return Unauthorised(request);
     }
     Count(&g_status.api);
-    if (g_diagnostics == nullptr) {
+    if (printer == nullptr) {
         httpd_resp_set_status(request, "503 Service Unavailable");
         httpd_resp_set_type(request, "text/plain");
         return httpd_resp_sendstr(request, "no diagnostics wired up\n");
@@ -348,7 +352,7 @@ esp_err_t DevStatusApi(httpd_req_t *request) {
     setvbuf(sink, nullptr, _IONBF, 0);
     FILE *saved = stdout;
     stdout = sink;
-    g_diagnostics();
+    printer();
     stdout = saved;
     std::fclose(sink);
     if (g_sink.broken) {
@@ -356,6 +360,10 @@ esp_err_t DevStatusApi(httpd_req_t *request) {
     }
     return httpd_resp_send_chunk(request, nullptr, 0);
 }
+
+esp_err_t DevStatusApi(httpd_req_t *request) { return Dump(request, g_diagnostics); }
+
+esp_err_t HardwareInfoApi(httpd_req_t *request) { return Dump(request, g_hardware_info); }
 
 // --- settings ---------------------------------------------------------------------
 
@@ -590,6 +598,7 @@ esp_err_t StartLocked() {
     const httpd_uri_t routes[] = {
         {.uri = "/api/status", .method = HTTP_GET, .handler = StatusApi, .user_ctx = nullptr},
         {.uri = "/api/devstatus", .method = HTTP_GET, .handler = DevStatusApi, .user_ctx = nullptr},
+        {.uri = "/api/hwinfo", .method = HTTP_GET, .handler = HardwareInfoApi, .user_ctx = nullptr},
         {.uri = "/api/settings", .method = HTTP_GET, .handler = SettingsGet, .user_ctx = nullptr},
         {.uri = "/api/wifi/scan", .method = HTTP_GET, .handler = WifiScanApi, .user_ctx = nullptr},
         {.uri = "/api/settings", .method = HTTP_POST, .handler = SettingsPost, .user_ctx = nullptr},
@@ -682,6 +691,8 @@ Desired DesiredFromConfig() {
 void Apply() { SetDesired(DesiredFromConfig()); }
 
 void SetDiagnostics(DiagnosticsPrinter printer) { g_diagnostics = printer; }
+
+void SetHardwareInfo(DiagnosticsPrinter printer) { g_hardware_info = printer; }
 
 bool Running() { return g_server != nullptr; }
 

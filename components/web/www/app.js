@@ -245,18 +245,23 @@
     function refresh() { getJson("/api/status", paint, failed); }
     refresh();
     setInterval(refresh, 5000);
+    // A click on the lamp reads the status now, without waiting for the timer.
+    var light = by("lamp");
+    light.style.cursor = "pointer";
+    light.title = "refresh now";
+    light.addEventListener("click", function () { lamp("", "reading…"); refresh(); });
   }
 
   // --- the console dump -------------------------------------------------------
 
-  function devStatusPage() {
+  function dumpPage(url) {
     var dump = by("dump"), button = by("again");
 
     function read() {
       button.disabled = true;
       lamp("", "reading…");
       var started = Date.now();
-      ask("GET", "/api/devstatus", null, function (ignored, r) {
+      ask("GET", url, null, function (ignored, r) {
         button.disabled = false;
         lamp("ok", "read");
         dump.textContent = r.responseText;
@@ -529,7 +534,8 @@
 
   var pages = {
     front: frontPage,
-    devstatus: devStatusPage,
+    devstatus: function () { dumpPage("/api/devstatus"); },
+    hwinfo: function () { dumpPage("/api/hwinfo"); },
     reboot: rebootPage,
     wifi: wifiPage
   };

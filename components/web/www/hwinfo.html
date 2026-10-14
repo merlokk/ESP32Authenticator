@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0b0d0c">
+<title>Hardware info</title>
+<style>html,body{margin:0;background:#0b0d0c;color:#d6ded8;
+font:16px/1.5 system-ui,-apple-system,sans-serif}
+body{padding:0 16px 40px}</style>
+</head>
+<body data-page="hwinfo">
+<div class="wrap">
+<header>
+  <h1>Hardware info</h1>
+  <span class="lamp" id="lamp">reading&hellip;</span>
+</header>
+
+<p class="lead">
+  The <code>hwinfo</code> dump of the USB console: chip, flash, memory, eFuse,
+  NVS, flash layout, OTA, runtime, clock, LED.
+</p>
+
+<nav>
+  <a class="btn" href="/devstatus.html">
+    <span class="chev">&lsaquo;</span>
+    <span class="grow"><span class="name">Back</span></span>
+  </a>
+  <button class="btn" type="button" id="again">
+    <span class="grow"><span class="name">Read it again</span>
+      <span class="sub" id="taken">&nbsp;</span></span>
+  </button>
+</nav>
+
+<pre id="dump">reading&hellip;</pre>
+
+<footer>
+  Passwords and keys are kept out of every dump.
+</footer>
+</div>
+<script src="/app.js"></script>
+</body>
+</html>

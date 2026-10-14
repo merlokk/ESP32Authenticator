@@ -122,7 +122,7 @@ void test_a_type_is_never_null(void) {
 void test_the_pages_this_site_is_made_of_are_all_reachable(void) {
     const char *site[] = {"/index.html", "/devstatus.html", "/reboot.html",
                           "/404.html",   "/401.html",       "/wifi.html",
-                          "/app.js"};
+                          "/hwinfo.html", "/app.js"};
     for (const char *uri : site) {
         char name[64] = {};
         TEST_ASSERT_TRUE_MESSAGE(Name(uri, name), uri);

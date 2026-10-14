@@ -201,7 +201,7 @@ Opening the port with RTS asserted resets the chip.
 | `date set [utc] <YYYY-MM-DD> <HH:MM:SS>` | set the clock: local time, or UTC with `utc`; written to the board clock too |
 | `date zone [<name\|rule>]` / `date zones [filter]` | show / set the time zone, a table name or a POSIX TZ rule (saved) / the zone table |
 | `date server <host\|off>` / `date hours <0..168>` | SNTP server / sync interval, `off` or 0: no sync (saved) |
-| `devstatus` | `version`, `info`, `board`, `date`, `wifi info`, `web`, `ble info`, `fido2 info` in one dump (also the site's Device status page) |
+| `devstatus` | `version`, `info`, `board`, `date`, `led info`, `wifi info`, `web`, `ble info`, `fido2 info` in one dump (also the site's Device status page; its "Full hardware info" button shows `hwinfo`) |
 | `config show` | current config as JSON, passwords masked (networks, AP, web) |
 | `config info` | file path, source (file / built-in defaults), why the file was not used |
 | `config reload` / `config save` | re-read config.json (keeps values on error) and apply Wi-Fi (incl. internet check), web, time and LED settings / write current values |

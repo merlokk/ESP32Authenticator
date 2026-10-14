@@ -228,9 +228,10 @@ and never starts without lwIP (an assert).
 
 | Route | |
 |---|---|
-| `GET /`, `/*.html`, `/app.js` | pages: front (network, BLE, device), Wi-Fi settings, device status, restart. Whitelist of names/extensions; anything else, e.g. `/config.json`, is the 404 page |
+| `GET /`, `/*.html`, `/app.js` | pages: front (network, BLE, device), Wi-Fi settings, device status, hardware info (from device status), restart. Whitelist of names/extensions; anything else, e.g. `/config.json`, is the 404 page |
 | `GET /api/status` | firmware, heap, SPIFFS, Wi-Fi (IP, MAC, internet), AP, BLE, FIDO (readiness, requests, credentials stored of max, store bytes, PIN set and attempts, signature counter; `fido_store` false while a request holds the store). No secrets |
 | `GET /api/devstatus` | the console's `devstatus` dump (stdout swapped for the request) |
+| `GET /api/hwinfo` | the console's `hwinfo` dump, the same way (eFuse key purposes and flags only, no NVS values) |
 | `GET /api/settings`, `POST /api/settings` | Wi-Fi mode, AP, networks (with `ip`; absent `ip` keeps the current one). Whitelist; passwords write-only (absent/null keeps, `""` clears); all-or-nothing; memory only |
 | `GET /api/wifi/scan` | access points (hidden/duplicate names dropped) |
 | `POST /api/action?do=save\|reload\|retry` | save config.json / reload it / put Wi-Fi settings on the radio |
@@ -243,7 +244,8 @@ and never starts without lwIP (an assert).
 - Costs ~7 KB of internal heap while up.
 - Names from the air (SSIDs) are inserted as text, never as HTML; JSON strings
   are escaped.
-- Front page (polls `/api/status` every 5 s): Network (Wi-Fi state and mode,
+- Front page (polls `/api/status` every 5 s; a click on the lamp, top right,
+  reads it at once): Network (Wi-Fi state and mode,
   network, signal, address static/dhcp, MAC, internet, AP), Bluetooth (BLE,
   keyboard, FIDO2 readiness and counts; `stored` with a bar of the slots used,
   amber from 80 %, red from 90 %; PIN and attempts left; signature counter),

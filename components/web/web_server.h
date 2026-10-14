@@ -4,7 +4,7 @@
 // on port 80, pages embedded in the firmware (`www/`; SPIFFS is small and
 // holds the reader's stock data).
 //
-// Routes: GET pages, /api/status, /api/devstatus (the console's own dump),
+// Routes: GET pages, /api/status, /api/devstatus and /api/hwinfo (console dumps),
 // /api/settings, /api/wifi/scan; POST /api/settings, /api/action?do=,
 // /api/reboot?confirm=reboot. Every handler goes through basic auth first
 // (web_auth.h); web.write false refuses the POSTs except reboot.
@@ -47,6 +47,8 @@ void Apply();
 // swap); 503 until set. A hook: the console depends on this component.
 using DiagnosticsPrinter = void (*)();
 void SetDiagnostics(DiagnosticsPrinter printer);
+// The same for /api/hwinfo: the console's `hwinfo`.
+void SetHardwareInfo(DiagnosticsPrinter printer);
 
 bool Running();
 Status Get();
