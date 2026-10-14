@@ -1,4 +1,5 @@
 #include <cstdio>
+#include <cstring>
 
 #include "ble_fido.h"
 #include "ble_kb.h"
@@ -12,6 +13,7 @@
 #include "fido_ctap.h"
 #include "nvs_flash.h"
 #include "spiffs_fs.h"
+#include "store_io.h"
 #include "timesync.h"
 #include "timezone.h"
 #include "ui.h"
@@ -79,16 +81,39 @@ void InitFido(const char *dir) {
     }
 }
 
+fido_ctap_key_t Convert(const vault::Key &k) {
+    fido_ctap_key_t out;
+    static_assert(sizeof out.key == sizeof k.key && sizeof out.salt == sizeof k.salt &&
+                  sizeof out.id == sizeof k.id);
+    memcpy(out.key, k.key, sizeof out.key);
+    memcpy(out.salt, k.salt, sizeof out.salt);
+    out.iterations = k.iterations;
+    memcpy(out.id, k.id, sizeof out.id);
+    return out;
+}
+
 // Passwords: locked until the PIN (console `pin`), unless config.json has a
 // test PIN (test.pin, development only).
 void InitVault(const char *dir) {
     crypto::Init();
     const config::Pin &cfg = config::Get().pin;
     vault::SetPolicy({static_cast<uint32_t>(cfg.lock_minutes) * 60, cfg.wipe});
-    // fido.bin is encrypted with the vault's data key: FIDO2 runs while it is in.
-    vault::SetKeyHook([](const uint8_t *key) { fido_ctap_set_key(key); });
-    // The wipe PIN also erases fido.bin, quietly: it looks like a wrong PIN.
-    vault::SetWipeHook([] { fido_ctap_wipe(); });
+    // fido.bin has the vault's key: FIDO2 runs while it is in, a PIN change
+    // re-keys it, the wipe PIN erases it (quietly: it looks like a wrong PIN).
+    vault::SetHooks({
+        .key_in = [](const vault::Key &k) {
+            const fido_ctap_key_t key = Convert(k);
+            fido_ctap_set_key(&key);
+        },
+        .key_gone = [] { fido_ctap_set_key(nullptr); },
+        .stage = [](const vault::Key &k) {
+            const fido_ctap_key_t key = Convert(k);
+            return fido_ctap_stage_key(&key);
+        },
+        .commit = [] { fido_ctap_commit_key(); },
+        .unstage = [] { fido_ctap_unstage_key(); },
+        .wipe = [] { fido_ctap_wipe(); },
+    });
     if (vault::Init(dir, boards::kBoard.max_records) != ESP_OK || dir == nullptr) {
         return;
     }
@@ -117,6 +142,17 @@ extern "C" void app_main() {
     ble_kb::Register();  // BLE profiles, before the stack starts
     ble_fido::Register();
     const char *dir = StorageDir();
+    if (dir != nullptr) {
+        // A PIN change cut short: finished or dropped before anything loads.
+        static char marker[64];
+        static char vault_path[64];
+        static char fido_path[64];
+        snprintf(marker, sizeof marker, "%s/%s", dir, vault::kPinChangeMarker);
+        snprintf(vault_path, sizeof vault_path, "%s/vault.bin", dir);
+        snprintf(fido_path, sizeof fido_path, "%s/fido.bin", dir);
+        const char *const paths[] = {vault_path, fido_path};
+        storefile::FinishCommit(marker, paths, 2);
+    }
     InitFido(dir);
     InitVault(dir);
     ESP_ERROR_CHECK(console::Init());

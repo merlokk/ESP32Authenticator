@@ -205,7 +205,7 @@ Opening the port with RTS asserted resets the chip.
 | `nvs ls [namespace]` / `nvs rm <namespace> <key>` | development: NVS keys (namespace, key, type; never values) / erase one key |
 | `pin [info]` | vault locked / open / refused, key derivation (iterations, ms) |
 | `pin <6 digits>` | unlock the vault (nothing is decrypted before); no store yet: makes one with this PIN. `test.pin` in config.json does it at boot |
-| `pin change <old> <new>` / `pin lock` | new PIN (`key.bin` rewritten, the data files stay) / wipe the keys, records and FIDO2 store from memory (FIDO2 off until the PIN) |
+| `pin change <old> <new>` / `pin lock` | new PIN: a new key, `vault.bin` and `fido.bin` rewritten from memory together (`.new` + marker) / wipe the key, records and FIDO2 store from memory (FIDO2 off until the PIN) |
 | `pin wipe set <pin>` / `pin wipe off` | the wipe PIN (needs the open store; must differ from the PIN), saved to config.json as a salted hash. Entering it with `pin` erases the password store and the FIDO2 credentials and answers "wrong PIN" |
 
 `pin` also shows wrong PINs in a row and the lock: 10 wrong PINs lock PIN

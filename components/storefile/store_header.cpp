@@ -44,6 +44,9 @@ void Encode(const Header &header, uint8_t out[kHeaderSize]) {
     for (size_t i = 0; i < kSaltSize; ++i) {
         out[40 + i] = header.salt[i];
     }
+    for (size_t i = 0; i < kKeyIdSize; ++i) {
+        out[56 + i] = header.key_id[i];
+    }
 }
 
 bool Decode(const uint8_t *data, size_t size, size_t file_size, Kind kind, Header *out) {
@@ -66,6 +69,9 @@ bool Decode(const uint8_t *data, size_t size, size_t file_size, Kind kind, Heade
     h.kdf_iterations = Get32(data + 36);
     for (size_t i = 0; i < kSaltSize; ++i) {
         h.salt[i] = data[40 + i];
+    }
+    for (size_t i = 0; i < kKeyIdSize; ++i) {
+        h.key_id[i] = data[56 + i];
     }
     const size_t tag = h.cipher == Cipher::kPlain ? 0 : kTagSize;
     // A truncated or padded file: refused, not guessed at.

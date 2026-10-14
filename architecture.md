@@ -13,7 +13,7 @@ Target and status. Screen design and the open questions: [x4-design.md](x4-desig
 | PIN lock (6 digits, lockout after 10 tries, wipe PIN); the PIN also derives the storage key | PIN key for `vault.bin`, lockout, wipe PIN, console `pin` done; screen not yet |
 | Password records (site, user, password, TOTP): add / edit / delete | done on the console (`pass`); screen and typing not yet |
 | Store file header (version, modification time) and rollback check (highest version in NVS) | done (`storefile`) |
-| Encrypted stores: `vault.bin` and `fido.bin`, AES-256-GCM with one data key wrapped by the PIN (`key.bin`), loaded whole into PSRAM | done |
+| Encrypted stores: `vault.bin` and `fido.bin`, AES-256-GCM with a key from the PIN (the same on every device with the PIN and the files), loaded whole into PSRAM | done |
 | Sync over the internet, the later modification time wins | not yet; service not chosen |
 | X4 Pro screen: status bar, credential list, pages, settings | not yet (LVGL up, no display driver) |
 | Settings: frontlight, Wi-Fi | Wi-Fi on the console and the site; frontlight not yet |
@@ -28,7 +28,7 @@ Target and status. Screen design and the open questions: [x4-design.md](x4-desig
 | UI | LVGL 9 (`components/ui`: library up, no display driver yet; today: USB console + web site) |
 | Host link | BLE HID keyboard (types credentials), BLE FIDO2 (CTAP2) |
 | Network | Wi-Fi (client / AP / AP+client) and a configuration web site |
-| Storage | `config.json` on SPIFFS; store files (`key.bin`, `vault.bin`, `fido.bin`, encrypted) on the SD card when the board has one, else SPIFFS |
+| Storage | `config.json` on SPIFFS; store files (`vault.bin`, `fido.bin`, encrypted) on the SD card when the board has one, else SPIFFS |
 
 Reference ESP-IDF + LVGL project: `../../ai-remote/approver-esp32` ([GitHub](https://github.com/merlokk/ai-remote/tree/main/approver-esp32)).
 
@@ -275,24 +275,24 @@ submodule) behind `ble_fido`. API: `fido_ctap_init(hooks, store)`,
   P-256 on lionkey's micro-ecc (no ECC accelerator on the S3; its `uECC_*`
   symbols are renamed `lk_uECC_*`, NimBLE's tinycrypt has the same names).
 - Store: `/spiffs/fido.bin` = store header + lionkey's RAM log, AES-256-GCM
-  with the vault's data key (Passwords), rewritten whole through a temp file
-  on every change, compacted at load. FIDO2 is off from boot until the PIN
-  (`fido_ctap_set_key` through `vault::SetKeyHook`) and again after
-  `pin lock`; a plain file is refused.
+  with the vault's key (Passwords), rewritten whole through a temp file on
+  every change, compacted at load. FIDO2 is off from boot until the PIN
+  (`fido_ctap_set_key` through `vault::Hooks`) and again after `pin lock`;
+  a plain file, or one with another key id, is refused. A PIN change
+  re-keys it (`fido_ctap_stage_key` / `commit_key`).
 - Store header (`components/storefile/store_header.h`, pure, host-tested):
   64 bytes, plain, in front of every store file: magic `ESAF`, format, kind,
   cipher (0 plain, 1 AES-256-GCM: the header is its associated data),
   **version**, payload length, **modification time** (UTC, 0 unknown), nonce,
-  PBKDF2 iterations and salt. Every write: version = max(file, NVS) + 1; NVS `fido/store_ver`
-  keeps the highest version accepted (written after the file, only when it
-  grows). At boot a file below it, or without a header once a version is
-  kept, is a rollback: refused and left as is, FIDO2 off
-  (`fido_ctap_stopped_reason`, console and site); `fido2 reset confirm`
-  writes an empty store over it. A file above NVS (power loss after the file,
-  or a synced copy) is accepted. A header-less file before any version is
-  migrated once. No file at all with a version kept (deleted, SPIFFS
-  formatted) is refused too (an old copy would otherwise follow an empty
-  one); `fido2 reset` starts an empty store above the kept version. A save is .tmp, remove, rename: at boot a .tmp with no
+  PBKDF2 iterations and salt, **key id**. Every write: version = max(file,
+  NVS) + 1; NVS `fido/store_ver` keeps the highest version accepted (written
+  after the file, only when it grows). At boot a file below it is a
+  rollback: refused and left as is, FIDO2 off (`fido_ctap_stopped_reason`,
+  console and site); `fido2 reset confirm` writes an empty store over it. A
+  file above NVS (power loss after the file, or a synced copy) is accepted.
+  No file at all with a version kept (deleted, SPIFFS formatted) is refused
+  too (an old copy would otherwise follow an empty one); `fido2 reset`
+  starts an empty store above the kept version. A save is .tmp, remove, rename: at boot a .tmp with no
   file is taken, a .tmp next to the file dropped. `Newer()` holds the sync rule. Max credentials: the board's
   `fido_max_credentials` (10 on both boards, 1..50); lionkey stores
   non-discoverable ones too, one more gets KEY_STORE_FULL. The RAM log
@@ -337,15 +337,22 @@ so no store files on the X4 Pro).
   A write that fails reloads the file: the change is undone.
 - Locked from boot until the PIN (console `pin <6 digits>`, or `test.pin`
   in config.json): nothing is decrypted before. No file yet: the first PIN
-  makes an empty store. A wrong PIN (the GCM tag fails) leaves it locked; on
-  an open store it changes nothing. `pin lock` wipes the key and records.
-- Keys: a data key (32 random bytes, made with the first PIN) encrypts
-  `vault.bin` and `fido.bin`. `key.bin` (kind 3, 32 bytes + tag) holds it
-  wrapped by PBKDF2-HMAC-SHA256(PIN, salt), 6000 iterations (~0.9 s on the
-  S3 via PSA); salt and count in its header. A PIN change rewrites `key.bin`
-  only (the data files stay: no window where two files need different PINs).
+  makes an empty store and the key. A wrong PIN (the derived key id differs
+  from the header's) leaves it locked; on an open store it changes nothing.
+  `pin lock` wipes the key, records and the FIDO2 store from memory.
+- Key: PBKDF2-HMAC-SHA256(PIN, salt), 6000 iterations (~0.9 s on the S3 via
+  PSA); salt, count and the key id (SHA-256("ESAF key id" || key), 8 bytes)
+  in every store header. Another device with the PIN and the files (a sync
+  server) derives the same key; checked by building the files on a PC.
   Against a flash dump a 6-digit PIN falls in minutes: see
   storage-encryption.md.
+- PIN change (needs the store open, and fido.bin loaded if it exists): a new
+  key (new salt); both stores are written from memory to `<file>.new`, then
+  the marker `pinchange`, then each `.new` renamed over its file, then the
+  marker removed (`storefile::Stage` / `BeginCommit` / `Promote` /
+  `EndCommit`). At boot, before any load, `storefile::FinishCommit`: with
+  the marker the `.new` files are complete and renamed; without it they are
+  dropped and the old PIN stands.
 - Lockout (`pin_guard.h`, pure, host-tested): 10 wrong PINs in a row
   (unlock, or the old PIN of a change) lock PIN entry for `pin.lockMinutes`,
   then 10 more tries. Count and deadline (UTC) in NVS (`vault/pin_fail`,
@@ -353,18 +360,17 @@ so no store files on the X4 Pro).
   (or with a deadline further than a full lock) starts it again. While
   running it counts on the uptime clock.
 - Wipe PIN (`pin.wipe`): checked first, before any key derivation and also
-  while locked out. It removes `key.bin`, `vault.bin`, `fido.bin` and their
-  kept versions (without `key.bin` nothing can be decrypted again; the next
-  PIN starts afresh), wipes the keys and records from memory and stops
-  FIDO2 (`fido_ctap_wipe` through `vault::SetWipeHook`). Then it
+  while locked out. It removes `vault.bin`, `fido.bin` (and any `.new`,
+  `.tmp`, marker) and their kept versions (the next PIN starts afresh),
+  wipes the key and records from memory and stops FIDO2 (`fido_ctap_wipe`
+  through `vault::Hooks`). Then it
   answers as a wrong PIN: same result and count (it can start the lock),
   one key derivation, the same log line; the erase adds ~0.4 s. It must
   differ from the PIN (checked when set, on a PIN change and a reset).
 - Refused (rollback, missing while a version is kept, malformed, does not
   decrypt): left as is, the store is off; `pass reset confirm` (with the key
-  in) or `pass reset confirm <pin>` writes an empty store over it. Without a
-  usable `key.bin` that PIN wraps a new data key (`fido.bin` then needs
-  `fido2 reset`).
+  in) or `pass reset confirm <pin>` (a new key from that PIN: `fido.bin`
+  then needs `fido2 reset`) writes an empty store over it.
 - PSRAM: ~1.2 KB per record of the board's `max_records` (dev board 50, X4
   Pro 500): the records, the plaintext and the file body buffers.
 - Console `pass`; passwords are never printed (list shows "set"), only typed

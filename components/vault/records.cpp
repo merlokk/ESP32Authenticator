@@ -127,6 +127,8 @@ const char *Describe(Error error) {
             return "too many wrong PINs: PIN entry is locked for a while";
         case Error::kPinInUse:
             return "the PIN and the wipe PIN must differ";
+        case Error::kFidoNotLoaded:
+            return "fido.bin is not loaded, so it cannot get the new key: nothing changed";
 
     }
     return "?";

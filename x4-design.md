@@ -59,8 +59,9 @@ status changes, a full refresh now and then against ghosting (driver's choice).
 - 10 wrong PINs in a row: locked for `lockMinutes` (config); then 10 more
   tries. The failure count and the lock deadline live in NVS, so a reboot
   does not reset them.
-- One data key for the store and `fido.bin`, wrapped by the PIN in
-  `key.bin` (a PIN change rewrites only that). After a reboot nothing
+- One key from the PIN for the store and `fido.bin` (salt and key id in the
+  headers: synced devices with the PIN derive the same key; a PIN change
+  makes a new key and rewrites both). After a reboot nothing
   is decrypted and FIDO2 does not work until the first PIN entry.
 - Locking the screen (idle, sleep) keeps the key and the decrypted data in
   RAM: FIDO2 keeps working on a locked device (user presence: the button).

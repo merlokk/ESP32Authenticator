@@ -90,11 +90,14 @@ void test_storefile_an_encrypted_file_counts_its_tag(void) {
     TEST_ASSERT_EQUAL_UINT8(0xAA, back.nonce[0]);
 }
 
-void test_storefile_kdf_fields_round_trip(void) {
+void test_storefile_kdf_and_key_id_round_trip(void) {
     Header in = Sample();
     in.kdf_iterations = 20000;
     for (size_t i = 0; i < storefile::kSaltSize; ++i) {
         in.salt[i] = static_cast<uint8_t>(i + 1);
+    }
+    for (size_t i = 0; i < storefile::kKeyIdSize; ++i) {
+        in.key_id[i] = static_cast<uint8_t>(0xF0 + i);
     }
     uint8_t out[kHeaderSize];
     storefile::Encode(in, out);
@@ -105,6 +108,9 @@ void test_storefile_kdf_fields_round_trip(void) {
                                                     Kind::kFido, &back));
     TEST_ASSERT_EQUAL_UINT32(20000, back.kdf_iterations);
     TEST_ASSERT_EQUAL_UINT8_ARRAY(in.salt, back.salt, storefile::kSaltSize);
+    TEST_ASSERT_EQUAL_UINT8(0xF0, out[56]);
+    TEST_ASSERT_EQUAL_UINT8(0xF7, out[63]);
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(in.key_id, back.key_id, storefile::kKeyIdSize);
 }
 
 void test_storefile_an_older_version_is_a_rollback(void) {
@@ -147,7 +153,7 @@ void RegisterStorefileTests(void) {
     RUN_TEST(test_storefile_a_file_without_magic_is_refused);
     RUN_TEST(test_storefile_refuses_a_wrong_size_kind_format_or_cipher);
     RUN_TEST(test_storefile_an_encrypted_file_counts_its_tag);
-    RUN_TEST(test_storefile_kdf_fields_round_trip);
+    RUN_TEST(test_storefile_kdf_and_key_id_round_trip);
     RUN_TEST(test_storefile_an_older_version_is_a_rollback);
     RUN_TEST(test_storefile_next_version_is_above_both);
     RUN_TEST(test_storefile_sync_later_time_wins_then_higher_version);

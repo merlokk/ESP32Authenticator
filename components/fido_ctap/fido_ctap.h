@@ -92,14 +92,31 @@ typedef struct {
     int64_t modified_utc;   // last change, Unix seconds; 0 unknown
 } fido_ctap_info_t;
 
+// The store key from the vault: PBKDF2(PIN, salt), and what goes into the
+// file header so another device with the PIN derives the same key.
+typedef struct {
+    uint8_t key[32];
+    uint8_t salt[16];
+    uint32_t iterations;
+    uint8_t id[8];  // a hash of the key (store header)
+} fido_ctap_key_t;
+
 // Why the core is not running (the store file was refused: rollback, damaged,
 // too large), NULL if it runs or init was not called.
 const char *fido_ctap_stopped_reason(void);
 
-// The data key (32 bytes) from the vault: loads the store and starts the core;
-// on a running core, a new key rewrites the file with it. NULL: stops the
-// core, wiping the store and the key from memory. Waits for a running request.
-esp_err_t fido_ctap_set_key(const uint8_t *key);
+// The store key from the vault: loads the store and starts the core. NULL:
+// stops the core, wiping the store and the key from memory. Waits for a
+// running request.
+esp_err_t fido_ctap_set_key(const fido_ctap_key_t *key);
+
+// A PIN change (store_io.h: several files replaced together): stage writes
+// `<file>.new` with the new key from memory (nothing to do without a file and
+// a running core: ESP_OK; a file that is not loaded: ESP_ERR_INVALID_STATE);
+// commit renames it over the file and keeps the new key; unstage drops it.
+esp_err_t fido_ctap_stage_key(const fido_ctap_key_t *key);
+esp_err_t fido_ctap_commit_key(void);
+void fido_ctap_unstage_key(void);
 
 // The wipe PIN: the store file and its kept version gone, the core stopped.
 // Starts empty with the next key.

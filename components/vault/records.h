@@ -54,6 +54,7 @@ enum class Error : uint8_t {
     kWrongPin,  // the file does not decrypt with it
     kPinLocked,  // too many wrong PINs: wait (Info::lock_left_s)
     kPinInUse,   // the PIN and the wipe PIN must differ
+    kFidoNotLoaded,  // a PIN change needs fido.bin loaded (or no fido.bin)
 };
 
 inline constexpr size_t kPinLength = 6;

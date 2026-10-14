@@ -6,6 +6,8 @@ static_assert(STORE_HEADER_SIZE == storefile::kHeaderSize);
 static_assert(STORE_KIND_FIDO == static_cast<uint8_t>(storefile::Kind::kFido));
 static_assert(STORE_NONCE_SIZE == storefile::kNonceSize);
 static_assert(STORE_TAG_SIZE == storefile::kTagSize);
+static_assert(STORE_SALT_SIZE == storefile::kSaltSize);
+static_assert(STORE_KEY_ID_SIZE == storefile::kKeyIdSize);
 
 extern "C" {
 
@@ -19,6 +21,13 @@ void store_header_encode(uint8_t kind, const store_header_t *header,
     h.modified_utc = header->modified_utc;
     for (size_t i = 0; i < STORE_NONCE_SIZE; ++i) {
         h.nonce[i] = header->nonce[i];
+    }
+    h.kdf_iterations = header->kdf_iterations;
+    for (size_t i = 0; i < STORE_SALT_SIZE; ++i) {
+        h.salt[i] = header->salt[i];
+    }
+    for (size_t i = 0; i < STORE_KEY_ID_SIZE; ++i) {
+        h.key_id[i] = header->key_id[i];
     }
     storefile::Encode(h, out);
 }
@@ -35,6 +44,13 @@ bool store_header_decode(const uint8_t *data, size_t size, size_t file_size, uin
     out->modified_utc = h.modified_utc;
     for (size_t i = 0; i < STORE_NONCE_SIZE; ++i) {
         out->nonce[i] = h.nonce[i];
+    }
+    out->kdf_iterations = h.kdf_iterations;
+    for (size_t i = 0; i < STORE_SALT_SIZE; ++i) {
+        out->salt[i] = h.salt[i];
+    }
+    for (size_t i = 0; i < STORE_KEY_ID_SIZE; ++i) {
+        out->key_id[i] = h.key_id[i];
     }
     return true;
 }

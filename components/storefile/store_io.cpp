@@ -149,32 +149,108 @@ uint32_t NextVersion(const File &file, uint32_t current) {
     return NextVersion(current, KeptVersion(file));
 }
 
-esp_err_t Save(const File &file, const Header &header, const uint8_t *body, size_t body_size) {
+namespace {
+
+// Header + body into `path` (the kind from `file`).
+esp_err_t WriteTo(const File &file, const char *path, const Header &header, const uint8_t *body,
+                  size_t body_size) {
     Header h = header;
     h.kind = file.kind;
     uint8_t head[kHeaderSize];
     Encode(h, head);
-    char tmp[kPathMax];
-    TmpPath(file, tmp);
-    FILE *f = fopen(tmp, "wb");
+    FILE *f = fopen(path, "wb");
     if (f == nullptr) {
-        ESP_LOGE(TAG, "cannot write %s", tmp);
+        ESP_LOGE(TAG, "cannot write %s", path);
         return ESP_FAIL;
     }
     const bool ok = fwrite(head, 1, sizeof head, f) == sizeof head &&
                     fwrite(body, 1, body_size, f) == body_size;
     if (fclose(f) != 0 || !ok) {
-        ESP_LOGE(TAG, "write %s failed", tmp);
-        remove(tmp);
+        ESP_LOGE(TAG, "write %s failed", path);
+        remove(path);
         return ESP_FAIL;
     }
-    remove(file.path);  // neither SPIFFS nor FAT renames over a file
-    if (rename(tmp, file.path) != 0) {
-        ESP_LOGE(TAG, "rename %s failed", tmp);
-        return ESP_FAIL;
-    }
-    KeepVersion(file, h.version);  // after the file: a power loss between is a newer file
     return ESP_OK;
+}
+
+// `from` over `to`: neither SPIFFS nor FAT renames over a file.
+esp_err_t Replace(const char *from, const char *to) {
+    remove(to);
+    if (rename(from, to) != 0) {
+        ESP_LOGE(TAG, "rename %s failed", from);
+        return ESP_FAIL;
+    }
+    return ESP_OK;
+}
+
+void NewPath(const char *path, char *out) { snprintf(out, kPathMax, "%s.new", path); }
+
+}  // namespace
+
+esp_err_t Save(const File &file, const Header &header, const uint8_t *body, size_t body_size) {
+    char tmp[kPathMax];
+    TmpPath(file, tmp);
+    esp_err_t err = WriteTo(file, tmp, header, body, body_size);
+    if (err == ESP_OK) {
+        err = Replace(tmp, file.path);
+    }
+    if (err == ESP_OK) {
+        KeepVersion(file, header.version);  // after the file: a power loss between is newer
+    }
+    return err;
+}
+
+esp_err_t Stage(const File &file, const Header &header, const uint8_t *body, size_t body_size) {
+    char path[kPathMax];
+    NewPath(file.path, path);
+    return WriteTo(file, path, header, body, body_size);
+}
+
+void Unstage(const File &file) {
+    char path[kPathMax];
+    NewPath(file.path, path);
+    remove(path);
+}
+
+esp_err_t BeginCommit(const char *marker) {
+    FILE *f = fopen(marker, "wb");
+    if (f == nullptr) {
+        ESP_LOGE(TAG, "cannot write %s", marker);
+        return ESP_FAIL;
+    }
+    return fclose(f) == 0 ? ESP_OK : ESP_FAIL;
+}
+
+esp_err_t Promote(const File &file, uint32_t version) {
+    char path[kPathMax];
+    NewPath(file.path, path);
+    const esp_err_t err = Replace(path, file.path);
+    if (err == ESP_OK) {
+        KeepVersion(file, version);
+    }
+    return err;
+}
+
+void EndCommit(const char *marker) { remove(marker); }
+
+void FinishCommit(const char *marker, const char *const *paths, size_t count) {
+    struct stat st;
+    const bool committed = stat(marker, &st) == 0;
+    for (size_t i = 0; i < count; ++i) {
+        char path[kPathMax];
+        NewPath(paths[i], path);
+        if (stat(path, &st) != 0) {
+            continue;
+        }
+        if (committed) {
+            ESP_LOGW(TAG, "%s: a key change cut short, finished", path);
+            Replace(path, paths[i]);  // its version is above NVS: accepted at load
+        } else {
+            ESP_LOGW(TAG, "%s: a key change cut short, dropped", path);
+            remove(path);
+        }
+    }
+    remove(marker);
 }
 
 }  // namespace storefile

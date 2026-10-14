@@ -22,8 +22,9 @@ Firmware: C/C++ on **ESP-IDF**.
   green breathing when ready); TOTP codes on the console (`totp`); LVGL 9 library (no display driver);
   password records (site/user/password/TOTP) in `vault.bin` with
   add/edit/delete on the console (`pass`); `vault.bin` and `fido.bin` are
-  AES-256-GCM with one data key wrapped by the 6-digit PIN (`key.bin`),
-  locked until `pin` (`test.pin` in config.json unlocks at boot).
+  AES-256-GCM with a key from the 6-digit PIN (the same on synced devices;
+  a PIN change re-keys both), locked until `pin` (`test.pin` in config.json
+  unlocks at boot).
   PIN lockout (10 tries, `pin.lockMinutes`) and a wipe PIN (`pin wipe set`).
 - Not yet: BM8563 RTC driver, e-ink UI (LVGL), eFuse-bound key, sync over Wi-Fi, SD card driver.
 

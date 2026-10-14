@@ -15,10 +15,12 @@ typedef struct {
     uint32_t version;
     int64_t modified_utc;
     const char *refused;  // why the file was not loaded (init failed), else NULL
-    // The data key (vault: key.bin); the file is AES-256-GCM with it. Init
-    // (the load) needs it when there is a file.
-    uint8_t key[32];
+    // The store key (vault); the file is AES-256-GCM with it. Init (the load)
+    // needs it when there is a file. `staged`: the next key, in <file>.new.
+    fido_ctap_key_t key;
     bool has_key;
+    fido_ctap_key_t staged;
+    bool has_staged;
 } ctap_file_storage_context_t;
 
 // Our own item next to each credential (lionkey ignores unknown keys), made,
@@ -54,8 +56,11 @@ uint32_t ctap_file_storage_counter(void);
 // The highest store version this device has accepted (NVS), 0 if none.
 uint32_t ctap_file_storage_nvs_version(void);
 
-// Rewrites the file with ctx->key (a new data key).
-ctap_storage_status_t ctap_file_storage_rewrite(const ctap_storage_t *storage);
+// A PIN change: <file>.new with ctx->staged; then over the file, ctx->key
+// becomes ctx->staged; or dropped.
+ctap_storage_status_t ctap_file_storage_stage(const ctap_storage_t *storage);
+ctap_storage_status_t ctap_file_storage_commit(const ctap_storage_t *storage);
+void ctap_file_storage_unstage(const ctap_storage_t *storage);
 
 // The wipe: the RAM log, the file, its .tmp and the kept version gone (the
 // next init starts empty). The "was encrypted" mark stays.

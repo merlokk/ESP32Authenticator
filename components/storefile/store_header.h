@@ -18,7 +18,8 @@
 //  24  nonce (12): AES-GCM; zero when plain
 //  36  KDF iterations (4): PBKDF2-HMAC-SHA256 from the PIN; 0 = no KDF
 //  40  KDF salt (16)
-//  56  reserved (8) = 0
+//  56  key id (8): which key encrypted the payload (a hash of it); zero
+//      when plain. Every PIN change makes a new key (new salt).
 
 #include <cstddef>
 #include <cstdint>
@@ -29,9 +30,10 @@ inline constexpr size_t kHeaderSize = 64;
 inline constexpr size_t kTagSize = 16;
 inline constexpr size_t kNonceSize = 12;
 inline constexpr size_t kSaltSize = 16;
+inline constexpr size_t kKeyIdSize = 8;
 inline constexpr uint8_t kFormat = 2;
 
-enum class Kind : uint8_t { kFido = 1, kRecords = 2, kKey = 3 };
+enum class Kind : uint8_t { kFido = 1, kRecords = 2 };
 enum class Cipher : uint8_t { kPlain = 0, kAesGcm = 1 };
 
 struct Header {
@@ -43,6 +45,7 @@ struct Header {
     uint8_t nonce[kNonceSize] = {};
     uint32_t kdf_iterations = 0;
     uint8_t salt[kSaltSize] = {};
+    uint8_t key_id[kKeyIdSize] = {};
 };
 
 void Encode(const Header &header, uint8_t out[kHeaderSize]);

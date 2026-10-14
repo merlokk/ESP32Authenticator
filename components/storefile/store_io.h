@@ -46,6 +46,19 @@ uint32_t NextVersion(const File &file, uint32_t current);
 // Writes `header` as given (kind set from `file`) and `body`.
 esp_err_t Save(const File &file, const Header &header, const uint8_t *body, size_t body_size);
 
+// --- Several files replaced together (a PIN change: a new key for all):
+// each written to <path>.new (Stage), then the marker file (BeginCommit),
+// then each .new renamed over its file (Promote, the version kept in NVS),
+// then the marker removed (EndCommit). At boot, before any Load,
+// FinishCommit: with the marker every .new is complete and promoted, without
+// it they are dropped (the old files and the old key stand).
+esp_err_t Stage(const File &file, const Header &header, const uint8_t *body, size_t body_size);
+void Unstage(const File &file);
+esp_err_t BeginCommit(const char *marker);
+esp_err_t Promote(const File &file, uint32_t version);
+void EndCommit(const char *marker);
+void FinishCommit(const char *marker, const char *const *paths, size_t count);
+
 // Removes the file, its .tmp and the kept version: as if never made (the
 // next Load is kNew). For a wipe.
 void Forget(const File &file);

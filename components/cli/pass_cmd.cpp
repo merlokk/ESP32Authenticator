@@ -55,6 +55,12 @@ int Failed(vault::Error e) {
     return 1;
 }
 
+void PrintKeyId(const vault::Info &info) {
+    for (uint8_t b : info.key_id) {
+        printf("%02x", b);
+    }
+}
+
 void PrintTime(int64_t utc) {
     if (utc <= 0) {
         printf("?");
@@ -80,9 +86,11 @@ int CmdInfo(int, char **) {
     printf("file       %s, %u bytes, AES-256-GCM\n", info.path,
            static_cast<unsigned>(info.file_size));
     if (info.has_key) {
-        printf("key        data key from key.bin, unwrapped by PBKDF2-HMAC-SHA256 of the PIN, "
-               "%" PRIu32 " iterations (%" PRIu32 " ms)\n",
+        printf("key        PBKDF2-HMAC-SHA256 of the PIN, %" PRIu32 " iterations (%" PRIu32
+               " ms), id ",
                info.kdf_iterations, info.unlock_ms);
+        PrintKeyId(info);
+        printf("\n");
     }
     printf("version    %" PRIu32 " (highest seen here %" PRIu32 "), changed ", info.version,
            info.kept_version);
@@ -285,8 +293,8 @@ int CmdReset(int argc, char **argv) {
         if (info.has_key) {
             printf("type 'pass reset confirm' to do it\n");
         } else {
-            printf("type 'pass reset confirm <pin>' to do it (no key.bin: the PIN of a new "
-                   "data key)\n");
+            printf("type 'pass reset confirm <pin>' to do it: the PIN of a new key "
+                   "(fido.bin then needs 'fido2 reset')\n");
         }
         return 1;
     }
@@ -310,12 +318,13 @@ int CmdPinInfo() {
     printf("vault      %s%s%s\n", vault::StateName(info.state), info.why ? ": " : "",
            info.why ? info.why : "");
     if (info.has_key) {
-        printf("key        in (key.bin: PBKDF2-HMAC-SHA256, %" PRIu32 " iterations, %" PRIu32
-               " ms)\n",
+        printf("key        in (PBKDF2-HMAC-SHA256, %" PRIu32 " iterations, %" PRIu32 " ms), id ",
                info.kdf_iterations, info.unlock_ms);
+        PrintKeyId(info);
+        printf("\n");
     } else {
-        printf("key        %s; enter the PIN: pin <6 digits>\n",
-               info.key_file_exists ? "not in" : "none yet (the first PIN makes it)");
+        printf("key        not in; enter the PIN: pin <6 digits>%s\n",
+               info.file_size == 0 ? " (no store yet: the first PIN makes it)" : "");
     }
     printf("tries      %u wrong in a row of %u; ", static_cast<unsigned>(info.pin_failures),
            static_cast<unsigned>(vault::kMaxPinTries));
@@ -371,17 +380,17 @@ int CmdPin(int argc, char **argv) {
         if (e != vault::Error::kOk) {
             return Failed(e);
         }
-        printf("PIN changed\n");
+        printf("PIN changed: a new key; vault.bin and fido.bin rewritten with it\n");
         return 0;
     }
     if (argc == 2) {
-        const bool had_key = vault::GetInfo().key_file_exists;
+        const bool had_store = vault::GetInfo().file_size != 0;
         const vault::Error e = vault::Unlock(argv[1]);
         if (e != vault::Error::kOk) {
             return Failed(e);
         }
         const vault::Info info = vault::GetInfo();
-        printf("%s: %u record(s)\n", had_key ? "unlocked" : "new key made with this PIN",
+        printf("%s: %u record(s)\n", had_store ? "unlocked" : "new store, its key from this PIN",
                static_cast<unsigned>(info.count));
         return 0;
     }

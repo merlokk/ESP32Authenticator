@@ -104,8 +104,70 @@ uint32_t ctap_file_storage_nvs_version(void) {
     return v;
 }
 
-// Writes the file with the next version. `changed`: the credentials or PIN
-// changed (the modification time moves); false: only the layout (compaction).
+// The RAM log, sealed with `key`, into `out_path`. `changed`: the credentials
+// or PIN changed (the modification time moves); false: only the layout
+// (compaction) or the key. *header: what was written.
+static ctap_storage_status_t write_file(ctap_file_storage_context_t *ctx,
+                                        const fido_ctap_key_t *key, const char *out_path,
+                                        bool changed, store_header_t *header) {
+    uint32_t kept;
+    nvs_version(&kept);
+    *header = (store_header_t){
+        .cipher = 1,
+        .version = store_header_next_version(ctx->version, kept),
+        .length = (uint32_t)ctx->mem.write_index,
+        .modified_utc = ctx->modified_utc,
+        .kdf_iterations = key->iterations,
+    };
+    memcpy(header->salt, key->salt, sizeof header->salt);
+    memcpy(header->key_id, key->id, sizeof header->key_id);
+    if (changed) {
+        const time_t now = time(NULL);
+        header->modified_utc = now >= kBelievableTime ? (int64_t)now : 0;
+    }
+    fido_store_random(header->nonce, sizeof header->nonce);
+    uint8_t head[STORE_HEADER_SIZE];
+    store_header_encode(STORE_KIND_FIDO, header, head);
+    const size_t n = ctx->mem.write_index;
+    uint8_t *sealed = scratch(n + STORE_TAG_SIZE);
+    if (sealed == NULL ||
+        !fido_store_seal(key->key, header->nonce, head, sizeof head, ctx->mem.memory, n, sealed)) {
+        ESP_LOGE(TAG, "encrypting %s failed", ctx->path);
+        heap_caps_free(sealed);
+        return CTAP_STORAGE_ERROR;
+    }
+    FILE *f = fopen(out_path, "wb");
+    if (f == NULL) {
+        ESP_LOGE(TAG, "cannot write %s", out_path);
+        heap_caps_free(sealed);
+        return CTAP_STORAGE_ERROR;
+    }
+    const bool ok = fwrite(head, 1, sizeof head, f) == sizeof head &&
+                    fwrite(sealed, 1, n + STORE_TAG_SIZE, f) == n + STORE_TAG_SIZE;
+    heap_caps_free(sealed);
+    if (fclose(f) != 0 || !ok) {
+        ESP_LOGE(TAG, "write %s failed", out_path);
+        remove(out_path);
+        return CTAP_STORAGE_ERROR;
+    }
+    return CTAP_STORAGE_OK;
+}
+
+// `from` over the store file; the written header becomes the current one.
+static ctap_storage_status_t install(ctap_file_storage_context_t *ctx, const char *from,
+                                     const store_header_t *header) {
+    remove(ctx->path);  // SPIFFS rename does not replace
+    if (rename(from, ctx->path) != 0) {
+        ESP_LOGE(TAG, "rename %s failed", from);
+        return CTAP_STORAGE_ERROR;
+    }
+    ctx->version = header->version;
+    ctx->modified_utc = header->modified_utc;
+    keep_version(header->version);  // after the file: a power loss between is a newer file
+    return CTAP_STORAGE_OK;
+}
+
+// Writes the file with the next version through <file>.tmp.
 static ctap_storage_status_t save(const ctap_storage_t *storage, bool changed) {
     ctap_file_storage_context_t *ctx = ctx_of(storage);
     if (ctx->path == NULL) {
@@ -115,54 +177,46 @@ static ctap_storage_status_t save(const ctap_storage_t *storage, bool changed) {
         ESP_LOGE(TAG, "no key: %s not written", ctx->path);
         return CTAP_STORAGE_ERROR;
     }
-    uint32_t kept;
-    nvs_version(&kept);
-    store_header_t header = {
-        .cipher = 1,
-        .version = store_header_next_version(ctx->version, kept),
-        .length = (uint32_t)ctx->mem.write_index,
-        .modified_utc = ctx->modified_utc,
-    };
-    if (changed) {
-        const time_t now = time(NULL);
-        header.modified_utc = now >= kBelievableTime ? (int64_t)now : 0;
-    }
-    fido_store_random(header.nonce, sizeof header.nonce);
-    uint8_t head[STORE_HEADER_SIZE];
-    store_header_encode(STORE_KIND_FIDO, &header, head);
-    const size_t n = ctx->mem.write_index;
-    uint8_t *sealed = scratch(n + STORE_TAG_SIZE);
-    if (sealed == NULL ||
-        !fido_store_seal(ctx->key, header.nonce, head, sizeof head, ctx->mem.memory, n, sealed)) {
-        ESP_LOGE(TAG, "encrypting %s failed", ctx->path);
-        heap_caps_free(sealed);
-        return CTAP_STORAGE_ERROR;
-    }
     char tmp[64];
     tmp_path(ctx->path, tmp, sizeof tmp);
-    FILE *f = fopen(tmp, "wb");
-    if (f == NULL) {
-        ESP_LOGE(TAG, "cannot write %s", tmp);
-        heap_caps_free(sealed);
-        return CTAP_STORAGE_ERROR;
+    store_header_t header;
+    const ctap_storage_status_t st = write_file(ctx, &ctx->key, tmp, changed, &header);
+    return st == CTAP_STORAGE_OK ? install(ctx, tmp, &header) : st;
+}
+
+static void new_path(const char *path, char *out, size_t size) {
+    snprintf(out, size, "%s.new", path);
+}
+
+static store_header_t staged_header;
+
+ctap_storage_status_t ctap_file_storage_stage(const ctap_storage_t *storage) {
+    ctap_file_storage_context_t *ctx = ctx_of(storage);
+    char path[64];
+    new_path(ctx->path, path, sizeof path);
+    return write_file(ctx, &ctx->staged, path, false, &staged_header);
+}
+
+ctap_storage_status_t ctap_file_storage_commit(const ctap_storage_t *storage) {
+    ctap_file_storage_context_t *ctx = ctx_of(storage);
+    char path[64];
+    new_path(ctx->path, path, sizeof path);
+    const ctap_storage_status_t st = install(ctx, path, &staged_header);
+    if (st == CTAP_STORAGE_OK) {
+        ctx->key = ctx->staged;
     }
-    const bool ok = fwrite(head, 1, sizeof head, f) == sizeof head &&
-                    fwrite(sealed, 1, n + STORE_TAG_SIZE, f) == n + STORE_TAG_SIZE;
-    heap_caps_free(sealed);
-    if (fclose(f) != 0 || !ok) {
-        ESP_LOGE(TAG, "write %s failed", tmp);
-        remove(tmp);
-        return CTAP_STORAGE_ERROR;
-    }
-    remove(ctx->path);  // SPIFFS rename does not replace
-    if (rename(tmp, ctx->path) != 0) {
-        ESP_LOGE(TAG, "rename %s failed", tmp);
-        return CTAP_STORAGE_ERROR;
-    }
-    ctx->version = header.version;
-    ctx->modified_utc = header.modified_utc;
-    keep_version(header.version);  // after the file: a power loss between is a newer file
-    return CTAP_STORAGE_OK;
+    memset(&ctx->staged, 0, sizeof ctx->staged);
+    ctx->has_staged = false;
+    return st;
+}
+
+void ctap_file_storage_unstage(const ctap_storage_t *storage) {
+    ctap_file_storage_context_t *ctx = ctx_of(storage);
+    char path[64];
+    new_path(ctx->path, path, sizeof path);
+    remove(path);
+    memset(&ctx->staged, 0, sizeof ctx->staged);
+    ctx->has_staged = false;
 }
 
 // Rebuilds the log from its live items, which also sets write_index (lionkey's
@@ -273,11 +327,13 @@ static bool load(ctap_file_storage_context_t *ctx, bool *rewrite) {
         ctx->refused = "the store file is larger than the store (credential limit lowered)";
     } else if (!ctx->has_key) {
         ctx->refused = "locked: enter the PIN";
+    } else if (memcmp(header.key_id, ctx->key.id, sizeof header.key_id) != 0) {
+        ctx->refused = "the store file has another key (another PIN, or not yet re-keyed)";
     } else {
         const size_t sealed_size = header.length + STORE_TAG_SIZE;
         uint8_t *sealed = scratch(sealed_size);
         const bool read = sealed != NULL && fread(sealed, 1, sealed_size, f) == sealed_size;
-        const int opened = read ? fido_store_open(ctx->key, header.nonce, head, sizeof head,
+        const int opened = read ? fido_store_open(ctx->key.key, header.nonce, head, sizeof head,
                                                   sealed, header.length, ctx->mem.memory)
                                 : -1;
         heap_caps_free(sealed);
@@ -526,10 +582,6 @@ size_t ctap_file_storage_estimate_num_remaining_items(const ctap_storage_t *stor
     return n;
 }
 
-ctap_storage_status_t ctap_file_storage_rewrite(const ctap_storage_t *storage) {
-    return save(storage, false);
-}
-
 void ctap_file_storage_forget(const ctap_storage_t *storage) {
     ctap_file_storage_context_t *ctx = ctx_of(storage);
     ctap_memory_storage_erase(storage);
@@ -538,6 +590,8 @@ void ctap_file_storage_forget(const ctap_storage_t *storage) {
     }
     char tmp[64];
     tmp_path(ctx->path, tmp, sizeof tmp);
+    remove(tmp);
+    new_path(ctx->path, tmp, sizeof tmp);
     remove(tmp);
     remove(ctx->path);
     nvs_handle_t h;

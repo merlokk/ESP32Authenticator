@@ -168,12 +168,14 @@ const char *fido_ctap_stopped_reason(void) {
 static void stop(void) {
     ready = false;
     ctap_memory_storage_erase(&storage);
-    memset(ctx->key, 0, sizeof ctx->key);
+    memset(&ctx->key, 0, sizeof ctx->key);
     ctx->has_key = false;
+    memset(&ctx->staged, 0, sizeof ctx->staged);
+    ctx->has_staged = false;
     ctx->refused = NULL;
 }
 
-esp_err_t fido_ctap_set_key(const uint8_t *key) {
+esp_err_t fido_ctap_set_key(const fido_ctap_key_t *key) {
     if (lock == NULL || ctx->path == NULL) {
         return ESP_ERR_INVALID_STATE;
     }
@@ -182,13 +184,8 @@ esp_err_t fido_ctap_set_key(const uint8_t *key) {
     if (key == NULL) {
         stop();
         ESP_LOGI(TAG, "locked: store and key wiped from memory");
-    } else if (ready) {
-        if (memcmp(ctx->key, key, sizeof ctx->key) != 0) {
-            memcpy(ctx->key, key, sizeof ctx->key);
-            err = ctap_file_storage_rewrite(&storage) == CTAP_STORAGE_OK ? ESP_OK : ESP_FAIL;
-        }
-    } else {
-        memcpy(ctx->key, key, sizeof ctx->key);
+    } else if (!ready) {
+        ctx->key = *key;
         ctx->has_key = true;
         ctx->refused = NULL;
         err = storage.init(&storage) == CTAP_STORAGE_OK ? start() : ESP_FAIL;
@@ -198,6 +195,46 @@ esp_err_t fido_ctap_set_key(const uint8_t *key) {
     }
     xSemaphoreGive(lock);
     return err;
+}
+
+esp_err_t fido_ctap_stage_key(const fido_ctap_key_t *key) {
+    if (lock == NULL || ctx->path == NULL) {
+        return ESP_OK;
+    }
+    xSemaphoreTake(lock, portMAX_DELAY);
+    struct stat st;
+    esp_err_t err = ESP_OK;
+    if (ready) {
+        ctx->staged = *key;
+        ctx->has_staged = true;
+        err = ctap_file_storage_stage(&storage) == CTAP_STORAGE_OK ? ESP_OK : ESP_FAIL;
+    } else if (stat(ctx->path, &st) == 0) {
+        err = ESP_ERR_INVALID_STATE;  // a file not loaded: it cannot be re-keyed
+    }
+    xSemaphoreGive(lock);
+    return err;
+}
+
+esp_err_t fido_ctap_commit_key(void) {
+    if (lock == NULL || ctx->path == NULL) {
+        return ESP_OK;
+    }
+    xSemaphoreTake(lock, portMAX_DELAY);
+    esp_err_t err = ESP_OK;
+    if (ctx->has_staged) {
+        err = ctap_file_storage_commit(&storage) == CTAP_STORAGE_OK ? ESP_OK : ESP_FAIL;
+    }
+    xSemaphoreGive(lock);
+    return err;
+}
+
+void fido_ctap_unstage_key(void) {
+    if (lock == NULL || ctx->path == NULL) {
+        return;
+    }
+    xSemaphoreTake(lock, portMAX_DELAY);
+    ctap_file_storage_unstage(&storage);
+    xSemaphoreGive(lock);
 }
 
 void fido_ctap_wipe(void) {

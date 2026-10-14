@@ -1,12 +1,14 @@
 #pragma once
 
-// The password store: `<dir>/vault.bin`, AES-256-GCM with the data key (the
-// store header is the associated data, a random nonce per write).
+// The password store: `<dir>/vault.bin`, AES-256-GCM (the store header is the
+// associated data, a random nonce per write).
 //
-// The data key: 32 random bytes, made with the first PIN, in `<dir>/key.bin`
-// wrapped (AES-256-GCM) by PBKDF2-HMAC-SHA256(PIN, salt); salt and count in
-// its header. It also encrypts fido.bin (SetKeyHook). A PIN change rewrites
-// key.bin only; the wipe PIN removes it, so nothing can be decrypted again.
+// The key: PBKDF2-HMAC-SHA256(PIN, salt). Salt, count and the key's id are in
+// every store header, so another device with the same PIN (and these files,
+// e.g. from a sync server) derives the same key. fido.bin uses it too
+// (Hooks). A PIN change makes a new key (new salt) and rewrites both stores
+// from memory: each to .new, then a marker, then the renames (store_io.h);
+// at boot storefile::FinishCommit(kPinChangeMarker) completes or drops it.
 //
 // Nothing is decrypted until Unlock(pin); then vault.bin is loaded whole into
 // PSRAM and rewritten whole on every change. Records: records.h.
@@ -22,6 +24,16 @@
 #include "records.h"
 
 namespace vault {
+
+inline constexpr const char *kPinChangeMarker = "pinchange";  // in the store dir
+inline constexpr size_t kSaltSize = 16;
+
+struct Key {
+    uint8_t key[32];
+    uint8_t salt[kSaltSize];
+    uint32_t iterations;
+    uint8_t id[8];  // SHA-256("ESAF key id" || key), first 8 bytes
+};
 
 enum class State : uint8_t {
     kOff,      // no storage (Init not called, or the file system not mounted)
@@ -42,13 +54,13 @@ struct Info {
     uint32_t kept_version;  // highest version this device accepted (NVS)
     int64_t modified_utc;   // last change, 0 unknown
     size_t file_size;
-    uint32_t kdf_iterations;  // of the open store
+    uint32_t kdf_iterations;  // of the key in memory
+    uint8_t key_id[8];        // of the key in memory
     uint32_t unlock_ms;       // the last key derivation took
     uint8_t pin_failures;     // wrong PINs in a row (kMaxPinTries locks)
     uint32_t lock_left_s;     // PIN entry locked for this long, 0: free
     bool wipe_set;            // a wipe PIN is configured
-    bool has_key;             // the data key is in memory
-    bool key_file_exists;     // key.bin
+    bool has_key;             // the key is in memory
 };
 
 // From config.json `pin`; set before Unlock and again on a change.
@@ -57,19 +69,28 @@ struct Policy {
     const char *wipe;       // pin_guard.h text, "" for none (copied)
 };
 void SetPolicy(const Policy &policy);
-// Called after a wipe (outside the vault's lock): erase the FIDO2 credentials,
-// without a log line.
-void SetWipeHook(void (*on_wipe)());
-// Called with the data key when it comes in (unlock, reset) and with nullptr
-// when it goes (lock): fido.bin uses it. Outside the vault's lock.
-void SetKeyHook(void (*on_key)(const uint8_t *key));
+// fido.bin follows the vault's key. key_in / key_gone / wipe run outside the
+// vault's lock; stage / commit / unstage inside a PIN change (fido.bin.new
+// with the new key, then over fido.bin). wipe: quietly (it looks like a
+// wrong PIN). stage returns ESP_ERR_INVALID_STATE for a file it cannot
+// re-key (not loaded): the change is refused.
+struct Hooks {
+    void (*key_in)(const Key &key);
+    void (*key_gone)();
+    esp_err_t (*stage)(const Key &key);
+    void (*commit)();
+    void (*unstage)();
+    void (*wipe)();
+};
+void SetHooks(const Hooks &hooks);
 
 // PSRAM for `capacity` records; the file is in `dir` (nullptr: kOff).
 esp_err_t Init(const char *dir, size_t capacity);
 
-// Unwraps the data key with `pin` and opens the store. No key.bin yet: a new
-// data key wrapped by this PIN. kWrongPin: stays locked. kLocked: refused
-// (Info::why; the key may be in, see Info::has_key).
+// Derives the key from `pin` and the salt in vault.bin and opens the store
+// (a wrong key id: kWrongPin, stays locked). No vault.bin yet: a new store and
+// key (new salt). kLocked: refused (Info::why; the key may be in, see
+// Info::has_key).
 // The wipe PIN (checked first, in any state, also while locked out) erases
 // the store file, the key and the records, and calls on_wipe; it answers as a
 // wrong PIN (kWrongPin / kPinLocked, counted, same time, nothing logged).
@@ -77,8 +98,10 @@ esp_err_t Init(const char *dir, size_t capacity);
 Error Unlock(const char *pin);
 // Wipes the records and the key.
 void Lock();
-// Wraps the data key under `new_pin` (new salt): key.bin only. Needs the key
-// in. A wrong `old_pin` counts as a wrong PIN.
+// A new key from `new_pin` (new salt); vault.bin and fido.bin are written
+// with it from memory. Needs the store open. A wrong `old_pin` counts as a
+// wrong PIN. kFidoNotLoaded: fido.bin exists but is not loaded (it could not
+// be re-keyed): nothing changed.
 Error ChangePin(const char *old_pin, const char *new_pin);
 
 // The pin_guard.h text of a wipe PIN (random salt). Needs the open store:
@@ -99,8 +122,8 @@ Error Set(uint32_t id, Field field, const char *value);
 Error Remove(uint32_t id);
 
 // Every record gone: an empty store written over the file. With the key in,
-// `pin` is not needed; without, `pin` unwraps it, or makes a new data key when
-// key.bin is missing or refused (fido.bin then needs `fido2 reset`).
+// `pin` is not needed; without, `pin` makes a new key (new salt): fido.bin,
+// if any, then has another key (`fido2 reset`).
 Error Reset(const char *pin);
 
 }  // namespace vault
