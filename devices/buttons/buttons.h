@@ -4,7 +4,7 @@
 #include "esp_err.h"
 
 // Push buttons on GPIOs, read by polling. Pins come from the board
-// (boards::Button(), drivers/boards).
+// (boards::Button(), devices/boards).
 
 namespace buttons {
 

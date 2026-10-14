@@ -10,7 +10,7 @@
 //   date server <host|off>            SNTP server (off: no sync)
 //   date hours <0..168>               sync interval (0: no sync)
 //
-// `board` command: the board this firmware is built for (drivers/config.h),
+// `board` command: the board this firmware is built for (devices/config.h),
 // its devices and pins.
 
 namespace console {

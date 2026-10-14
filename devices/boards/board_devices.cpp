@@ -2,7 +2,11 @@
 
 #include <cstdio>
 
+#include <cinttypes>
+
+#include "clock_math.h"
 #include "esp_log.h"
+#include "esp_rtc_time.h"
 #include "timer_clock.h"
 
 namespace boards {
@@ -18,6 +22,12 @@ void PrintPin(const char *label, int8_t gpio) {
     if (gpio != kNoPin) {
         printf(" %s=%d", label, gpio);
     }
+}
+
+void PrintUtc(const char *label, int64_t utc_us) {
+    const rtc::DateTime t = rtc::FromUnix(utc_us / 1000000);
+    printf("%-10s %04u-%02u-%02u %02u:%02u:%02u.%03u UTC\n", label, t.year, t.month, t.day, t.hour,
+           t.minute, t.second, static_cast<unsigned>(utc_us % 1000000 / 1000));
 }
 
 }  // namespace
@@ -43,6 +53,36 @@ buttons::Button Button(ButtonId id) {
     const ButtonPin &pin = kBoard.Button(id);
     return buttons::Button(pin.gpio == kNoPin ? GPIO_NUM_NC : static_cast<gpio_num_t>(pin.gpio),
                            pin.active_low);
+}
+
+void PrintClock() {
+    printf("[clock]\n");
+    printf("hw rtc     %s%s\n", Name(kBoard.hw_clock),
+           kBoard.hw_clock != HwClockType::kNone ? " (no driver yet)" : "");
+    printf("source     %s, %s\n", active_clock->Name(),
+           active_clock->KeepsTimeWhenOff() ? "keeps time when off" : "lost at power-off");
+    const uint64_t timer_us = esp_rtc_get_time_us();
+    printf("rtc timer  %" PRIu64 ".%03u s since power-on\n", timer_us / 1000000,
+           static_cast<unsigned>(timer_us % 1000000 / 1000));
+    int64_t clock_us = 0;
+    bool valid = false;
+    const esp_err_t err = active_clock->Read(&clock_us, &valid);
+    const int64_t system_us = rtc::SystemTimeUs();
+    if (err != ESP_OK) {
+        printf("clock      read failed: %s\n", esp_err_to_name(err));
+    } else if (!valid) {
+        printf("clock      no time\n");
+    } else {
+        PrintUtc("clock", clock_us);
+    }
+    if (rtc::Believable(system_us / 1000000)) {
+        PrintUtc("system", system_us);
+        if (err == ESP_OK && valid) {
+            printf("drift      %+" PRId64 " ms (clock - system)\n", (clock_us - system_us) / 1000);
+        }
+    } else {
+        printf("system     not set\n");
+    }
 }
 
 void PrintInfo() {

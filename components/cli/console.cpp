@@ -15,6 +15,7 @@
 #include "freertos/task.h"
 #include "ble.h"
 #include "ble_cmd.h"
+#include "board_devices.h"
 #include "date_cmd.h"
 #include "fido_cmd.h"
 #include "wifi_cmd.h"
@@ -56,6 +57,7 @@ int CmdVersion(int, char **) {
 
 int CmdHwInfo(int, char **) {
     hardware::PrintInfo();
+    boards::PrintClock();
     return 0;
 }
 
@@ -234,7 +236,7 @@ const esp_console_cmd_t kCommands[] = {
     },
     {
         .command = "board",
-        .help = "The board this firmware is built for (drivers/config.h): devices and pins",
+        .help = "The board this firmware is built for (devices/config.h): devices and pins",
         .hint = nullptr,
         .func = &CmdBoard,
         .argtable = nullptr,
@@ -280,7 +282,7 @@ const esp_console_cmd_t kCommands[] = {
     },
     {
         .command = "hwinfo",
-        .help = "Print chip and IDs, flash, PSRAM, eFuse, NVS, partitions, temperature",
+        .help = "Print chip and IDs, flash, PSRAM, eFuse, NVS, partitions, temperature, clock",
         .hint = nullptr,
         .func = &CmdHwInfo,
         .argtable = nullptr,

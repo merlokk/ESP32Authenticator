@@ -41,7 +41,7 @@ after   (same discovery, Windows cache re-read)  → 08 2B00 3400 0328 (characte
 The mismatch exists only for the **last** service in the table: NimBLE uses
 0xFFFF there in Read By Group Type and the real last handle in Find By Type Value;
 for any other service both give the handle before the next service. So a small
-tail service is registered after all profile services (`drivers/ble/ble.cpp`,
+tail service is registered after all profile services (`devices/ble/ble.cpp`,
 `ble::On()`), and the FIDO range is 0x002B–0x0034 in both responses:
 
 ```cpp
@@ -61,7 +61,7 @@ const ble_gatt_svc_def kTailServices[] = {
 
 Windows caches the GATT table of a bonded device and would keep comparing against
 the old range. The firmware therefore indicates Service Changed on layout changes
-(`CheckGattLayout()` in `drivers/ble/ble.cpp`): an FNV-1a hash of all service
+(`CheckGattLayout()` in `devices/ble/ble.cpp`): an FNV-1a hash of all service
 tables is kept in NVS (`ble/gatt_hash`); when it differs at stack sync,
 `ble_svc_gatt_changed(0x0001, 0xFFFF)` marks every bonded host subscribed to
 Service Changed, and NimBLE sends the indication after re-encryption. Verified:

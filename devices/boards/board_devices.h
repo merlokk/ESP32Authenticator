@@ -23,4 +23,7 @@ buttons::Button Button(ButtonId id);
 // Name, features and pins (console `board`).
 void PrintInfo();
 
+// `[clock]` section of `hwinfo`: the board's clock, its value, the system clock.
+void PrintClock();
+
 }  // namespace boards

@@ -21,7 +21,7 @@ Reference ESP-IDF + LVGL project: `../../ai-remote/approver-esp32` ([GitHub](htt
 | `lib/` | third-party git submodules, used unmodified (`lionkey`) |
 | `host_test/` | host tests (Unity, MSVC), no board: see Tests |
 | `utils/` | host-side Python tools over the USB console (`device.py`: console session; `spiffs.py`: ls/info/rm/get/put; `ble.py`: ble commands, `kb` text quoting) |
-| `drivers/` | hardware drivers, one component per device (`hardware`: SoC info, eFuse, USB host connected; `spiffs_fs`: SPIFFS on `spiffs` at `/spiffs`, never formatted, it holds stock data on the X4 Pro; `ble`, `ble_kb`, `ble_fido`: see BLE; `wifi`: the radio (`wifi::Radio`), no decisions, stores nothing; `buttons`: GPIO buttons, polled, pins from the board; `crypto`: hardware RNG, SHA-256, AES-256-CBC via PSA; `clock`: `rtc::Clock`, see Time; `boards`: board classes, see Boards). `drivers/config.h`: the board the firmware is built for |
+| `devices/` | hardware drivers, one component per device (`hardware`: SoC info, eFuse, USB host connected; `spiffs_fs`: SPIFFS on `spiffs` at `/spiffs`, never formatted, it holds stock data on the X4 Pro; `ble`, `ble_kb`, `ble_fido`: see BLE; `wifi`: the radio (`wifi::Radio`), no decisions, stores nothing; `buttons`: GPIO buttons, polled, pins from the board; `crypto`: hardware RNG, SHA-256, AES-256-CBC via PSA; `clock`: `rtc::Clock`, see Time; `boards`: board classes, see Boards). `devices/config.h`: the board the firmware is built for |
 
 ## Config
 
@@ -90,12 +90,12 @@ host_test\run.cmd config     # suites whose name contains "config"
 
 ## Boards
 
-`drivers/boards`: one class per board, deriving from `boards::Board`
+`devices/boards`: one class per board, deriving from `boards::Board`
 (`board_spec.h`, pure): `hw_clock` (none, BM8563), `display` (none, e-ink
 800x480), `touch` (none, GT911), `led` (none, WS2812), `battery` (none,
 CW2017), `has_sd_card`, `has_frontlight`, and GPIOs for the buttons (Left,
 Right, Power; Left is FIDO2 user presence) and every device. Chosen at build
-time: `kBoardId` in `drivers/config.h` -> `boards::kBoard` (`board.h`,
+time: `kBoardId` in `devices/config.h` -> `boards::kBoard` (`board.h`,
 constexpr); `CheckPins` (no shared GPIO, no USB/flash/PSRAM pin, every device
 has its pins) is a `static_assert` and a host test.
 
@@ -113,7 +113,7 @@ The clock is UTC; a zone is presentation only.
 
 | Part | Role |
 |---|---|
-| `drivers/clock` | `rtc::Clock` interface: carries UTC to the next boot (`Read`/`Write`, `KeepsTimeWhenOff`). `TimerClock`: the chip's RTC timer + state in RTC no-init memory, kept by software resets, lost at power-off. `clock_math.h` (pure): date <-> Unix, believable range 2024..2099, the timer state (magic + FNV check) |
+| `devices/clock` | `rtc::Clock` interface: carries UTC to the next boot (`Read`/`Write`, `KeepsTimeWhenOff`). `TimerClock`: the chip's RTC timer + state in RTC no-init memory, kept by software resets, lost at power-off. `clock_math.h` (pure): date <-> Unix, believable range 2024..2099, the timer state (magic + FNV check) |
 | `components/timesync` | SNTP (`esp_netif_sntp`), one task, 1 s tick. `sync_policy.h` (pure, from approver-esp32): sync at boot / when the internet appears / every `syncHours`; no re-sync within 5 min of a good one (flapping link); failure retry 1 min doubling to 15 min. Internet = a client link with an address not reported offline by the check. An answer outside 2024..2099 is refused. The result goes to the board clock |
 | `components/timezone` | `zones.h` (pure): 72 named zones -> POSIX rules, aliases (Europe/Kiev, GMT), a raw rule accepted; `timezone.h`: `TZ` + `tzset`, offset, DST |
 
@@ -147,7 +147,7 @@ Ported from approver-esp32 (`../../ai-remote/approver-esp32`, firmware.md
 
 | Layer | Role |
 |---|---|
-| `drivers/wifi` (`wifi::Radio`) | join a network / be an AP / scan; no decisions. Stack (netifs + `esp_wifi_init`, ~40 KB) taken lazily, given back on stop. AP runs as APSTA so a scan works. Credentials never in the driver's NVS store |
+| `devices/wifi` (`wifi::Radio`) | join a network / be an AP / scan; no decisions. Stack (netifs + `esp_wifi_init`, ~40 KB) taken lazily, given back on stop. AP runs as APSTA so a scan works. Credentials never in the driver's NVS store |
 | `wifimgr::Policy` (`wifi_policy.h`) | pure state machine, host-tested: which network, when to give up, when to be an AP |
 | `wifimgr::Reachability` (`reachability.h`) | pure, host-tested: internet check rounds, online / offline / unknown |
 | `wifimgr` manager | one task, 200 ms tick: radio status → policy events, policy actions → radio, SSIDs/passwords from config; ICMP echo (`esp_ping`) for the internet check |

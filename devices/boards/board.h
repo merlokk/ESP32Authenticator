@@ -1,6 +1,6 @@
 #pragma once
 
-// The board this firmware is built for, chosen in drivers/config.h at build
+// The board this firmware is built for, chosen in devices/config.h at build
 // time. Pure: `boards::kBoard` is constexpr, so a bad pin map fails the build.
 
 #include "../config.h"
@@ -25,6 +25,6 @@ struct BoardFor<BoardId::kX4Pro> {
 using Selected = BoardFor<kBoardId>::Type;
 inline constexpr Selected kBoard;
 
-static_assert(CheckPins(kBoard) == nullptr, "drivers/config.h: the board's pin map is invalid");
+static_assert(CheckPins(kBoard) == nullptr, "devices/config.h: the board's pin map is invalid");
 
 }  // namespace boards

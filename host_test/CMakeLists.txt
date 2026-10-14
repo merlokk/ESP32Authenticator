@@ -67,8 +67,8 @@ target_include_directories(host_test PRIVATE
     ../components/web
     ../components/timesync
     ../components/timezone
-    ../drivers/clock
-    ../drivers/boards
+    ../devices/clock
+    ../devices/boards
     "${CJSON_DIR}"
     "${UNITY_DIR}"
 )

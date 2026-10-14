@@ -2,7 +2,7 @@
 
 // What a board has and where it is wired: pure data (no driver headers), so the
 // pin rules are host-tested and checked at compile time. Each board is a class
-// deriving from Board (dev_board.h, x4_pro.h); drivers/config.h picks one.
+// deriving from Board (dev_board.h, x4_pro.h); devices/config.h picks one.
 // GPIO numbers are int8_t, kNoPin when the line does not exist.
 
 #include <cstddef>
