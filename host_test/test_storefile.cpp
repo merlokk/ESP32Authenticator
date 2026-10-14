@@ -11,8 +11,6 @@ namespace {
 using storefile::Header;
 using storefile::kHeaderSize;
 using storefile::Kind;
-using storefile::Parse;
-using storefile::Verdict;
 
 Header Sample() {
     Header h;
@@ -40,7 +38,7 @@ void test_storefile_round_trips(void) {
     in.modified_utc = -5;  // whatever was written comes back
     storefile::Encode(in, out);
     Header back;
-    TEST_ASSERT_EQUAL(Parse::kOk, storefile::Decode(out, sizeof out, kHeaderSize + 100,
+    TEST_ASSERT_TRUE(storefile::Decode(out, sizeof out, kHeaderSize + 100,
                                                     Kind::kFido, &back));
     TEST_ASSERT_EQUAL_UINT32(in.version, back.version);
     TEST_ASSERT_EQUAL_UINT32(in.length, back.length);
@@ -48,33 +46,32 @@ void test_storefile_round_trips(void) {
     TEST_ASSERT_EQUAL(storefile::Cipher::kPlain, back.cipher);
 }
 
-void test_storefile_a_file_without_magic_has_no_header(void) {
-    // A pre-header fido.bin starts with lionkey's item header (key 1 or 2).
+void test_storefile_a_file_without_magic_is_refused(void) {
+    // E.g. a store from before the header: lionkey's item header first.
     const uint8_t old[kHeaderSize] = {2, 0, 0, 0};
     Header h;
-    TEST_ASSERT_EQUAL(Parse::kNoHeader,
-                      storefile::Decode(old, sizeof old, 500, Kind::kFido, &h));
-    TEST_ASSERT_EQUAL(Parse::kNoHeader, storefile::Decode(old, 0, 0, Kind::kFido, &h));
+    TEST_ASSERT_FALSE(storefile::Decode(old, sizeof old, 500, Kind::kFido, &h));
+    TEST_ASSERT_FALSE(storefile::Decode(old, 0, 0, Kind::kFido, &h));
 }
 
 void test_storefile_refuses_a_wrong_size_kind_format_or_cipher(void) {
     uint8_t out[kHeaderSize];
     storefile::Encode(Sample(), out);
     Header h;
-    TEST_ASSERT_EQUAL(Parse::kBad, storefile::Decode(out, sizeof out, kHeaderSize + 99,
+    TEST_ASSERT_FALSE(storefile::Decode(out, sizeof out, kHeaderSize + 99,
                                                      Kind::kFido, &h));  // truncated
-    TEST_ASSERT_EQUAL(Parse::kBad, storefile::Decode(out, sizeof out, kHeaderSize + 101,
+    TEST_ASSERT_FALSE(storefile::Decode(out, sizeof out, kHeaderSize + 101,
                                                      Kind::kFido, &h));  // padded
-    TEST_ASSERT_EQUAL(Parse::kBad, storefile::Decode(out, 20, kHeaderSize + 100,
+    TEST_ASSERT_FALSE(storefile::Decode(out, 20, kHeaderSize + 100,
                                                      Kind::kFido, &h));  // short read
-    TEST_ASSERT_EQUAL(Parse::kBad, storefile::Decode(out, sizeof out, kHeaderSize + 100,
+    TEST_ASSERT_FALSE(storefile::Decode(out, sizeof out, kHeaderSize + 100,
                                                      Kind::kRecords, &h));
-    out[4] = 3;
-    TEST_ASSERT_EQUAL(Parse::kBad, storefile::Decode(out, sizeof out, kHeaderSize + 100,
+    out[4] = 1;  // the 40-byte format of the first firmware with a header
+    TEST_ASSERT_FALSE(storefile::Decode(out, sizeof out, kHeaderSize + 100,
                                                      Kind::kFido, &h));
     out[4] = 2;
     out[6] = 2;
-    TEST_ASSERT_EQUAL(Parse::kBad, storefile::Decode(out, sizeof out, kHeaderSize + 100,
+    TEST_ASSERT_FALSE(storefile::Decode(out, sizeof out, kHeaderSize + 100,
                                                      Kind::kFido, &h));
 }
 
@@ -85,9 +82,9 @@ void test_storefile_an_encrypted_file_counts_its_tag(void) {
     uint8_t out[kHeaderSize];
     storefile::Encode(in, out);
     Header back;
-    TEST_ASSERT_EQUAL(Parse::kBad, storefile::Decode(out, sizeof out, kHeaderSize + 100,
+    TEST_ASSERT_FALSE(storefile::Decode(out, sizeof out, kHeaderSize + 100,
                                                      Kind::kFido, &back));
-    TEST_ASSERT_EQUAL(Parse::kOk, storefile::Decode(out, sizeof out,
+    TEST_ASSERT_TRUE(storefile::Decode(out, sizeof out,
                                                     kHeaderSize + 100 + storefile::kTagSize,
                                                     Kind::kFido, &back));
     TEST_ASSERT_EQUAL_UINT8(0xAA, back.nonce[0]);
@@ -104,37 +101,18 @@ void test_storefile_kdf_fields_round_trip(void) {
     TEST_ASSERT_EQUAL_UINT8(0x20, out[36]);  // 20000 = 0x4E20
     TEST_ASSERT_EQUAL_UINT8(1, out[40]);
     Header back;
-    TEST_ASSERT_EQUAL(Parse::kOk, storefile::Decode(out, sizeof out, kHeaderSize + 100,
+    TEST_ASSERT_TRUE(storefile::Decode(out, sizeof out, kHeaderSize + 100,
                                                     Kind::kFido, &back));
     TEST_ASSERT_EQUAL_UINT32(20000, back.kdf_iterations);
     TEST_ASSERT_EQUAL_UINT8_ARRAY(in.salt, back.salt, storefile::kSaltSize);
-    TEST_ASSERT_EQUAL_UINT8(kHeaderSize, back.size);
-}
-
-void test_storefile_format_1_is_still_read(void) {
-    // A 40-byte header (the first firmware with it), then 10 payload bytes.
-    uint8_t v1[storefile::kHeaderSizeV1] = {'E', 'S', 'A', 'F', 1, 1, 0, 0, 7, 0, 0, 0, 10};
-    Header back;
-    TEST_ASSERT_EQUAL(Parse::kOk, storefile::Decode(v1, sizeof v1, sizeof v1 + 10, Kind::kFido,
-                                                    &back));
-    TEST_ASSERT_EQUAL_UINT8(storefile::kHeaderSizeV1, back.size);
-    TEST_ASSERT_EQUAL_UINT32(7, back.version);
-    TEST_ASSERT_EQUAL_UINT32(0, back.kdf_iterations);
-    TEST_ASSERT_EQUAL(Parse::kBad, storefile::Decode(v1, sizeof v1, kHeaderSize + 10,
-                                                     Kind::kFido, &back));
 }
 
 void test_storefile_an_older_version_is_a_rollback(void) {
-    TEST_ASSERT_EQUAL(Verdict::kRollback, storefile::Check(Parse::kOk, 4, true, 5));
-    TEST_ASSERT_EQUAL(Verdict::kLoad, storefile::Check(Parse::kOk, 5, true, 5));
+    TEST_ASSERT_TRUE(storefile::Rollback(4, true, 5));
+    TEST_ASSERT_FALSE(storefile::Rollback(5, true, 5));
     // Newer than NVS: written just before a power loss, or synced in.
-    TEST_ASSERT_EQUAL(Verdict::kLoad, storefile::Check(Parse::kOk, 6, true, 5));
-    TEST_ASSERT_EQUAL(Verdict::kLoad, storefile::Check(Parse::kOk, 1, false, 0));
-}
-
-void test_storefile_a_headerless_file_is_migrated_only_once(void) {
-    TEST_ASSERT_EQUAL(Verdict::kMigrate, storefile::Check(Parse::kNoHeader, 0, false, 0));
-    TEST_ASSERT_EQUAL(Verdict::kRollback, storefile::Check(Parse::kNoHeader, 0, true, 1));
+    TEST_ASSERT_FALSE(storefile::Rollback(6, true, 5));
+    TEST_ASSERT_FALSE(storefile::Rollback(1, false, 0));
 }
 
 void test_storefile_next_version_is_above_both(void) {
@@ -166,13 +144,11 @@ void test_storefile_sync_later_time_wins_then_higher_version(void) {
 void RegisterStorefileTests(void) {
     RUN_TEST(test_storefile_layout_is_fixed_little_endian);
     RUN_TEST(test_storefile_round_trips);
-    RUN_TEST(test_storefile_a_file_without_magic_has_no_header);
+    RUN_TEST(test_storefile_a_file_without_magic_is_refused);
     RUN_TEST(test_storefile_refuses_a_wrong_size_kind_format_or_cipher);
     RUN_TEST(test_storefile_an_encrypted_file_counts_its_tag);
     RUN_TEST(test_storefile_kdf_fields_round_trip);
-    RUN_TEST(test_storefile_format_1_is_still_read);
     RUN_TEST(test_storefile_an_older_version_is_a_rollback);
-    RUN_TEST(test_storefile_a_headerless_file_is_migrated_only_once);
     RUN_TEST(test_storefile_next_version_is_above_both);
     RUN_TEST(test_storefile_sync_later_time_wins_then_higher_version);
 }

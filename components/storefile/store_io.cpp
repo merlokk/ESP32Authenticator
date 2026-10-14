@@ -123,18 +123,16 @@ Loaded Load(const File &file, uint8_t *body, size_t capacity, Header *header, si
     uint8_t *head = raw;
     const size_t got = fread(head, 1, kHeaderSize, f);
     Header h;
-    const Parse parse = Decode(head, got, file_size, file.kind, &h);
     const char *reason = nullptr;
-    if (parse != Parse::kOk) {
+    if (!Decode(head, got, file_size, file.kind, &h)) {
         reason = "the store file is damaged or of an unknown format";
-    } else if (Check(parse, h.version, has_kept, kept) == Verdict::kRollback) {
+    } else if (Rollback(h.version, has_kept, kept)) {
         ESP_LOGE(TAG, "%s: version %u, but %u was seen", file.path,
                  static_cast<unsigned>(h.version), static_cast<unsigned>(kept));
         reason = "the store file is older than one this device has used (rollback)";
-    } else if (file_size - h.size > capacity) {
+    } else if (file_size - kHeaderSize > capacity) {
         reason = "the store file is larger than the store";
-    } else if (fseek(f, h.size, SEEK_SET) != 0 ||
-               fread(body, 1, file_size - h.size, f) != file_size - h.size) {
+    } else if (fread(body, 1, file_size - kHeaderSize, f) != file_size - kHeaderSize) {
         reason = "the store file cannot be read";
     }
     fclose(f);
@@ -142,7 +140,7 @@ Loaded Load(const File &file, uint8_t *body, size_t capacity, Header *header, si
         return Refuse(file, reason, why);
     }
     *header = h;
-    *body_size = file_size - h.size;
+    *body_size = file_size - kHeaderSize;
     KeepVersion(file, h.version);  // above NVS: written before a power loss, or synced
     return Loaded::kOk;
 }

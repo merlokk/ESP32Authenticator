@@ -15,6 +15,10 @@ typedef struct {
     uint32_t version;
     int64_t modified_utc;
     const char *refused;  // why the file was not loaded (init failed), else NULL
+    // The data key (vault: key.bin); the file is AES-256-GCM with it. Init
+    // (the load) needs it when there is a file.
+    uint8_t key[32];
+    bool has_key;
 } ctap_file_storage_context_t;
 
 // Our own item next to each credential (lionkey ignores unknown keys), made,
@@ -49,6 +53,13 @@ uint32_t ctap_file_storage_counter(void);
 
 // The highest store version this device has accepted (NVS), 0 if none.
 uint32_t ctap_file_storage_nvs_version(void);
+
+// Rewrites the file with ctx->key (a new data key).
+ctap_storage_status_t ctap_file_storage_rewrite(const ctap_storage_t *storage);
+
+// The wipe: the RAM log, the file, its .tmp and the kept version gone (the
+// next init starts empty). The "was encrypted" mark stays.
+void ctap_file_storage_forget(const ctap_storage_t *storage);
 
 #define CTAP_FILE_STORAGE_CONST_INIT(context_ptr)                                    \
     {                                                                                \

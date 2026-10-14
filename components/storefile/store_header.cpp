@@ -46,20 +46,14 @@ void Encode(const Header &header, uint8_t out[kHeaderSize]) {
     }
 }
 
-Parse Decode(const uint8_t *data, size_t size, size_t file_size, Kind kind, Header *out) {
-    if (size < 4 || data[0] != kMagic[0] || data[1] != kMagic[1] || data[2] != kMagic[2] ||
-        data[3] != kMagic[3]) {
-        return Parse::kNoHeader;
-    }
-    const size_t header_size = size >= 5 && data[4] == 1   ? kHeaderSizeV1
-                               : size >= 5 && data[4] == 2 ? kHeaderSize
-                                                           : 0;
-    if (header_size == 0 || size < header_size || data[5] != static_cast<uint8_t>(kind) ||
+bool Decode(const uint8_t *data, size_t size, size_t file_size, Kind kind, Header *out) {
+    if (size < kHeaderSize || data[0] != kMagic[0] || data[1] != kMagic[1] ||
+        data[2] != kMagic[2] || data[3] != kMagic[3] || data[4] != kFormat ||
+        data[5] != static_cast<uint8_t>(kind) ||
         data[6] > static_cast<uint8_t>(Cipher::kAesGcm)) {
-        return Parse::kBad;
+        return false;
     }
     Header h;
-    h.size = static_cast<uint8_t>(header_size);
     h.kind = kind;
     h.cipher = static_cast<Cipher>(data[6]);
     h.version = Get32(data + 8);
@@ -69,27 +63,21 @@ Parse Decode(const uint8_t *data, size_t size, size_t file_size, Kind kind, Head
     for (size_t i = 0; i < kNonceSize; ++i) {
         h.nonce[i] = data[24 + i];
     }
-    if (header_size == kHeaderSize) {
-        h.kdf_iterations = Get32(data + 36);
-        for (size_t i = 0; i < kSaltSize; ++i) {
-            h.salt[i] = data[40 + i];
-        }
+    h.kdf_iterations = Get32(data + 36);
+    for (size_t i = 0; i < kSaltSize; ++i) {
+        h.salt[i] = data[40 + i];
     }
     const size_t tag = h.cipher == Cipher::kPlain ? 0 : kTagSize;
     // A truncated or padded file: refused, not guessed at.
-    if (file_size < header_size + tag || file_size - header_size - tag != h.length) {
-        return Parse::kBad;
+    if (file_size < kHeaderSize + tag || file_size - kHeaderSize - tag != h.length) {
+        return false;
     }
     *out = h;
-    return Parse::kOk;
+    return true;
 }
 
-Verdict Check(Parse parse, uint32_t version, bool nvs_has, uint32_t nvs_version) {
-    if (parse == Parse::kNoHeader) {
-        // Once a version is kept, a file without one can only be an old copy.
-        return nvs_has ? Verdict::kRollback : Verdict::kMigrate;
-    }
-    return nvs_has && version < nvs_version ? Verdict::kRollback : Verdict::kLoad;
+bool Rollback(uint32_t version, bool nvs_has, uint32_t nvs_version) {
+    return nvs_has && version < nvs_version;
 }
 
 uint32_t NextVersion(uint32_t file_version, uint32_t nvs_version) {

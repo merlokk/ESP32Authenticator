@@ -52,13 +52,14 @@ typedef struct {
 // PIN state and room for items replaced during this boot (dropped at the next).
 #define FIDO_CTAP_STORE_BYTES(n) ((size_t)(n) * 1024 + 2048)
 
-// Loads the credential store from `store_path` (NULL: RAM only, lost on
-// reboot) and starts the core; up to `max_credentials` (the board's
-// fido_max_credentials; the 1+th gets KEY_STORE_FULL). A store file that is
-// refused (older than the version kept in NVS, missing while one is kept,
-// damaged, larger than the RAM log) is not touched: FIDO2 stays off
-// (fido_ctap_stopped_reason). The reset
-// window (10 s) starts here.
+// Prepares the credential store `store_path` (NULL: RAM only, lost on reboot,
+// started at once). A file store starts with fido_ctap_set_key(): it is
+// encrypted with the vault's data key, so FIDO2 is off until the PIN. Up to
+// `max_credentials` (the board's fido_max_credentials; the 1+th gets
+// KEY_STORE_FULL). A store file that is refused (older than the version kept
+// in NVS, missing while one is kept, damaged, plain after an encrypted one,
+// larger than the RAM log) is not touched: FIDO2 stays off
+// (fido_ctap_stopped_reason). The reset window (10 s) starts with the core.
 esp_err_t fido_ctap_init(const fido_ctap_hooks_t *hooks, const char *store_path,
                          size_t max_credentials);
 
@@ -85,6 +86,7 @@ typedef struct {
     uint8_t pin_retries;    // remaining PIN attempts
     uint32_t sign_count;    // global signature counter (NVS, survives reset)
     bool persistent;        // false: RAM only, lost on reboot
+    bool encrypted;         // the file is AES-256-GCM with the vault's data key
     uint32_t file_version;  // the store file's version (+1 per write), 0 if none yet
     uint32_t kept_version;  // highest version this device accepted (NVS)
     int64_t modified_utc;   // last change, Unix seconds; 0 unknown
@@ -93,6 +95,15 @@ typedef struct {
 // Why the core is not running (the store file was refused: rollback, damaged,
 // too large), NULL if it runs or init was not called.
 const char *fido_ctap_stopped_reason(void);
+
+// The data key (32 bytes) from the vault: loads the store and starts the core;
+// on a running core, a new key rewrites the file with it. NULL: stops the
+// core, wiping the store and the key from memory. Waits for a running request.
+esp_err_t fido_ctap_set_key(const uint8_t *key);
+
+// The wipe PIN: the store file and its kept version gone, the core stopped.
+// Starts empty with the next key.
+void fido_ctap_wipe(void);
 
 typedef struct {
     uint8_t id[FIDO_CTAP_CRED_ID_SIZE];     // credential ID

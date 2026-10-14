@@ -13,7 +13,7 @@ Target and status. Screen design and the open questions: [x4-design.md](x4-desig
 | PIN lock (6 digits, lockout after 10 tries, wipe PIN); the PIN also derives the storage key | PIN key for `vault.bin`, lockout, wipe PIN, console `pin` done; screen not yet |
 | Password records (site, user, password, TOTP): add / edit / delete | done on the console (`pass`); screen and typing not yet |
 | Store file header (version, modification time) and rollback check (highest version in NVS) | done (`storefile`) |
-| Encrypted store: `vault.bin`, AES-256-GCM, loaded whole into PSRAM | done, key from the PIN (PBKDF2). `fido.bin` still plain |
+| Encrypted stores: `vault.bin` and `fido.bin`, AES-256-GCM with one data key wrapped by the PIN (`key.bin`), loaded whole into PSRAM | done |
 | Sync over the internet, the later modification time wins | not yet; service not chosen |
 | X4 Pro screen: status bar, credential list, pages, settings | not yet (LVGL up, no display driver) |
 | Settings: frontlight, Wi-Fi | Wi-Fi on the console and the site; frontlight not yet |
@@ -28,7 +28,7 @@ Target and status. Screen design and the open questions: [x4-design.md](x4-desig
 | UI | LVGL 9 (`components/ui`: library up, no display driver yet; today: USB console + web site) |
 | Host link | BLE HID keyboard (types credentials), BLE FIDO2 (CTAP2) |
 | Network | Wi-Fi (client / AP / AP+client) and a configuration web site |
-| Storage | `config.json` on SPIFFS; store files (`fido.bin` plain, `vault.bin` encrypted) on the SD card when the board has one, else SPIFFS |
+| Storage | `config.json` on SPIFFS; store files (`key.bin`, `vault.bin`, `fido.bin`, encrypted) on the SD card when the board has one, else SPIFFS |
 
 Reference ESP-IDF + LVGL project: `../../ai-remote/approver-esp32` ([GitHub](https://github.com/merlokk/ai-remote/tree/main/approver-esp32)).
 
@@ -274,11 +274,13 @@ submodule) behind `ble_fido`. API: `fido_ctap_init(hooks, store)`,
 - Crypto: lionkey's table with RNG, SHA-256, AES from the `crypto` driver;
   P-256 on lionkey's micro-ecc (no ECC accelerator on the S3; its `uECC_*`
   symbols are renamed `lk_uECC_*`, NimBLE's tinycrypt has the same names).
-- Store: `/spiffs/fido.bin` = store header + lionkey's RAM log, rewritten
-  whole through a temp file on every change, compacted at boot.
+- Store: `/spiffs/fido.bin` = store header + lionkey's RAM log, AES-256-GCM
+  with the vault's data key (Passwords), rewritten whole through a temp file
+  on every change, compacted at load. FIDO2 is off from boot until the PIN
+  (`fido_ctap_set_key` through `vault::SetKeyHook`) and again after
+  `pin lock`; a plain file is refused.
 - Store header (`components/storefile/store_header.h`, pure, host-tested):
-  64 bytes (format 2; format 1, 40 bytes without the KDF fields, is still
-  read), plain, in front of every store file: magic `ESAF`, format, kind,
+  64 bytes, plain, in front of every store file: magic `ESAF`, format, kind,
   cipher (0 plain, 1 AES-256-GCM: the header is its associated data),
   **version**, payload length, **modification time** (UTC, 0 unknown), nonce,
   PBKDF2 iterations and salt. Every write: version = max(file, NVS) + 1; NVS `fido/store_ver`
@@ -337,10 +339,13 @@ so no store files on the X4 Pro).
   in config.json): nothing is decrypted before. No file yet: the first PIN
   makes an empty store. A wrong PIN (the GCM tag fails) leaves it locked; on
   an open store it changes nothing. `pin lock` wipes the key and records.
-- Key: PBKDF2-HMAC-SHA256(PIN, salt), 6000 iterations (~0.9 s on the S3 via
-  PSA); salt (16 random bytes) and count in the header, a new salt on every
-  PIN change or reset. Against a flash dump a 6-digit PIN falls in minutes:
-  see storage-encryption.md.
+- Keys: a data key (32 random bytes, made with the first PIN) encrypts
+  `vault.bin` and `fido.bin`. `key.bin` (kind 3, 32 bytes + tag) holds it
+  wrapped by PBKDF2-HMAC-SHA256(PIN, salt), 6000 iterations (~0.9 s on the
+  S3 via PSA); salt and count in its header. A PIN change rewrites `key.bin`
+  only (the data files stay: no window where two files need different PINs).
+  Against a flash dump a 6-digit PIN falls in minutes: see
+  storage-encryption.md.
 - Lockout (`pin_guard.h`, pure, host-tested): 10 wrong PINs in a row
   (unlock, or the old PIN of a change) lock PIN entry for `pin.lockMinutes`,
   then 10 more tries. Count and deadline (UTC) in NVS (`vault/pin_fail`,
@@ -348,15 +353,18 @@ so no store files on the X4 Pro).
   (or with a deadline further than a full lock) starts it again. While
   running it counts on the uptime clock.
 - Wipe PIN (`pin.wipe`): checked first, before any key derivation and also
-  while locked out. It removes `vault.bin` and its kept version (the next PIN
-  makes a new store), wipes the key and records, and resets FIDO2
-  (`fido_ctap_reset` through `vault::SetWipeHook`, its log muted). Then it
+  while locked out. It removes `key.bin`, `vault.bin`, `fido.bin` and their
+  kept versions (without `key.bin` nothing can be decrypted again; the next
+  PIN starts afresh), wipes the keys and records from memory and stops
+  FIDO2 (`fido_ctap_wipe` through `vault::SetWipeHook`). Then it
   answers as a wrong PIN: same result and count (it can start the lock),
   one key derivation, the same log line; the erase adds ~0.4 s. It must
   differ from the PIN (checked when set, on a PIN change and a reset).
-- Refused (rollback, missing while a version is kept, malformed, an earlier
-  format without a PIN key): left as is, the store is off;
-  `pass reset confirm <pin>` writes an empty store with that PIN over it.
+- Refused (rollback, missing while a version is kept, malformed, does not
+  decrypt): left as is, the store is off; `pass reset confirm` (with the key
+  in) or `pass reset confirm <pin>` writes an empty store over it. Without a
+  usable `key.bin` that PIN wraps a new data key (`fido.bin` then needs
+  `fido2 reset`).
 - PSRAM: ~1.2 KB per record of the board's `max_records` (dev board 50, X4
   Pro 500): the records, the plaintext and the file body buffers.
 - Console `pass`; passwords are never printed (list shows "set"), only typed

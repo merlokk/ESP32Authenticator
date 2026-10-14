@@ -143,13 +143,72 @@ esp_err_t fido_ctap_init(const fido_ctap_hooks_t *h, const char *store_path,
     ctx = fresh;
     storage.context = ctx;
     hooks = *h;
+    if (store_path != NULL) {
+        // The file is encrypted with the vault's data key: fido_ctap_set_key.
+        ESP_LOGI(TAG, "locked until the PIN, up to %u credentials", (unsigned)max_credentials);
+        return ESP_OK;
+    }
     if (storage.init(&storage) != CTAP_STORAGE_OK) {
         return ESP_FAIL;
     }
     return start();
 }
 
-const char *fido_ctap_stopped_reason(void) { return ready ? NULL : ctx->refused; }
+const char *fido_ctap_stopped_reason(void) {
+    if (ready) {
+        return NULL;
+    }
+    if (ctx->refused != NULL) {
+        return ctx->refused;
+    }
+    return ctx->path != NULL && !ctx->has_key ? "locked: enter the PIN ('pin')" : NULL;
+}
+
+// Stops the core and wipes the RAM log and the key (holding the lock).
+static void stop(void) {
+    ready = false;
+    ctap_memory_storage_erase(&storage);
+    memset(ctx->key, 0, sizeof ctx->key);
+    ctx->has_key = false;
+    ctx->refused = NULL;
+}
+
+esp_err_t fido_ctap_set_key(const uint8_t *key) {
+    if (lock == NULL || ctx->path == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    xSemaphoreTake(lock, portMAX_DELAY);  // a running request finishes first
+    esp_err_t err = ESP_OK;
+    if (key == NULL) {
+        stop();
+        ESP_LOGI(TAG, "locked: store and key wiped from memory");
+    } else if (ready) {
+        if (memcmp(ctx->key, key, sizeof ctx->key) != 0) {
+            memcpy(ctx->key, key, sizeof ctx->key);
+            err = ctap_file_storage_rewrite(&storage) == CTAP_STORAGE_OK ? ESP_OK : ESP_FAIL;
+        }
+    } else {
+        memcpy(ctx->key, key, sizeof ctx->key);
+        ctx->has_key = true;
+        ctx->refused = NULL;
+        err = storage.init(&storage) == CTAP_STORAGE_OK ? start() : ESP_FAIL;
+        if (err != ESP_OK && ctx->refused == NULL) {
+            ctx->refused = "the store could not be loaded";
+        }
+    }
+    xSemaphoreGive(lock);
+    return err;
+}
+
+void fido_ctap_wipe(void) {
+    if (lock == NULL) {
+        return;
+    }
+    xSemaphoreTake(lock, portMAX_DELAY);
+    ctap_file_storage_forget(&storage);
+    stop();
+    xSemaphoreGive(lock);
+}
 
 size_t fido_ctap_request(const uint8_t *msg, size_t len, uint8_t *out, size_t out_size) {
     if (out_size < 2) {
@@ -226,6 +285,7 @@ esp_err_t fido_ctap_info(fido_ctap_info_t *out) {
     out->store_size = ctx->mem.memory_size;
     out->max_credentials = ctx->max_credentials;
     out->persistent = ctx->path != NULL;
+    out->encrypted = ctx->path != NULL && ctx->has_key;
     struct stat st;
     if (ctx->path != NULL && stat(ctx->path, &st) == 0) {
         out->file_size = (size_t)st.st_size;
@@ -314,7 +374,7 @@ static esp_err_t reset_refused(void) {
 }
 
 esp_err_t fido_ctap_reset(void) {
-    if (!ready && ctx->refused != NULL) {
+    if (!ready && ctx->refused != NULL && ctx->has_key) {
         return reset_refused();
     }
     esp_err_t err = admin_take();

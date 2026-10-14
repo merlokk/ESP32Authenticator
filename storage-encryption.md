@@ -1,8 +1,8 @@
 # Credential store: encryption and size
 
-Status: the store header with version and rollback check, the RAM log in
-PSRAM, and the encrypted password store (`vault.bin`, AES-256-GCM, key B
-below from the PIN) are done; `fido.bin` is still plain. Open: C (below).
+Status: done with key B below: the store header with version and rollback
+check, the RAM log in PSRAM, `vault.bin` and `fido.bin` in AES-256-GCM with
+one data key, wrapped by the PIN in `key.bin`. Open: C (below).
 
 ## Why encrypt
 
@@ -32,7 +32,8 @@ A key stored in flash next to the file adds nothing. Options:
 
 Target: B or C, one PIN-derived key for the records store and `fido.bin`.
 
-B is done (PBKDF2-HMAC-SHA256, 6000 iterations, ~0.9 s through PSA). With a
+B is done (a random data key wrapped by PBKDF2-HMAC-SHA256 of the PIN,
+6000 iterations, ~0.9 s through PSA). With a
 6-digit PIN it only holds against someone without the flash contents: from a
 dump, 10^6 PINs x 12k SHA-256 each is ~10^10 hashes, seconds on a GPU. More
 iterations do not fix that. C does: ESP-IDF has `esp_hmac_derive_pbkdf2_key`

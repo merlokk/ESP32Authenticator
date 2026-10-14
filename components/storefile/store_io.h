@@ -35,7 +35,7 @@ enum class Loaded {
 
 // Reads the body (everything after the header: payload, + tag when encrypted)
 // into `body` (`capacity` bytes); `*body_size` = its size. `raw` gets the
-// header as stored (header->size bytes): the AES-GCM associated data.
+// header as stored: the AES-GCM associated data.
 Loaded Load(const File &file, uint8_t *body, size_t capacity, Header *header, size_t *body_size,
             uint8_t raw[kHeaderSize], const char **why);
 

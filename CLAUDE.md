@@ -20,11 +20,12 @@ Firmware: C/C++ on **ESP-IDF**.
   web site; USB console; `config.json`; time (SNTP, time zones, `rtc::Clock`
   on the CPU timer); board classes chosen in `devices/config.h`; WS2812 LED (red at boot,
   green breathing when ready); TOTP codes on the console (`totp`); LVGL 9 library (no display driver);
-  password records (site/user/password/TOTP) in an encrypted `vault.bin`
-  (AES-256-GCM, key from the 6-digit PIN, locked until `pin`; `test.pin` in
-  config.json unlocks at boot) with add/edit/delete on the console (`pass`).
+  password records (site/user/password/TOTP) in `vault.bin` with
+  add/edit/delete on the console (`pass`); `vault.bin` and `fido.bin` are
+  AES-256-GCM with one data key wrapped by the 6-digit PIN (`key.bin`),
+  locked until `pin` (`test.pin` in config.json unlocks at boot).
   PIN lockout (10 tries, `pin.lockMinutes`) and a wipe PIN (`pin wipe set`).
-- Not yet: BM8563 RTC driver, e-ink UI (LVGL), eFuse-bound key, encrypted `fido.bin`, sync over Wi-Fi, SD card driver.
+- Not yet: BM8563 RTC driver, e-ink UI (LVGL), eFuse-bound key, sync over Wi-Fi, SD card driver.
 
 ## Architecture
 

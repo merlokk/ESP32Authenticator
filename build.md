@@ -187,7 +187,7 @@ Opening the port with RTS asserted resets the chip.
 | `web on\|off\|auto` | serve on any network / never / only while the device's AP is up (saved) |
 | `web login <user> <password>` / `web login off` | basic auth for the whole site / open site (saved). Both or neither; no ':' in the user |
 | `web write on\|off` | allow / refuse settings changes from the site (saved) |
-| `fido2 [info]` | credentials stored of max (resident), store bytes used of size, file size, file version (and the highest seen here) and change time, PIN set and attempts left, signature counter; when FIDO2 is off, why (e.g. an old store file: rollback) |
+| `fido2 [info]` | credentials stored of max (resident), store bytes used of size, file size (encrypted), file version (and the highest seen here) and change time, PIN set and attempts left, signature counter; when FIDO2 is off, why (e.g. an old store file: rollback) |
 | `fido2 list` | credentials: #, id (first 8 hex digits), resident, site (RP ID, `...` if truncated), user name (display name), its origin: `made <local time> on <authenticator base MAC> by <host BLE identity address>` (`?` for what was not recorded, e.g. credentials made before) |
 | `fido2 delete <#\|id>` | delete one: number from `fido2 list` (1-2 digits) or a unique id prefix (4+ hex digits; numbers shift after a delete) |
 | `fido2 reset` / `fido2 reset confirm` | say what would go / delete every credential and the PIN (counter kept; the file becomes an empty store with the next version). Waits up to 1 s for a running FIDO request, else "busy". Also the way out of a refused store file |
@@ -204,7 +204,7 @@ Opening the port with RTS asserted resets the chip.
 | `pass reset` / `pass reset confirm [pin]` | say what would go / delete every record. Locked or refused: the PIN is required and becomes the new store's PIN; the way out of a refused file |
 | `pin [info]` | vault locked / open / refused, key derivation (iterations, ms) |
 | `pin <6 digits>` | unlock the vault (nothing is decrypted before); no store yet: makes one with this PIN. `test.pin` in config.json does it at boot |
-| `pin change <old> <new>` / `pin lock` | new PIN (new salt, file rewritten) / wipe the key and records from memory |
+| `pin change <old> <new>` / `pin lock` | new PIN (`key.bin` rewritten, the data files stay) / wipe the keys, records and FIDO2 store from memory (FIDO2 off until the PIN) |
 | `pin wipe set <pin>` / `pin wipe off` | the wipe PIN (needs the open store; must differ from the PIN), saved to config.json as a salted hash. Entering it with `pin` erases the password store and the FIDO2 credentials and answers "wrong PIN" |
 
 `pin` also shows wrong PINs in a row and the lock: 10 wrong PINs lock PIN

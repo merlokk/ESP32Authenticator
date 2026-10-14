@@ -26,7 +26,9 @@ int Failed(esp_err_t err, const char *what) {
         printf("%s: busy, a FIDO request is running (waiting for the button?)\n", what);
     } else if (err == ESP_ERR_INVALID_STATE) {
         const char *why = fido_ctap_stopped_reason();
-        if (why != nullptr) {
+        if (why != nullptr && strncmp(why, "locked", 6) == 0) {
+            printf("%s: FIDO2 is off: %s\n", what, why);
+        } else if (why != nullptr) {
             printf("%s: FIDO2 is off: %s\n", what, why);
             printf("'fido2 reset confirm' replaces it with an empty store (credentials lost)\n");
         } else {
@@ -70,7 +72,8 @@ int CmdInfo(int, char **) {
            static_cast<unsigned>(info.store_used), static_cast<unsigned>(info.store_size),
            static_cast<unsigned>(info.store_size ? info.store_used * 100 / info.store_size : 0));
     if (info.persistent) {
-        printf("file       /spiffs/fido.bin, %u bytes\n", static_cast<unsigned>(info.file_size));
+        printf("file       /spiffs/fido.bin, %u bytes%s\n", static_cast<unsigned>(info.file_size),
+               info.encrypted ? ", AES-256-GCM (data key)" : "");
         printf("version    %" PRIu32 " (highest seen here %" PRIu32 "), changed ", info.file_version,
                info.kept_version);
         PrintTime(info.modified_utc);

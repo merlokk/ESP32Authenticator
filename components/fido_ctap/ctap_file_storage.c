@@ -1,14 +1,16 @@
 // LionKey storage on ESP-IDF: lionkey's RAM log (ctap_memory_storage, an
 // append-only list of items, deleted ones only flagged) is the working copy;
 // the file is a store header (store_header.h: version, modification time)
-// followed by the log's used part [0, write_index).
+// followed by the log's used part [0, write_index), AES-256-GCM with the
+// vault's data key (the header is the associated data, a random nonce per
+// write), so it is loaded only once the PIN is in. A plain file is refused.
 //
 // - Every change rewrites the file through a temp file + rename, so a power
 //   loss leaves either the old or the new store.
 // - Rollback: every write takes a version above the file's and NVS's, and
 //   NVS (`fido/store_ver`) keeps the highest one accepted, written after the
 //   file. A file below it (an old copy put back) is refused and left as is;
-//   so is a file without a header, or no file at all, once a version is kept.
+//   so is no file at all once a version is kept.
 // - Deleted items are dropped (compaction) only at init: later the core keeps
 //   item handles (offsets), which compaction would move.
 // - The global signature counter lives in NVS: otherwise every assertion
@@ -39,6 +41,13 @@ static const char *TAG = "ctap_store";
 static const char *kNvsNamespace = "fido";
 static const char *kNvsCounter = "sign_count";
 static const char *kNvsVersion = "store_ver";
+
+// The store cipher (ctap_crypto_esp.cpp, crypto driver).
+bool fido_store_seal(const uint8_t key[32], const uint8_t nonce[12], const uint8_t *aad,
+                     size_t aad_len, const uint8_t *in, size_t len, uint8_t *out);
+int fido_store_open(const uint8_t key[32], const uint8_t nonce[12], const uint8_t *aad,
+                    size_t aad_len, const uint8_t *in, size_t len, uint8_t *out);
+void fido_store_random(uint8_t *out, size_t len);
 // 2024-01-01: an earlier clock was never set (rtc::Believable).
 static const time_t kBelievableTime = 1704067200;
 
@@ -78,6 +87,12 @@ static void keep_version(uint32_t version) {
     }
 }
 
+// Scratch for the ciphertext: PSRAM, internal RAM only if full.
+static uint8_t *scratch(size_t size) {
+    uint8_t *p = heap_caps_malloc(size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    return p != NULL ? p : heap_caps_malloc(size, MALLOC_CAP_8BIT);
+}
+
 // The file saves write next to it first.
 static void tmp_path(const char *path, char *out, size_t size) {
     snprintf(out, size, "%s.tmp", path);
@@ -96,10 +111,14 @@ static ctap_storage_status_t save(const ctap_storage_t *storage, bool changed) {
     if (ctx->path == NULL) {
         return CTAP_STORAGE_OK;
     }
+    if (!ctx->has_key) {
+        ESP_LOGE(TAG, "no key: %s not written", ctx->path);
+        return CTAP_STORAGE_ERROR;
+    }
     uint32_t kept;
     nvs_version(&kept);
     store_header_t header = {
-        .cipher = 0,
+        .cipher = 1,
         .version = store_header_next_version(ctx->version, kept),
         .length = (uint32_t)ctx->mem.write_index,
         .modified_utc = ctx->modified_utc,
@@ -108,18 +127,28 @@ static ctap_storage_status_t save(const ctap_storage_t *storage, bool changed) {
         const time_t now = time(NULL);
         header.modified_utc = now >= kBelievableTime ? (int64_t)now : 0;
     }
+    fido_store_random(header.nonce, sizeof header.nonce);
     uint8_t head[STORE_HEADER_SIZE];
     store_header_encode(STORE_KIND_FIDO, &header, head);
+    const size_t n = ctx->mem.write_index;
+    uint8_t *sealed = scratch(n + STORE_TAG_SIZE);
+    if (sealed == NULL ||
+        !fido_store_seal(ctx->key, header.nonce, head, sizeof head, ctx->mem.memory, n, sealed)) {
+        ESP_LOGE(TAG, "encrypting %s failed", ctx->path);
+        heap_caps_free(sealed);
+        return CTAP_STORAGE_ERROR;
+    }
     char tmp[64];
     tmp_path(ctx->path, tmp, sizeof tmp);
     FILE *f = fopen(tmp, "wb");
     if (f == NULL) {
         ESP_LOGE(TAG, "cannot write %s", tmp);
+        heap_caps_free(sealed);
         return CTAP_STORAGE_ERROR;
     }
-    const size_t n = ctx->mem.write_index;
     const bool ok = fwrite(head, 1, sizeof head, f) == sizeof head &&
-                    fwrite(ctx->mem.memory, 1, n, f) == n;
+                    fwrite(sealed, 1, n + STORE_TAG_SIZE, f) == n + STORE_TAG_SIZE;
+    heap_caps_free(sealed);
     if (fclose(f) != 0 || !ok) {
         ESP_LOGE(TAG, "write %s failed", tmp);
         remove(tmp);
@@ -191,8 +220,7 @@ static void recover_tmp(const char *path) {
 }
 
 // Reads the file into the RAM log. Returns false (with ctx->refused) if it
-// must not be loaded; *rewrite: write the file at once (a file from before
-// the header, or no file).
+// must not be loaded; *rewrite: no file yet, write an empty one.
 static bool load(ctap_file_storage_context_t *ctx, bool *rewrite) {
     *rewrite = false;
     recover_tmp(ctx->path);
@@ -226,38 +254,38 @@ static bool load(ctap_file_storage_context_t *ctx, bool *rewrite) {
     uint8_t head[STORE_HEADER_SIZE];
     const size_t got = fread(head, 1, sizeof head, f);
     store_header_t header = {0};
-    const store_parse_t parse =
-        store_header_decode(head, got, file_size, STORE_KIND_FIDO, &header);
     uint32_t kept;
     const bool has_kept = nvs_version(&kept);
     bool ok = false;
-    size_t payload = 0;
-    if (parse == STORE_PARSE_BAD) {
+    if (!store_header_decode(head, got, file_size, STORE_KIND_FIDO, &header)) {
         ctx->refused = "the store file is damaged or of an unknown format";
-    } else if (store_header_check(parse, header.version, has_kept, kept) == STORE_ROLLBACK) {
+    } else if (store_header_rollback(header.version, has_kept, kept)) {
         ESP_LOGE(TAG, "%s: version %u, but %u was seen", ctx->path, (unsigned)header.version,
                  (unsigned)kept);
         ctx->refused = "the store file is older than one this device has used (rollback)";
-    } else if (parse == STORE_PARSE_OK && header.cipher != 0) {
-        ctx->refused = "the store file is encrypted: not supported by this firmware";
-    } else {
-        const bool headerless = parse == STORE_PARSE_NO_HEADER;
-        payload = headerless ? file_size : header.length;
+    } else if (header.cipher == 0) {
+        ctx->refused = "the store file is not encrypted";
+    } else if (header.length > ctx->mem.memory_size) {
         // More than fits: the limit was lowered. Truncating would lose
         // credentials on the next save, so the file is left as it is.
-        if (payload > ctx->mem.memory_size) {
-            ESP_LOGE(TAG, "%s: %u bytes, larger than the %u-byte store", ctx->path,
-                     (unsigned)payload, (unsigned)ctx->mem.memory_size);
-            ctx->refused = "the store file is larger than the store (credential limit lowered)";
-        } else {
-            ok = fseek(f, headerless ? 0 : (long)header.header_size, SEEK_SET) == 0 &&
-                 fread(ctx->mem.memory, 1, payload, f) == payload;
-            if (!ok) {
-                ctx->refused = "the store file cannot be read";
-            } else if (headerless) {
-                ESP_LOGW(TAG, "store without a header: rewritten with one");
-                *rewrite = true;
-            }
+        ESP_LOGE(TAG, "%s: %u bytes, larger than the %u-byte store", ctx->path,
+                 (unsigned)header.length, (unsigned)ctx->mem.memory_size);
+        ctx->refused = "the store file is larger than the store (credential limit lowered)";
+    } else if (!ctx->has_key) {
+        ctx->refused = "locked: enter the PIN";
+    } else {
+        const size_t sealed_size = header.length + STORE_TAG_SIZE;
+        uint8_t *sealed = scratch(sealed_size);
+        const bool read = sealed != NULL && fread(sealed, 1, sealed_size, f) == sealed_size;
+        const int opened = read ? fido_store_open(ctx->key, header.nonce, head, sizeof head,
+                                                  sealed, header.length, ctx->mem.memory)
+                                : -1;
+        heap_caps_free(sealed);
+        ok = opened == 0;
+        if (!ok) {
+            ctx->refused = opened == 1 ? "the store file does not decrypt with this key (other "
+                                         "key, or damaged)"
+                                       : "the store file cannot be read";
         }
     }
     fclose(f);
@@ -266,12 +294,10 @@ static bool load(ctap_file_storage_context_t *ctx, bool *rewrite) {
         memset(ctx->mem.memory, 0, ctx->mem.memory_size);
         return false;
     }
-    ctx->mem.write_index = payload;  // find_item only looks at [0, write_index)
+    ctx->mem.write_index = header.length;  // find_item only looks at [0, write_index)
     ctx->version = header.version;
     ctx->modified_utc = header.modified_utc;
-    if (parse == STORE_PARSE_OK) {
-        keep_version(header.version);  // above NVS: written before a power loss, or synced
-    }
+    keep_version(header.version);  // above NVS: written before a power loss, or synced
     return true;
 }
 
@@ -498,6 +524,30 @@ size_t ctap_file_storage_estimate_num_remaining_items(const ctap_storage_t *stor
         n = n < left ? n : left;
     }
     return n;
+}
+
+ctap_storage_status_t ctap_file_storage_rewrite(const ctap_storage_t *storage) {
+    return save(storage, false);
+}
+
+void ctap_file_storage_forget(const ctap_storage_t *storage) {
+    ctap_file_storage_context_t *ctx = ctx_of(storage);
+    ctap_memory_storage_erase(storage);
+    if (ctx->path == NULL) {
+        return;
+    }
+    char tmp[64];
+    tmp_path(ctx->path, tmp, sizeof tmp);
+    remove(tmp);
+    remove(ctx->path);
+    nvs_handle_t h;
+    if (nvs_open(kNvsNamespace, NVS_READWRITE, &h) == ESP_OK) {
+        nvs_erase_key(h, kNvsVersion);
+        nvs_commit(h);
+        nvs_close(h);
+    }
+    ctx->version = 0;
+    ctx->modified_utc = 0;
 }
 
 // authenticatorReset. The signature counter is kept: it only has to grow.
