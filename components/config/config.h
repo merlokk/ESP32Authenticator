@@ -36,6 +36,7 @@ constexpr size_t kWebPasswordSize = 65;  // 64 chars + NUL
 constexpr size_t kErrorSize = 96;
 
 constexpr size_t kIpTextSize = 16;  // "255.255.255.255" + NUL
+constexpr size_t kPinSize = 7;       // 6 digits + NUL
 constexpr size_t kZoneSize = 41;     // zone name or POSIX rule (tz::kMaxPosixLength)
 constexpr size_t kHostSize = 64;     // SNTP server: host name or IPv4
 constexpr uint8_t kMaxSyncHours = 168;
@@ -120,6 +121,12 @@ struct Led {
     uint8_t idle_percent;  // 0..100, resting states (the ready breath)
 };
 
+// Development and testing aids. Plain text in config.json: never on a
+// device that holds real secrets.
+struct Test {
+    char pin[kPinSize];  // the vault PIN, entered at boot; empty: ask (`pin`)
+};
+
 struct Data {
     Wifi wifi;
     InternetCheck internet;
@@ -127,6 +134,7 @@ struct Data {
     Web web;
     Time time;
     Led led;
+    Test test;
 };
 
 enum class Source : uint8_t {
@@ -163,6 +171,7 @@ bool ValidSsid(const char *ssid);          // 1..32 bytes
 bool ValidPassword(const char *password);  // empty, 8..63 chars or 64 hex digits
 bool ValidApPassword(const char *password);  // empty or 8..63 chars
 bool ValidWebUser(const char *user);         // 0..32 chars, no ':'
+bool ValidTestPin(const char *pin);          // empty or 6 digits
 bool ValidZone(const char *zone);            // a known zone name or a POSIX rule
 bool ValidHost(const char *host);            // empty, or a host name / IPv4: a-z 0-9 '-' '.'
 

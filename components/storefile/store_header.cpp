@@ -40,6 +40,10 @@ void Encode(const Header &header, uint8_t out[kHeaderSize]) {
     for (size_t i = 0; i < kNonceSize; ++i) {
         out[24 + i] = header.nonce[i];
     }
+    Put32(out + 36, header.kdf_iterations);
+    for (size_t i = 0; i < kSaltSize; ++i) {
+        out[40 + i] = header.salt[i];
+    }
 }
 
 Parse Decode(const uint8_t *data, size_t size, size_t file_size, Kind kind, Header *out) {
@@ -47,11 +51,15 @@ Parse Decode(const uint8_t *data, size_t size, size_t file_size, Kind kind, Head
         data[3] != kMagic[3]) {
         return Parse::kNoHeader;
     }
-    if (size < kHeaderSize || data[4] != kFormat || data[5] != static_cast<uint8_t>(kind) ||
+    const size_t header_size = size >= 5 && data[4] == 1   ? kHeaderSizeV1
+                               : size >= 5 && data[4] == 2 ? kHeaderSize
+                                                           : 0;
+    if (header_size == 0 || size < header_size || data[5] != static_cast<uint8_t>(kind) ||
         data[6] > static_cast<uint8_t>(Cipher::kAesGcm)) {
         return Parse::kBad;
     }
     Header h;
+    h.size = static_cast<uint8_t>(header_size);
     h.kind = kind;
     h.cipher = static_cast<Cipher>(data[6]);
     h.version = Get32(data + 8);
@@ -61,9 +69,15 @@ Parse Decode(const uint8_t *data, size_t size, size_t file_size, Kind kind, Head
     for (size_t i = 0; i < kNonceSize; ++i) {
         h.nonce[i] = data[24 + i];
     }
+    if (header_size == kHeaderSize) {
+        h.kdf_iterations = Get32(data + 36);
+        for (size_t i = 0; i < kSaltSize; ++i) {
+            h.salt[i] = data[40 + i];
+        }
+    }
     const size_t tag = h.cipher == Cipher::kPlain ? 0 : kTagSize;
     // A truncated or padded file: refused, not guessed at.
-    if (file_size < kHeaderSize + tag || file_size - kHeaderSize - tag != h.length) {
+    if (file_size < header_size + tag || file_size - header_size - tag != h.length) {
         return Parse::kBad;
     }
     *out = h;

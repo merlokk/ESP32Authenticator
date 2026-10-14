@@ -29,11 +29,14 @@ int Failed(vault::Error e) {
         const vault::Info info = vault::GetInfo();
         if (info.state == vault::State::kRefused) {
             printf("the password store is off: %s\n", info.why);
-            printf("'pass reset confirm' writes an empty store over it (records lost)\n");
+            printf("'pass reset confirm <pin>' writes an empty store over it (records lost)\n");
             return 1;
         }
     }
-    printf("%s\n", vault::Describe(e));
+    printf("%s%s\n", vault::Describe(e),
+           e == vault::Error::kLocked && vault::GetInfo().state == vault::State::kLocked
+               ? ": enter the PIN ('pin <6 digits>')"
+               : "");
     return 1;
 }
 
@@ -59,8 +62,13 @@ int CmdInfo(int, char **) {
     }
     printf("records    %u of %u\n", static_cast<unsigned>(info.count),
            static_cast<unsigned>(info.capacity));
-    printf("file       %s, %u bytes, AES-256-GCM, interim key (NVS)\n", info.path,
+    printf("file       %s, %u bytes, AES-256-GCM\n", info.path,
            static_cast<unsigned>(info.file_size));
+    if (info.state == vault::State::kOpen) {
+        printf("key        PBKDF2-HMAC-SHA256 of the PIN, %" PRIu32 " iterations (%" PRIu32
+               " ms)\n",
+               info.kdf_iterations, info.unlock_ms);
+    }
     printf("version    %" PRIu32 " (highest seen here %" PRIu32 "), changed ", info.version,
            info.kept_version);
     PrintTime(info.modified_utc);
@@ -250,18 +258,24 @@ int CmdCode(int argc, char **argv) {
 }
 
 int CmdReset(int argc, char **argv) {
-    if (argc != 2 || strcmp(argv[1], "confirm") != 0) {
-        const vault::Info info = vault::GetInfo();
-        printf("this deletes all %u record(s)%s\n", static_cast<unsigned>(info.count),
-               info.state == vault::State::kRefused ? " and the refused store file" : "");
-        printf("type 'pass reset confirm' to do it\n");
+    const vault::Info info = vault::GetInfo();
+    const bool open = info.state == vault::State::kOpen;
+    if (argc < 2 || argc > 3 || strcmp(argv[1], "confirm") != 0 || (!open && argc != 3)) {
+        if (open) {
+            printf("this deletes all %u record(s)\n", static_cast<unsigned>(info.count));
+            printf("type 'pass reset confirm [new pin]' to do it\n");
+        } else {
+            printf("this deletes the store file and every record in it%s\n",
+                   info.state == vault::State::kRefused ? " (refused now)" : " (locked now)");
+            printf("type 'pass reset confirm <pin>' to do it: the PIN of the new, empty store\n");
+        }
         return 1;
     }
-    const vault::Error e = vault::Reset();
+    const vault::Error e = vault::Reset(argc == 3 ? argv[2] : nullptr);
     if (e != vault::Error::kOk) {
         return Failed(e);
     }
-    printf("all records deleted\n");
+    printf("all records deleted%s\n", argc == 3 ? "; the store has the new PIN" : "");
     return 0;
 }
 
@@ -270,7 +284,54 @@ constexpr Subcommand kPassSubcommands[] = {
     {"delete", &CmdDelete}, {"code", &CmdCode}, {"reset", &CmdReset},
 };
 
+// --- pin
+
+int CmdPinInfo() {
+    const vault::Info info = vault::GetInfo();
+    printf("vault      %s%s%s\n", vault::StateName(info.state), info.why ? ": " : "",
+           info.why ? info.why : "");
+    if (info.state == vault::State::kOpen) {
+        printf("key        PBKDF2-HMAC-SHA256, %" PRIu32 " iterations, %" PRIu32 " ms\n",
+               info.kdf_iterations, info.unlock_ms);
+    } else if (info.state == vault::State::kLocked) {
+        printf("enter it: pin <6 digits>\n");
+    }
+    return 0;
+}
+
 }  // namespace
+
+int CmdPin(int argc, char **argv) {
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "info") == 0)) {
+        return CmdPinInfo();
+    }
+    if (argc == 2 && strcmp(argv[1], "lock") == 0) {
+        vault::Lock();
+        printf("locked: key and records wiped from memory\n");
+        return 0;
+    }
+    if (argc == 4 && strcmp(argv[1], "change") == 0) {
+        const vault::Error e = vault::ChangePin(argv[2], argv[3]);
+        if (e != vault::Error::kOk) {
+            return Failed(e);
+        }
+        printf("PIN changed\n");
+        return 0;
+    }
+    if (argc == 2) {
+        const bool had_store = vault::GetInfo().file_size != 0;
+        const vault::Error e = vault::Unlock(argv[1]);
+        if (e != vault::Error::kOk) {
+            return Failed(e);
+        }
+        const vault::Info info = vault::GetInfo();
+        printf("%s: %u record(s)\n", had_store ? "unlocked" : "new store made with this PIN",
+               static_cast<unsigned>(info.count));
+        return 0;
+    }
+    printf("usage: pin [info] | pin <6 digits> | pin change <old> <new> | pin lock\n");
+    return 1;
+}
 
 void PrintPassInfo() { CmdInfo(0, nullptr); }
 
@@ -278,7 +339,7 @@ int CmdPass(int argc, char **argv) {
     return Dispatch(kPassSubcommands, argc, argv,
                     "pass info | list [filter] | add <site> [user] [password] [otp] | "
                     "set <#> <site|user|password|otp> [value] | delete <#> | code <#> | "
-                    "reset [confirm]");
+                    "reset [confirm [pin]]");
 }
 
 }  // namespace console

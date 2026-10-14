@@ -50,6 +50,10 @@ esp_err_t Aes256GcmOpen(const uint8_t key[kAes256KeySize], const uint8_t nonce[k
                         const uint8_t *aad, size_t aad_len, const uint8_t *in, size_t len,
                         uint8_t *out);
 
+// PBKDF2-HMAC-SHA256 (RFC 8018): `out_len` bytes from a password and salt.
+esp_err_t Pbkdf2Sha256(const uint8_t *password, size_t password_len, const uint8_t *salt,
+                       size_t salt_len, uint32_t iterations, uint8_t *out, size_t out_len);
+
 // AES-256-CBC without padding, in place; `len` is a multiple of 16.
 esp_err_t Aes256CbcEncrypt(const uint8_t key[kAes256KeySize], const uint8_t iv[kAesBlockSize],
                            uint8_t *data, size_t len);

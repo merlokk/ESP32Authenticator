@@ -250,7 +250,7 @@ static bool load(ctap_file_storage_context_t *ctx, bool *rewrite) {
                      (unsigned)payload, (unsigned)ctx->mem.memory_size);
             ctx->refused = "the store file is larger than the store (credential limit lowered)";
         } else {
-            ok = (!headerless || fseek(f, 0, SEEK_SET) == 0) &&
+            ok = fseek(f, headerless ? 0 : (long)header.header_size, SEEK_SET) == 0 &&
                  fread(ctx->mem.memory, 1, payload, f) == payload;
             if (!ok) {
                 ctx->refused = "the store file cannot be read";

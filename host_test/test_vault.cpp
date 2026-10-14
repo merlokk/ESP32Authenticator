@@ -140,6 +140,15 @@ void test_vault_parse_refuses_malformed_data(void) {
     TEST_ASSERT_EQUAL(Error::kFull, small.Parse(g_buffer, n));
 }
 
+void test_vault_pin_is_six_digits(void) {
+    TEST_ASSERT_TRUE(vault::ValidPin("333333"));
+    TEST_ASSERT_TRUE(vault::ValidPin("000000"));
+    TEST_ASSERT_FALSE(vault::ValidPin("33333"));
+    TEST_ASSERT_FALSE(vault::ValidPin("3333333"));
+    TEST_ASSERT_FALSE(vault::ValidPin("33333a"));
+    TEST_ASSERT_FALSE(vault::ValidPin(""));
+}
+
 void test_vault_clear_wipes_secrets(void) {
     Records r(g_slots, 8);
     r.Add("site", "user", "secret", "", 0, nullptr);
@@ -161,5 +170,6 @@ void RegisterVaultTests(void) {
     RUN_TEST(test_vault_remove_and_ids_never_repeat);
     RUN_TEST(test_vault_round_trip);
     RUN_TEST(test_vault_parse_refuses_malformed_data);
+    RUN_TEST(test_vault_pin_is_six_digits);
     RUN_TEST(test_vault_clear_wipes_secrets);
 }

@@ -48,9 +48,16 @@ enum class Error : uint8_t {
     kNotFound,
     kBadFormat,  // serialized data does not parse
     // From vault.h, not from Records:
-    kLocked,   // not loaded (no key, or the file was refused)
-    kStorage,  // the file could not be written: the change is undone
+    kLocked,    // not loaded (no PIN yet, or the file was refused)
+    kStorage,   // the file could not be written: the change is undone
+    kBadPin,    // not 6 digits
+    kWrongPin,  // the file does not decrypt with it
 };
+
+inline constexpr size_t kPinLength = 6;
+
+// Exactly 6 ASCII digits.
+bool ValidPin(const char *pin);
 
 const char *Describe(Error error);
 

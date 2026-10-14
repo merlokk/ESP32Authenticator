@@ -113,6 +113,37 @@ esp_err_t Aes256GcmOpen(const uint8_t key[kAes256KeySize], const uint8_t nonce[k
     return Check(st, "gcm open") == ESP_OK && n == len ? ESP_OK : ESP_FAIL;
 }
 
+esp_err_t Pbkdf2Sha256(const uint8_t *password, size_t password_len, const uint8_t *salt,
+                       size_t salt_len, uint32_t iterations, uint8_t *out, size_t out_len) {
+    psa_key_derivation_operation_t op = PSA_KEY_DERIVATION_OPERATION_INIT;
+    // The order PSA wants: cost, salt, password.
+    esp_err_t err = Check(psa_key_derivation_setup(&op, PSA_ALG_PBKDF2_HMAC(PSA_ALG_SHA_256)),
+                          "pbkdf2 setup");
+    if (err == ESP_OK) {
+        err = Check(psa_key_derivation_input_integer(&op, PSA_KEY_DERIVATION_INPUT_COST,
+                                                     iterations),
+                    "pbkdf2 cost");
+    }
+    if (err == ESP_OK) {
+        err = Check(psa_key_derivation_input_bytes(&op, PSA_KEY_DERIVATION_INPUT_SALT, salt,
+                                                   salt_len),
+                    "pbkdf2 salt");
+    }
+    if (err == ESP_OK) {
+        err = Check(psa_key_derivation_input_bytes(&op, PSA_KEY_DERIVATION_INPUT_PASSWORD,
+                                                   password, password_len),
+                    "pbkdf2 password");
+    }
+    if (err == ESP_OK) {
+        err = Check(psa_key_derivation_output_bytes(&op, out, out_len), "pbkdf2 output");
+    }
+    psa_key_derivation_abort(&op);
+    if (err != ESP_OK) {
+        memset(out, 0, out_len);
+    }
+    return err;
+}
+
 esp_err_t Init() { return Check(psa_crypto_init(), "init"); }
 
 void Random(uint8_t *out, size_t len) { esp_fill_random(out, len); }

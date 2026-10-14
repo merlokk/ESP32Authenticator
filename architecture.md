@@ -10,10 +10,10 @@ Target and status. Screen design and the open questions: [x4-design.md](x4-desig
 | FIDO2 over USB | not yet |
 | BLE keyboard: types login / password / TOTP | keyboard done; typing records not yet |
 | TOTP codes | done (`crypto::Totp`, console `totp`) |
-| PIN lock (6 digits, lockout after 10 tries, wipe PIN); the PIN also derives the storage key | not yet |
+| PIN lock (6 digits, lockout after 10 tries, wipe PIN); the PIN also derives the storage key | PIN key for `vault.bin` and console `pin` done; lockout, wipe PIN, screen not yet |
 | Password records (site, user, password, TOTP): add / edit / delete | done on the console (`pass`); screen and typing not yet |
 | Store file header (version, modification time) and rollback check (highest version in NVS) | done (`storefile`) |
-| Encrypted store: `vault.bin`, AES-256-GCM, loaded whole into PSRAM | done with an interim key (NVS); the PIN-derived key not yet. `fido.bin` still plain |
+| Encrypted store: `vault.bin`, AES-256-GCM, loaded whole into PSRAM | done, key from the PIN (PBKDF2). `fido.bin` still plain |
 | Sync over the internet, the later modification time wins | not yet; service not chosen |
 | X4 Pro screen: status bar, credential list, pages, settings | not yet (LVGL up, no display driver) |
 | Settings: frontlight, Wi-Fi | Wi-Fi on the console and the site; frontlight not yet |
@@ -55,6 +55,9 @@ Reference ESP-IDF + LVGL project: `../../ai-remote/approver-esp32` ([GitHub](htt
 - Save is atomic: `config.json.new`, remove, rename; boot finishes an
   interrupted write.
 - Plain text, Wi-Fi passwords included, until the encrypted storage exists.
+- `test`: development aids. `test.pin` (empty or 6 digits) unlocks the vault
+  at boot; masked by `config show`, never on the site. Never on a device
+  with real secrets.
 - `Data` is over a kilobyte: parsing stages it on the heap, never on a task
   stack (main 3.5 KB, console and httpd 4 KB; a stack copy overflowed main
   and boot-looped the board).
@@ -79,7 +82,8 @@ Reference ESP-IDF + LVGL project: `../../ai-remote/approver-esp32` ([GitHub](htt
   "ble": {"active": false},
   "web": {"mode": "auto", "write": true, "user": "", "password": ""},
   "time": {"zone": "UTC", "server": "pool.ntp.org", "syncHours": 6},
-  "led": {"brightness": 15, "idleBrightness": 7}
+  "led": {"brightness": 15, "idleBrightness": 7},
+  "test": {"pin": ""}
 }
 ```
 
@@ -269,10 +273,11 @@ submodule) behind `ble_fido`. API: `fido_ctap_init(hooks, store)`,
 - Store: `/spiffs/fido.bin` = store header + lionkey's RAM log, rewritten
   whole through a temp file on every change, compacted at boot.
 - Store header (`components/storefile/store_header.h`, pure, host-tested):
-  40 bytes, plain, in front of every store file: magic `ESAF`, format, kind,
-  cipher (0 plain; AES-256-GCM later, the header then being its associated
-  data), **version**, payload length, **modification time** (UTC, 0 unknown),
-  nonce. Every write: version = max(file, NVS) + 1; NVS `fido/store_ver`
+  64 bytes (format 2; format 1, 40 bytes without the KDF fields, is still
+  read), plain, in front of every store file: magic `ESAF`, format, kind,
+  cipher (0 plain, 1 AES-256-GCM: the header is its associated data),
+  **version**, payload length, **modification time** (UTC, 0 unknown), nonce,
+  PBKDF2 iterations and salt. Every write: version = max(file, NVS) + 1; NVS `fido/store_ver`
   keeps the highest version accepted (written after the file, only when it
   grows). At boot a file below it, or without a header once a version is
   kept, is a rollback: refused and left as is, FIDO2 off
@@ -324,12 +329,17 @@ so no store files on the X4 Pro).
   decrypted into PSRAM at unlock, rewritten whole on every change (version,
   `.tmp`, rollback check as for `fido.bin`, through `storefile/store_io`).
   A write that fails reloads the file: the change is undone.
-- Refused (does not decrypt, rollback, missing while a version is kept,
-  malformed): left as is, the store is off; `pass reset confirm` writes an
-  empty store over it.
-- Key: interim, 32 random bytes in NVS (`vault/key`), unlocked at boot. The
-  PIN-derived key replaces it (storage-encryption.md); losing NVS loses the
-  passwords.
+- Locked from boot until the PIN (console `pin <6 digits>`, or `test.pin`
+  in config.json): nothing is decrypted before. No file yet: the first PIN
+  makes an empty store. A wrong PIN (the GCM tag fails) leaves it locked; on
+  an open store it changes nothing. `pin lock` wipes the key and records.
+- Key: PBKDF2-HMAC-SHA256(PIN, salt), 6000 iterations (~0.9 s on the S3 via
+  PSA); salt (16 random bytes) and count in the header, a new salt on every
+  PIN change or reset. Against a flash dump a 6-digit PIN falls in minutes:
+  see storage-encryption.md.
+- Refused (rollback, missing while a version is kept, malformed, an earlier
+  format without a PIN key): left as is, the store is off;
+  `pass reset confirm <pin>` writes an empty store with that PIN over it.
 - PSRAM: ~1.2 KB per record of the board's `max_records` (dev board 50, X4
   Pro 500): the records, the plaintext and the file body buffers.
 - Console `pass`; passwords are never printed (list shows "set"), only typed

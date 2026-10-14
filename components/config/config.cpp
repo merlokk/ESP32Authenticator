@@ -50,6 +50,9 @@ const char kDefaultJson[] = R"json({
   "led": {
     "brightness": 15,
     "idleBrightness": 7
+  },
+  "test": {
+    "pin": ""
   }
 })json";
 
@@ -242,6 +245,11 @@ bool ParseLed(const cJSON *section, Led *out, char *error, size_t size) {
     out->percent = static_cast<uint8_t>(percent);
     out->idle_percent = static_cast<uint8_t>(idle);
     return true;
+}
+
+bool ParseTest(const cJSON *section, Test *out, char *error, size_t size) {
+    return GetString(section, "pin", out->pin, sizeof out->pin, ValidTestPin,
+                     "empty or 6 digits", "test", error, size);
 }
 
 bool AlwaysValid(const char *) { return true; }
@@ -471,6 +479,16 @@ bool ParseSections(const cJSON *root, Data *staged, char *error, size_t size) {
             return false;
         }
     }
+    const cJSON *test = cJSON_GetObjectItemCaseSensitive(root, "test");
+    if (test != nullptr) {
+        if (!cJSON_IsObject(test)) {
+            SetError(error, size, "test: expected an object");
+            return false;
+        }
+        if (!ParseTest(test, &parsed.test, error, size)) {
+            return false;
+        }
+    }
     return true;
 }
 
@@ -606,6 +624,8 @@ size_t Serialize(const Data &d, char *out, size_t size) {
     cJSON *led = cJSON_AddObjectToObject(root, "led");
     cJSON_AddNumberToObject(led, "brightness", d.led.percent);
     cJSON_AddNumberToObject(led, "idleBrightness", d.led.idle_percent);
+    cJSON *test = cJSON_AddObjectToObject(root, "test");
+    cJSON_AddStringToObject(test, "pin", d.test.pin);
 
     // cJSON wants 5 spare bytes to be sure it fits.
     const bool ok = size > 5 && cJSON_PrintPreallocated(root, out, static_cast<int>(size - 5), 1);
@@ -683,6 +703,11 @@ bool ValidApPassword(const char *password) {
 // Basic auth separates user and password with the first ':'.
 bool ValidWebUser(const char *user) {
     return strlen(user) < kWebUserSize && strchr(user, ':') == nullptr;
+}
+
+bool ValidTestPin(const char *pin) {
+    const size_t n = strlen(pin);
+    return n == 0 || (n == kPinSize - 1 && strspn(pin, "0123456789") == n);
 }
 
 bool ValidZone(const char *zone) {

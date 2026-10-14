@@ -502,6 +502,9 @@ int CmdShow(int, char **) {
     if (masked.web.password[0] != '\0') {
         snprintf(masked.web.password, config::kWebPasswordSize, "***");
     }
+    if (masked.test.pin[0] != '\0') {
+        snprintf(masked.test.pin, config::kPinSize, "***");
+    }
     static char json[config::kMaxFileSize];
     if (config::Serialize(masked, json, sizeof json) == 0) {
         printf("does not fit in %u bytes\n", static_cast<unsigned>(sizeof json));

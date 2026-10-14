@@ -9,6 +9,7 @@
 #include "crypto.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "nvs.h"
@@ -21,7 +22,9 @@ namespace {
 constexpr const char *TAG = "vault";
 constexpr const char *kFileName = "vault.bin";
 constexpr const char *kNvsNamespace = "vault";
-constexpr const char *kNvsKey = "key";
+// PBKDF2 rounds for a new key (a file keeps the count it was made with).
+constexpr uint32_t kKdfIterations = 6000;  // ~0.9 s on the S3 (PSA, ~150 us each)
+constexpr size_t kKeySize = crypto::kAes256KeySize;
 
 StaticSemaphore_t g_lock_storage;
 SemaphoreHandle_t g_lock = nullptr;
@@ -32,8 +35,11 @@ char g_path[64];
 storefile::File g_file = {g_path, storefile::Kind::kRecords, kNvsNamespace};
 storefile::Header g_header;  // of the loaded / last written file
 
+// The open store's key and how it was derived (kept for writes).
 uint8_t g_key[kKeySize];
-bool g_has_key = false;
+uint8_t g_salt[storefile::kSaltSize];
+uint32_t g_iterations = 0;
+uint32_t g_unlock_ms = 0;
 
 // PSRAM: the records, their serialized plaintext and the file body.
 Record *g_slots = nullptr;
@@ -60,60 +66,122 @@ int64_t Now() {
     return rtc::Believable(now) ? static_cast<int64_t>(now) : 0;
 }
 
+void ForgetKey() {
+    Wipe(g_key, sizeof g_key);
+    g_iterations = 0;
+}
+
+// g_key from `pin` with this salt and count.
+esp_err_t Derive(const char *pin, const uint8_t salt[storefile::kSaltSize], uint32_t iterations) {
+    const int64_t start = esp_timer_get_time();
+    const esp_err_t err = crypto::Pbkdf2Sha256(reinterpret_cast<const uint8_t *>(pin),
+                                               strlen(pin), salt, storefile::kSaltSize,
+                                               iterations, g_key, sizeof g_key);
+    g_unlock_ms = static_cast<uint32_t>((esp_timer_get_time() - start) / 1000);
+    if (err == ESP_OK) {
+        memcpy(g_salt, salt, sizeof g_salt);
+        g_iterations = iterations;
+        ESP_LOGI(TAG, "key derived: %u iterations, %u ms", static_cast<unsigned>(iterations),
+                 static_cast<unsigned>(g_unlock_ms));
+    }
+    return err;
+}
+
+// A new random salt and the key from `pin`.
+esp_err_t DeriveNew(const char *pin) {
+    uint8_t salt[storefile::kSaltSize];
+    crypto::Random(salt, sizeof salt);
+    return Derive(pin, salt, kKdfIterations);
+}
+
+// Does `pin` give the open key? g_key, g_salt, g_iterations unchanged.
+bool PinMatches(const char *pin) {
+    uint8_t open_key[kKeySize];
+    memcpy(open_key, g_key, sizeof open_key);
+    uint8_t salt[storefile::kSaltSize];
+    memcpy(salt, g_salt, sizeof salt);
+    bool same = false;
+    if (Derive(pin, salt, g_iterations) == ESP_OK) {
+        uint8_t diff = 0;
+        for (size_t i = 0; i < kKeySize; ++i) {
+            diff |= g_key[i] ^ open_key[i];
+        }
+        same = diff == 0;
+    }
+    memcpy(g_key, open_key, sizeof g_key);
+    Wipe(open_key, sizeof open_key);
+    return same;
+}
+
 void Refuse(const char *why) {
     g_records->Clear();
+    ForgetKey();
     g_state = State::kRefused;
     g_why = why;
     ESP_LOGE(TAG, "%s not loaded: %s", g_path, why);
 }
 
-// File -> records. Leaves kOpen or kRefused.
-void Load() {
-    g_records->Clear();
-    g_header = storefile::Header();
-    size_t body_size = 0;
-    storefile::Header h;
-    const char *why = nullptr;
-    const storefile::Loaded loaded =
-        storefile::Load(g_file, g_body, g_plain_capacity + storefile::kTagSize, &h, &body_size,
-                        &why);
-    if (loaded == storefile::Loaded::kRefused) {
-        Refuse(why);
-        return;
-    }
-    if (loaded == storefile::Loaded::kOk) {
-        if (h.cipher != storefile::Cipher::kAesGcm) {
-            Refuse("the store file is not encrypted");
-            return;
-        }
-        uint8_t aad[storefile::kHeaderSize];
-        storefile::Encode(h, aad);
-        const esp_err_t err = crypto::Aes256GcmOpen(g_key, h.nonce, aad, sizeof aad, g_body,
-                                                    h.length, g_plain);
-        if (err != ESP_OK) {
-            Refuse(err == ESP_ERR_INVALID_CRC
-                       ? "the store file does not decrypt (other key, or damaged)"
-                       : "decryption failed");
-            return;
-        }
-        const Error e = g_records->Parse(g_plain, h.length);
-        Wipe(g_plain, h.length);
-        if (e != Error::kOk) {
-            Refuse(e == Error::kFull ? "the store file holds more records than fit"
-                                     : "the store file's records are malformed");
-            return;
-        }
-        g_header = h;
-    }
+void Opened() {
     g_state = State::kOpen;
     g_why = nullptr;
     ESP_LOGI(TAG, "%s: version %u, %u record(s)", g_path, static_cast<unsigned>(g_header.version),
              static_cast<unsigned>(g_records->Count()));
 }
 
-// Records -> file. On a failure the file is reloaded (the change undone).
-Error Save() {
+enum class Read { kOk, kNew, kWrongKey, kRefused };
+
+// The file with g_key (or, with `pin`, a key derived from it and the file's
+// salt) into the records. kRefused: Refuse() done.
+Read ReadFile(const char *pin) {
+    g_records->Clear();
+    uint8_t raw[storefile::kHeaderSize];
+    storefile::Header h;
+    size_t body_size = 0;
+    const char *why = nullptr;
+    const storefile::Loaded loaded = storefile::Load(
+        g_file, g_body, g_plain_capacity + storefile::kTagSize, &h, &body_size, raw, &why);
+    if (loaded == storefile::Loaded::kRefused) {
+        Refuse(why);
+        return Read::kRefused;
+    }
+    if (loaded == storefile::Loaded::kNew) {
+        g_header = storefile::Header();
+        return Read::kNew;
+    }
+    if (h.cipher != storefile::Cipher::kAesGcm || h.kdf_iterations == 0) {
+        Refuse("the store file has no PIN key (an earlier format)");
+        return Read::kRefused;
+    }
+    if (pin != nullptr && Derive(pin, h.salt, h.kdf_iterations) != ESP_OK) {
+        Refuse("key derivation failed");
+        return Read::kRefused;
+    }
+    const esp_err_t err =
+        crypto::Aes256GcmOpen(g_key, h.nonce, raw, h.size, g_body, h.length, g_plain);
+    if (err == ESP_ERR_INVALID_CRC) {
+        return Read::kWrongKey;  // a wrong PIN, or a damaged file
+    }
+    if (err != ESP_OK) {
+        Refuse("decryption failed");
+        return Read::kRefused;
+    }
+    const Error e = g_records->Parse(g_plain, h.length);
+    Wipe(g_plain, h.length);
+    if (e != Error::kOk) {
+        Refuse(e == Error::kFull ? "the store file holds more records than fit"
+                                 : "the store file's records are malformed");
+        return Read::kRefused;
+    }
+    g_header = h;
+    return Read::kOk;
+}
+
+// Records -> file, with g_key.
+esp_err_t Save() {
     const size_t n = g_records->Serialize(g_plain, g_plain_capacity);
+    if (n == 0) {
+        return ESP_ERR_NO_MEM;  // never: the buffer holds a full store
+    }
     storefile::Header h;
     h.kind = storefile::Kind::kRecords;
     h.cipher = storefile::Cipher::kAesGcm;
@@ -121,26 +189,36 @@ Error Save() {
     h.length = static_cast<uint32_t>(n);
     h.modified_utc = Now();
     crypto::Random(h.nonce, sizeof h.nonce);
+    h.kdf_iterations = g_iterations;
+    memcpy(h.salt, g_salt, sizeof h.salt);
     uint8_t aad[storefile::kHeaderSize];
     storefile::Encode(h, aad);
-    esp_err_t err = n == 0 && g_records->Count() != 0 ? ESP_ERR_NO_MEM : ESP_OK;
-    if (err == ESP_OK) {
-        err = crypto::Aes256GcmSeal(g_key, h.nonce, aad, sizeof aad, g_plain, n, g_body);
-    }
+    esp_err_t err = crypto::Aes256GcmSeal(g_key, h.nonce, aad, sizeof aad, g_plain, n, g_body);
     Wipe(g_plain, n);
     if (err == ESP_OK) {
         err = storefile::Save(g_file, h, g_body, n + storefile::kTagSize);
     }
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "save failed (%s): reloading", esp_err_to_name(err));
-        Load();
-        return Error::kStorage;
+    if (err == ESP_OK) {
+        g_header = h;
     }
-    g_header = h;
-    return Error::kOk;
+    return err;
 }
 
-Error Changed(Error e) { return e == Error::kOk ? Save() : e; }
+// After a change in memory: write it, or reload the file (the change undone).
+Error Changed(Error e) {
+    if (e != Error::kOk) {
+        return e;
+    }
+    const esp_err_t err = Save();
+    if (err == ESP_OK) {
+        return Error::kOk;
+    }
+    ESP_LOGE(TAG, "save failed (%s): reloading", esp_err_to_name(err));
+    if (ReadFile(nullptr) == Read::kWrongKey) {
+        Refuse("the store file no longer decrypts");
+    }
+    return Error::kStorage;
+}
 
 }  // namespace
 
@@ -179,21 +257,55 @@ esp_err_t Init(const char *dir, size_t capacity) {
     }
     g_records = new (g_records_storage) Records(g_slots, capacity);
     g_state = State::kLocked;
-    ESP_LOGI(TAG, "%s, up to %u records, %u bytes of PSRAM", g_path,
+    // The interim key of earlier firmware (before the PIN): gone.
+    nvs_handle_t h;
+    if (nvs_open(kNvsNamespace, NVS_READWRITE, &h) == ESP_OK) {
+        if (nvs_erase_key(h, "key") == ESP_OK) {
+            nvs_commit(h);
+            ESP_LOGW(TAG, "interim key erased");
+        }
+        nvs_close(h);
+    }
+    ESP_LOGI(TAG, "%s, up to %u records, %u bytes of PSRAM; locked until the PIN", g_path,
              static_cast<unsigned>(capacity),
              static_cast<unsigned>(capacity * sizeof(Record) + 2 * g_plain_capacity));
     return ESP_OK;
 }
 
-Error Unlock(const uint8_t key[kKeySize]) {
+Error Unlock(const char *pin) {
+    if (!ValidPin(pin)) {
+        return Error::kBadPin;
+    }
     if (g_state == State::kOff) {
         return Error::kLocked;
     }
     Guard guard;
-    memcpy(g_key, key, kKeySize);
-    g_has_key = true;
-    Load();
-    return g_state == State::kOpen ? Error::kOk : Error::kLocked;
+    if (g_state == State::kOpen) {
+        return PinMatches(pin) ? Error::kOk : Error::kWrongPin;  // stays open either way
+    }
+    switch (ReadFile(pin)) {
+        case Read::kOk:
+            Opened();
+            return Error::kOk;
+        case Read::kNew:
+            // No store yet: this PIN makes it.
+            if (DeriveNew(pin) != ESP_OK || Save() != ESP_OK) {
+                ForgetKey();
+                g_state = State::kLocked;
+                return Error::kStorage;
+            }
+            ESP_LOGW(TAG, "new store made with this PIN");
+            Opened();
+            return Error::kOk;
+        case Read::kWrongKey:
+            ForgetKey();
+            g_state = State::kLocked;
+            g_why = nullptr;
+            ESP_LOGW(TAG, "unlock: wrong PIN");
+            return Error::kWrongPin;
+        default:
+            return Error::kLocked;
+    }
 }
 
 void Lock() {
@@ -202,10 +314,37 @@ void Lock() {
     }
     Guard guard;
     g_records->Clear();
-    Wipe(g_key, sizeof g_key);
-    g_has_key = false;
+    ForgetKey();
     g_state = State::kLocked;
     g_why = nullptr;
+}
+
+Error ChangePin(const char *old_pin, const char *new_pin) {
+    if (!ValidPin(old_pin) || !ValidPin(new_pin)) {
+        return Error::kBadPin;
+    }
+    if (g_state != State::kOpen) {
+        return Error::kLocked;
+    }
+    Guard guard;
+    if (!PinMatches(old_pin)) {
+        return Error::kWrongPin;
+    }
+    uint8_t open_key[kKeySize];
+    uint8_t open_salt[storefile::kSaltSize];
+    const uint32_t open_iterations = g_iterations;
+    memcpy(open_key, g_key, sizeof open_key);
+    memcpy(open_salt, g_salt, sizeof open_salt);
+    const bool ok = DeriveNew(new_pin) == ESP_OK && Save() == ESP_OK;
+    if (!ok) {
+        memcpy(g_key, open_key, sizeof g_key);
+        memcpy(g_salt, open_salt, sizeof g_salt);
+        g_iterations = open_iterations;
+    } else {
+        ESP_LOGW(TAG, "PIN changed");
+    }
+    Wipe(open_key, sizeof open_key);
+    return ok ? Error::kOk : Error::kStorage;
 }
 
 Info GetInfo() {
@@ -223,6 +362,8 @@ Info GetInfo() {
     info.kept_version = storefile::KeptVersion(g_file);
     info.modified_utc = g_header.modified_utc;
     info.file_size = storefile::FileSize(g_file);
+    info.kdf_iterations = g_state == State::kOpen ? g_iterations : 0;
+    info.unlock_ms = g_unlock_ms;
     return info;
 }
 
@@ -271,46 +412,26 @@ Error Remove(uint32_t id) {
     return Changed(g_records->Remove(id));
 }
 
-Error Reset() {
-    if (g_state == State::kOff || !g_has_key) {
+Error Reset(const char *pin) {
+    if (g_state == State::kOff) {
         return Error::kLocked;
     }
+    if (pin == nullptr ? g_state != State::kOpen : !ValidPin(pin)) {
+        return pin == nullptr ? Error::kLocked : Error::kBadPin;
+    }
     Guard guard;
+    if (pin != nullptr && DeriveNew(pin) != ESP_OK) {
+        return Error::kStorage;
+    }
     g_records->Clear();
-    const Error e = Save();
-    if (e == Error::kOk) {
-        g_state = State::kOpen;
-        g_why = nullptr;
-        ESP_LOGW(TAG, "%s reset: every record deleted", g_path);
+    if (Save() != ESP_OK) {
+        ForgetKey();
+        g_state = State::kLocked;
+        return Error::kStorage;
     }
-    return e;
-}
-
-esp_err_t InterimKey(uint8_t out[kKeySize]) {
-    nvs_handle_t h;
-    esp_err_t err = nvs_open(kNvsNamespace, NVS_READWRITE, &h);
-    if (err != ESP_OK) {
-        return err;
-    }
-    size_t size = kKeySize;
-    err = nvs_get_blob(h, kNvsKey, out, &size);
-    if (err == ESP_OK && size != kKeySize) {
-        err = ESP_ERR_INVALID_SIZE;
-    } else if (err == ESP_ERR_NVS_NOT_FOUND) {
-        crypto::Random(out, kKeySize);
-        err = nvs_set_blob(h, kNvsKey, out, kKeySize);
-        if (err == ESP_OK) {
-            err = nvs_commit(h);
-        }
-        if (err == ESP_OK) {
-            ESP_LOGW(TAG, "interim key made (NVS)");
-        }
-    }
-    nvs_close(h);
-    if (err != ESP_OK) {
-        Wipe(out, kKeySize);
-    }
-    return err;
+    ESP_LOGW(TAG, "%s reset: every record deleted", g_path);
+    Opened();
+    return Error::kOk;
 }
 
 }  // namespace vault

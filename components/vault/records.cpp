@@ -119,8 +119,22 @@ const char *Describe(Error error) {
             return "the password store is not open";
         case Error::kStorage:
             return "the store file could not be written; nothing changed";
+        case Error::kBadPin:
+            return "the PIN is 6 digits";
+        case Error::kWrongPin:
+            return "wrong PIN";
     }
     return "?";
+}
+
+bool ValidPin(const char *pin) {
+    size_t n = 0;
+    for (; pin[n] != '\0'; ++n) {
+        if (pin[n] < '0' || pin[n] > '9' || n == kPinLength) {
+            return false;
+        }
+    }
+    return n == kPinLength;
 }
 
 void Wipe(void *data, size_t size) {

@@ -1,9 +1,8 @@
 # Credential store: encryption and size
 
 Status: the store header with version and rollback check, the RAM log in
-PSRAM, and the encrypted password store (`vault.bin`, AES-256-GCM, interim
-key in NVS) are done; `fido.bin` is still plain. Open decision: the key
-source (below).
+PSRAM, and the encrypted password store (`vault.bin`, AES-256-GCM, key B
+below from the PIN) are done; `fido.bin` is still plain. Open: C (below).
 
 ## Why encrypt
 
@@ -32,6 +31,15 @@ A key stored in flash next to the file adds nothing. Options:
 | C | KDF(HMAC eFuse, password) | as B, and a copied file does not open on another chip | both |
 
 Target: B or C, one PIN-derived key for the records store and `fido.bin`.
+
+B is done (PBKDF2-HMAC-SHA256, 6000 iterations, ~0.9 s through PSA). With a
+6-digit PIN it only holds against someone without the flash contents: from a
+dump, 10^6 PINs x 12k SHA-256 each is ~10^10 hashes, seconds on a GPU. More
+iterations do not fix that. C does: ESP-IDF has `esp_hmac_derive_pbkdf2_key`
+(PBKDF2 on the HMAC peripheral with an eFuse key that software cannot read),
+so guesses must run on this chip, and the PIN lockout (10 tries) caps them.
+It needs an eFuse key burn (irreversible) and, against a foreign app calling
+the HMAC, secure boot or no download mode.
 FIDO2 is unavailable from a reboot until the first PIN entry; a locked screen
 keeps the key in RAM, so FIDO2 keeps working (x4-design.md). A alone
 only defeats a desoldered flash chip. NVS can be encrypted by ESP-IDF with an

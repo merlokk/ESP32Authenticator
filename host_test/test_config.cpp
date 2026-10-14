@@ -87,6 +87,7 @@ void AssertDefaults(const config::Data &d) {
     TEST_ASSERT_EQUAL_UINT8(6, d.time.sync_hours);
     TEST_ASSERT_EQUAL_UINT8(15, d.led.percent);
     TEST_ASSERT_EQUAL_UINT8(7, d.led.idle_percent);
+    TEST_ASSERT_EQUAL_STRING("", d.test.pin);
 }
 
 constexpr const char *kFullJson = R"json({
@@ -431,6 +432,15 @@ void test_parse_led() {
     TEST_ASSERT_EQUAL_UINT8(0, out.led.idle_percent);
 
     AssertParseFails(R"({"led": 1})", "led: expected an object");
+    AssertParseFails(R"({"test": 1})", "test: expected an object");
+    AssertParseFails(R"({"test": {"pin": "12345"}})", "test.pin");
+    AssertParseFails(R"({"test": {"pin": "12345a"}})", "test.pin");
+    AssertParseFails(R"({"test": {"pin": "1234567"}})", "test.pin");
+    TEST_ASSERT_TRUE_MESSAGE(ParseText(R"({"test": {"pin": "012345"}})", &d, error, sizeof error),
+                             error);
+    TEST_ASSERT_EQUAL_STRING("012345", d.test.pin);
+    TEST_ASSERT_GREATER_THAN(0, config::Serialize(d, json, sizeof json));
+    TEST_ASSERT_NOT_NULL(strstr(json, "012345"));
     AssertParseFails(R"({"led": {"brightness": 101}})", "led.brightness");
     AssertParseFails(R"({"led": {"idleBrightness": -1}})", "led.idleBrightness");
     AssertParseFails(R"({"led": {"brightness": 1.5}})", "led.brightness");

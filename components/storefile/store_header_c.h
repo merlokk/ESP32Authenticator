@@ -10,7 +10,7 @@
 extern "C" {
 #endif
 
-#define STORE_HEADER_SIZE 40u
+#define STORE_HEADER_SIZE 64u  // written; the most a header takes
 #define STORE_KIND_FIDO 1u
 
 typedef struct {
@@ -18,6 +18,7 @@ typedef struct {
     uint32_t version;
     uint32_t length;
     int64_t modified_utc;
+    uint8_t header_size;  // decoded: bytes before the payload (40 or 64)
 } store_header_t;
 
 typedef enum { STORE_PARSE_OK, STORE_PARSE_NO_HEADER, STORE_PARSE_BAD } store_parse_t;

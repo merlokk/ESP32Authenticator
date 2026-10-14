@@ -34,9 +34,10 @@ enum class Loaded {
 };
 
 // Reads the body (everything after the header: payload, + tag when encrypted)
-// into `body` (`capacity` bytes); `*body_size` = its size.
+// into `body` (`capacity` bytes); `*body_size` = its size. `raw` gets the
+// header as stored (header->size bytes): the AES-GCM associated data.
 Loaded Load(const File &file, uint8_t *body, size_t capacity, Header *header, size_t *body_size,
-            const char **why);
+            uint8_t raw[kHeaderSize], const char **why);
 
 // The version for the next write: above `current` (the loaded file's) and NVS.
 // Set into the header before sealing: the header is authenticated.

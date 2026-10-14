@@ -79,19 +79,18 @@ void InitFido(const char *dir) {
     }
 }
 
-// Passwords. Unlocked at boot with the interim key until the PIN exists.
+// Passwords: locked until the PIN (console `pin`), unless config.json has a
+// test PIN (test.pin, development only).
 void InitVault(const char *dir) {
     crypto::Init();
     if (vault::Init(dir, boards::kBoard.max_records) != ESP_OK || dir == nullptr) {
         return;
     }
-    static uint8_t key[vault::kKeySize];  // not on main's stack
-    if (vault::InterimKey(key) == ESP_OK) {
-        vault::Unlock(key);
-    } else {
-        ESP_LOGE(TAG, "vault: no key, the password store stays locked");
+    const char *pin = config::Get().test.pin;
+    if (pin[0] != '\0') {
+        const vault::Error e = vault::Unlock(pin);
+        ESP_LOGW(TAG, "vault: test.pin from config.json: %s", vault::Describe(e));
     }
-    vault::Wipe(key, sizeof key);
 }
 
 }  // namespace

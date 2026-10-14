@@ -26,11 +26,11 @@ Header Sample() {
 void test_storefile_layout_is_fixed_little_endian(void) {
     uint8_t out[kHeaderSize];
     storefile::Encode(Sample(), out);
-    const uint8_t want[24] = {'E', 'S', 'A', 'F', 1, 1, 0, 0,  0x04, 0x03, 0x02, 0x01,
+    const uint8_t want[24] = {'E', 'S', 'A', 'F', 2, 1, 0, 0,  0x04, 0x03, 0x02, 0x01,
                               100, 0,   0,   0,   0xC3, 0xB2, 0xA1, 0x67, 1, 0, 0, 0};
     TEST_ASSERT_EQUAL_UINT8_ARRAY(want, out, sizeof want);
     for (size_t i = 24; i < kHeaderSize; ++i) {
-        TEST_ASSERT_EQUAL_UINT8(0, out[i]);  // nonce and reserved: zero when plain
+        TEST_ASSERT_EQUAL_UINT8(0, out[i]);  // nonce, KDF, reserved: zero when plain
     }
 }
 
@@ -69,10 +69,10 @@ void test_storefile_refuses_a_wrong_size_kind_format_or_cipher(void) {
                                                      Kind::kFido, &h));  // short read
     TEST_ASSERT_EQUAL(Parse::kBad, storefile::Decode(out, sizeof out, kHeaderSize + 100,
                                                      Kind::kRecords, &h));
-    out[4] = 2;
+    out[4] = 3;
     TEST_ASSERT_EQUAL(Parse::kBad, storefile::Decode(out, sizeof out, kHeaderSize + 100,
                                                      Kind::kFido, &h));
-    out[4] = 1;
+    out[4] = 2;
     out[6] = 2;
     TEST_ASSERT_EQUAL(Parse::kBad, storefile::Decode(out, sizeof out, kHeaderSize + 100,
                                                      Kind::kFido, &h));
@@ -91,6 +91,37 @@ void test_storefile_an_encrypted_file_counts_its_tag(void) {
                                                     kHeaderSize + 100 + storefile::kTagSize,
                                                     Kind::kFido, &back));
     TEST_ASSERT_EQUAL_UINT8(0xAA, back.nonce[0]);
+}
+
+void test_storefile_kdf_fields_round_trip(void) {
+    Header in = Sample();
+    in.kdf_iterations = 20000;
+    for (size_t i = 0; i < storefile::kSaltSize; ++i) {
+        in.salt[i] = static_cast<uint8_t>(i + 1);
+    }
+    uint8_t out[kHeaderSize];
+    storefile::Encode(in, out);
+    TEST_ASSERT_EQUAL_UINT8(0x20, out[36]);  // 20000 = 0x4E20
+    TEST_ASSERT_EQUAL_UINT8(1, out[40]);
+    Header back;
+    TEST_ASSERT_EQUAL(Parse::kOk, storefile::Decode(out, sizeof out, kHeaderSize + 100,
+                                                    Kind::kFido, &back));
+    TEST_ASSERT_EQUAL_UINT32(20000, back.kdf_iterations);
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(in.salt, back.salt, storefile::kSaltSize);
+    TEST_ASSERT_EQUAL_UINT8(kHeaderSize, back.size);
+}
+
+void test_storefile_format_1_is_still_read(void) {
+    // A 40-byte header (the first firmware with it), then 10 payload bytes.
+    uint8_t v1[storefile::kHeaderSizeV1] = {'E', 'S', 'A', 'F', 1, 1, 0, 0, 7, 0, 0, 0, 10};
+    Header back;
+    TEST_ASSERT_EQUAL(Parse::kOk, storefile::Decode(v1, sizeof v1, sizeof v1 + 10, Kind::kFido,
+                                                    &back));
+    TEST_ASSERT_EQUAL_UINT8(storefile::kHeaderSizeV1, back.size);
+    TEST_ASSERT_EQUAL_UINT32(7, back.version);
+    TEST_ASSERT_EQUAL_UINT32(0, back.kdf_iterations);
+    TEST_ASSERT_EQUAL(Parse::kBad, storefile::Decode(v1, sizeof v1, kHeaderSize + 10,
+                                                     Kind::kFido, &back));
 }
 
 void test_storefile_an_older_version_is_a_rollback(void) {
@@ -138,6 +169,8 @@ void RegisterStorefileTests(void) {
     RUN_TEST(test_storefile_a_file_without_magic_has_no_header);
     RUN_TEST(test_storefile_refuses_a_wrong_size_kind_format_or_cipher);
     RUN_TEST(test_storefile_an_encrypted_file_counts_its_tag);
+    RUN_TEST(test_storefile_kdf_fields_round_trip);
+    RUN_TEST(test_storefile_format_1_is_still_read);
     RUN_TEST(test_storefile_an_older_version_is_a_rollback);
     RUN_TEST(test_storefile_a_headerless_file_is_migrated_only_once);
     RUN_TEST(test_storefile_next_version_is_above_both);

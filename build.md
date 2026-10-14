@@ -201,7 +201,10 @@ Opening the port with RTS asserted resets the chip.
 | `pass add <site> [user] [password] [otp]` | a record; quote values with spaces. Prints its # (sorted by site, user) |
 | `pass set <#> <site\|user\|password\|otp> [value]` | change a field, no value: clear. Prints the record's new # |
 | `pass delete <#>` / `pass code <#>` | delete a record / its TOTP codes now |
-| `pass reset` / `pass reset confirm` | say what would go / delete every record; also the way out of a refused file |
+| `pass reset` / `pass reset confirm [pin]` | say what would go / delete every record. Locked or refused: the PIN is required and becomes the new store's PIN; the way out of a refused file |
+| `pin [info]` | vault locked / open / refused, key derivation (iterations, ms) |
+| `pin <6 digits>` | unlock the vault (nothing is decrypted before); no store yet: makes one with this PIN. `test.pin` in config.json does it at boot |
+| `pin change <old> <new>` / `pin lock` | new PIN (new salt, file rewritten) / wipe the key and records from memory |
 | `date [info]` | UTC and local time (offset, DST), zone, board clock (kept when off or not, drift from the system clock), sync (server, interval, next, last, step, failures) |
 | `date sync` | ask the time server now and wait for it (up to 20 s) |
 | `date set [utc] <YYYY-MM-DD> <HH:MM:SS>` | set the clock: local time, or UTC with `utc`; written to the board clock too |

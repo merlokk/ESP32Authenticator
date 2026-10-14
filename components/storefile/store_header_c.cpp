@@ -33,6 +33,7 @@ store_parse_t store_header_decode(const uint8_t *data, size_t size, size_t file_
     out->version = h.version;
     out->length = h.length;
     out->modified_utc = h.modified_utc;
+    out->header_size = h.size;
     return STORE_PARSE_OK;
 }
 

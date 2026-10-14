@@ -216,9 +216,19 @@ const esp_console_cmd_t kCommands[] = {
         .command = "pass",
         .help = "Passwords (encrypted vault.bin; never printed): info | list [filter] | "
                 "add <site> [user] [password] [otp] | set <#> <site|user|password|otp> [value] | "
-                "delete <#> | code <#> (TOTP) | reset [confirm]",
+                "delete <#> | code <#> (TOTP) | reset [confirm [pin]]",
         .hint = "<info|list|add|set|delete|code|reset> [args]",
         .func = &CmdPass,
+        .argtable = nullptr,
+        .func_w_context = nullptr,
+        .context = nullptr,
+    },
+    {
+        .command = "pin",
+        .help = "Vault PIN (6 digits; the key of vault.bin): [info] | <pin> to unlock (no store: "
+                "makes one) | change <old> <new> | lock",
+        .hint = "[info | <pin> | change <old> <new> | lock]",
+        .func = &CmdPin,
         .argtable = nullptr,
         .func_w_context = nullptr,
         .context = nullptr,

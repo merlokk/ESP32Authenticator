@@ -3,4 +3,4 @@
 idf_component_register(SRCS "records.cpp" "vault.cpp"
                     INCLUDE_DIRS "."
                     REQUIRES esp_common
-                    PRIV_REQUIRES totp storefile crypto clock nvs_flash heap freertos)
+                    PRIV_REQUIRES totp storefile crypto clock nvs_flash heap freertos esp_timer)
