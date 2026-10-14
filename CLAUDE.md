@@ -25,6 +25,9 @@ Firmware: C/C++ on **ESP-IDF**.
 
 ## Architecture
 
+Functions and status: [architecture.md](architecture.md#functionality); X4 Pro
+screen design: [x4-design.md](x4-design.md).
+
 Stack (ESP-IDF, BLE, Wi-Fi, web), config, tests, flash layout: [architecture.md](architecture.md).
 Wi-Fi and the web site are ported from approver-esp32 (see [sources.md](sources.md)).
 

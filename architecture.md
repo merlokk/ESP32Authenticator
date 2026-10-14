@@ -1,5 +1,24 @@
 # Architecture
 
+## Functionality
+
+Target and status. Screen design and the open questions: [x4-design.md](x4-design.md).
+
+| Function | Status |
+|---|---|
+| FIDO2 key (CTAP 2.1) over BLE | done |
+| FIDO2 over USB | not yet |
+| BLE keyboard: types login / password / TOTP | keyboard done; typing records not yet |
+| TOTP codes | done (`crypto::Totp`, console `totp`) |
+| PIN lock of the screen; the PIN also derives the storage key | not yet |
+| Password manager records (site, login, password, TOTP) | not yet |
+| Encrypted store: one `.bin`, records + settings, data version | not yet (plan: storage-encryption.md) |
+| Sync over the internet, newer data version wins | not yet; service not chosen |
+| X4 Pro screen: status bar, credential list, pages, settings | not yet (LVGL up, no display driver) |
+| Settings: frontlight, Wi-Fi | Wi-Fi on the console and the site; frontlight not yet |
+| Time: SNTP, zones, clock | done |
+| Wi-Fi, configuration site, console | done |
+
 ## Stack
 
 | Layer | Choice |
