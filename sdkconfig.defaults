@@ -40,6 +40,8 @@ CONFIG_BT_NIMBLE_LOG_LEVEL_WARNING=y
 # components/ui/lv_mem_psram.c instead of a static pool in internal RAM; libc
 # string and printf.
 CONFIG_LV_COLOR_DEPTH_1=y
+# Redraw at most every 200 ms: e-ink takes hundreds of ms per (partial) update.
+CONFIG_LV_DEF_REFR_PERIOD=200
 CONFIG_LV_USE_CUSTOM_MALLOC=y
 CONFIG_LV_USE_CLIB_STRING=y
 CONFIG_LV_USE_CLIB_SPRINTF=y
