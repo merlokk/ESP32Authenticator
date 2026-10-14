@@ -86,6 +86,20 @@ So the decrypted store must sit in memory at stable addresses:
   `ctap_file_storage.c`); credential management enumerates up to 128 RPs and
   128 credentials per RP; an assertion lists up to 128 credentials per RP.
 
+## NVS writes
+
+Counters live in NVS: PIN failures and lock deadline, the store's rollback
+counter, the FIDO2 signature counter. NVS appends 32-byte entries and erases a
+4 KB page only when it recycles it; the partition is 5 pages (630 entries, ~380
+free today), so a page is erased about once per few hundred writes. The flash
+is a Macronix NOR (100k erase cycles typical): tens of millions of writes.
+Rules that keep it so:
+
+- Write a value only when it changes, never per tick or per check.
+- Nothing that changes all the time (clocks, "last seen") goes into NVS.
+- Keep free entries: the NVS partition cannot grow (stock X4 Pro table), so
+  bulk data (the store, `fido.bin`) is files; NVS holds counters only.
+
 ## Plan
 
 1. GCM container in `ctap_file_storage.c` (between RAM and file; LionKey
