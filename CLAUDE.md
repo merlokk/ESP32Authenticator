@@ -19,7 +19,7 @@ Firmware: C/C++ on **ESP-IDF**.
   client / AP / AP+client with static IPs and an internet check; configuration
   web site; USB console; `config.json`; time (SNTP, time zones, `rtc::Clock`
   on the CPU timer); board classes chosen in `devices/config.h`; WS2812 LED (red at boot,
-  green breathing when ready).
+  green breathing when ready); TOTP codes on the console (`totp`).
 - Not yet: BM8563 RTC driver, e-ink UI (LVGL), encrypted storage, credential
   records (site/login/password/TOTP), sync over Wi-Fi, microSD config.
 

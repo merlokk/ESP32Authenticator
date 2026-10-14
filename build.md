@@ -76,7 +76,7 @@ host_test\run.cmd [suite...]   # host tests, no board (MSVC); see architecture.m
 ```
 
 Suites: `config`, `wifi_policy`, `reachability`, `web_auth`, `web_paths`,
-`web_settings`, `clock`, `boards`, `timesync`, `timezone`, `led`. Run them after any change to those components.
+`web_settings`, `clock`, `boards`, `timesync`, `timezone`, `led`, `totp`. Run them after any change to those components.
 
 `tests/fido2/`: CTAP2 authenticator suite (pytest + python-fido2,
 `pip install -r tests/fido2/requirements.txt`). Transport-agnostic, checked
@@ -194,6 +194,8 @@ Opening the port with RTS asserted resets the chip.
 | `board` | the board built for (`devices/config.h`): clock, display, touch, LED, battery, SD, frontlight, button and device pins |
 | `led` / `led <colour> [effect] [seconds]` | the board's WS2812: what it shows, ceilings, writes / show a colour (off white red green blue amber yellow cyan magenta) and effect (solid beacon slow blink fast breathe) for 1..600 s (default 5), then back |
 | `led brightness [<n> [idle]]` | show / set the brightness ceilings in percent, normal and idle (saved) |
+| `totp <base32 secret>` | local time (and UTC), seconds left in the window, the 6-digit codes of the previous, current and next 30 s window (HMAC-SHA1). Error without a believable time. The secret is not printed or logged, but stays in the up-arrow history |
+| `totp test` | RFC 6238 SHA-1 vectors through `crypto::Totp` |
 | `date [info]` | UTC and local time (offset, DST), zone, board clock (kept when off or not, drift from the system clock), sync (server, interval, next, last, step, failures) |
 | `date sync` | ask the time server now and wait for it (up to 20 s) |
 | `date set [utc] <YYYY-MM-DD> <HH:MM:SS>` | set the clock: local time, or UTC with `utc`; written to the board clock too |

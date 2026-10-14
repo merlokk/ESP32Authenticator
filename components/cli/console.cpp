@@ -17,6 +17,7 @@
 #include "ble_cmd.h"
 #include "board_devices.h"
 #include "date_cmd.h"
+#include "totp_cmd.h"
 #include "fido_cmd.h"
 #include "wifi_cmd.h"
 #include "files.h"
@@ -239,6 +240,16 @@ const esp_console_cmd_t kCommands[] = {
         .help = "The board this firmware is built for (devices/config.h): devices and pins",
         .hint = nullptr,
         .func = &CmdBoard,
+        .argtable = nullptr,
+        .func_w_context = nullptr,
+        .context = nullptr,
+    },
+    {
+        .command = "totp",
+        .help = "TOTP codes for a Base32 secret: previous, current, next 30 s window "
+                "(error without a time) | test: RFC 6238 vectors",
+        .hint = "<base32 secret>|test",
+        .func = &CmdTotp,
         .argtable = nullptr,
         .func_w_context = nullptr,
         .context = nullptr,

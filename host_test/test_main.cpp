@@ -17,6 +17,7 @@ void RegisterBoardTests(void);
 void RegisterTimesyncTests(void);
 void RegisterTimezoneTests(void);
 void RegisterLedTests(void);
+void RegisterTotpTests(void);
 
 void setUp(void) {}
 
@@ -57,5 +58,6 @@ int main(int argc, char **argv) {
     if (Wanted("timesync")) RegisterTimesyncTests();
     if (Wanted("timezone")) RegisterTimezoneTests();
     if (Wanted("led")) RegisterLedTests();
+    if (Wanted("totp")) RegisterTotpTests();
     return UNITY_END();
 }

@@ -43,6 +43,7 @@ add_executable(host_test
     test_timesync.cpp
     test_timezone.cpp
     test_led.cpp
+    test_totp.cpp
     fakes/fake_platform.cpp
 
     # Under test.
@@ -56,6 +57,7 @@ add_executable(host_test
     ../components/timesync/sync_policy.cpp
     ../components/timezone/zones.cpp
     ../devices/led/led_frames.cpp
+    ../components/totp/totp.cpp
 
     "${CJSON_DIR}/cJSON.c"
     "${UNITY_DIR}/unity.c"
@@ -72,6 +74,8 @@ target_include_directories(host_test PRIVATE
     ../devices/clock
     ../devices/boards
     ../devices/led
+    ../devices/crypto
+    ../components/totp
     "${CJSON_DIR}"
     "${UNITY_DIR}"
 )

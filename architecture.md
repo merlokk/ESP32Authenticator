@@ -17,11 +17,11 @@ Reference ESP-IDF + LVGL project: `../../ai-remote/approver-esp32` ([GitHub](htt
 | Path | Contents |
 |---|---|
 | `main/` | `app_main`: OTA self-confirm, NVS, SPIFFS, config, console, Wi-Fi manager + web server, BLE autostart |
-| `components/` | app components (`cli`: USB command line; `config`: config.json; `wifimgr`: Wi-Fi policy + manager; `web`: configuration site, see Wi-Fi and web; `fido_ctap`: CTAP 2.1 core, see FIDO2; `timesync`, `timezone`: see Time) |
+| `components/` | app components (`cli`: USB command line; `config`: config.json; `wifimgr`: Wi-Fi policy + manager; `web`: configuration site, see Wi-Fi and web; `fido_ctap`: CTAP 2.1 core, see FIDO2; `timesync`, `timezone`: see Time; `totp`: Base32 secrets and the previous/current/next windows, codes from `crypto::Totp`) |
 | `lib/` | third-party git submodules, used unmodified (`lionkey`) |
 | `host_test/` | host tests (Unity, MSVC), no board: see Tests |
 | `utils/` | host-side Python tools over the USB console (`device.py`: console session; `spiffs.py`: ls/info/rm/get/put; `ble.py`: ble commands, `kb` text quoting) |
-| `devices/` | hardware drivers, one component per device (`hardware`: SoC info, eFuse, USB host connected; `spiffs_fs`: SPIFFS on `spiffs` at `/spiffs`, never formatted, it holds stock data on the X4 Pro; `ble`, `ble_kb`, `ble_fido`: see BLE; `wifi`: the radio (`wifi::Radio`), no decisions, stores nothing; `buttons`: GPIO buttons, polled, pins from the board; `crypto`: hardware RNG, SHA-256, AES-256-CBC via PSA; `clock`: `rtc::Clock`, see Time; `led`: one WS2812 from UART1, see Boards; `boards`: board classes, see Boards). `devices/config.h`: the board the firmware is built for |
+| `devices/` | hardware drivers, one component per device (`hardware`: SoC info, eFuse, USB host connected; `spiffs_fs`: SPIFFS on `spiffs` at `/spiffs`, never formatted, it holds stock data on the X4 Pro; `ble`, `ble_kb`, `ble_fido`: see BLE; `wifi`: the radio (`wifi::Radio`), no decisions, stores nothing; `buttons`: GPIO buttons, polled, pins from the board; `crypto`: hardware RNG, SHA-256, AES-256-CBC, HMAC-SHA1 via PSA, HOTP/TOTP (`otp.h`, pure: counter, truncation); `clock`: `rtc::Clock`, see Time; `led`: one WS2812 from UART1, see Boards; `boards`: board classes, see Boards). `devices/config.h`: the board the firmware is built for |
 
 ## Config
 
@@ -82,7 +82,8 @@ cannot link on Windows), Unity from ESP-IDF, cJSON from `managed_components/`
 (run `idf.py build` once). `fakes/` shadows the few ESP-IDF headers used.
 Pattern from approver-esp32. Suites: `config`, `wifi_policy`, `reachability`,
 `web_auth`, `web_paths` (paths + server policy), `web_settings`, `clock`,
-`boards`, `timesync`, `timezone`, `led`; only code with
+`boards`, `timesync`, `timezone`, `led`, `totp` (truncation against the RFC 4226
+HMAC values; the HMAC itself is checked on the board by `totp test`); only code with
 no hardware (pure headers) is under test.
 
 ```powershell

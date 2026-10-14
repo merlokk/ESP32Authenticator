@@ -76,6 +76,77 @@ esp_err_t Sha256(const uint8_t *data, size_t len, uint8_t out[kSha256Size]) {
     return Check(psa_hash_compute(PSA_ALG_SHA_256, data, len, out, kSha256Size, &n), "sha256");
 }
 
+esp_err_t HmacSha1(const uint8_t *key, size_t key_len, const uint8_t *data, size_t len,
+                   uint8_t out[kSha1Size]) {
+    if (key == nullptr || key_len == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    psa_key_attributes_t attr = PSA_KEY_ATTRIBUTES_INIT;
+    psa_set_key_type(&attr, PSA_KEY_TYPE_HMAC);
+    psa_set_key_bits(&attr, key_len * 8);
+    psa_set_key_usage_flags(&attr, PSA_KEY_USAGE_SIGN_MESSAGE);
+    psa_set_key_algorithm(&attr, PSA_ALG_HMAC(PSA_ALG_SHA_1));
+    psa_key_id_t id = 0;
+    esp_err_t err = Check(psa_import_key(&attr, key, key_len, &id), "hmac key");
+    if (err != ESP_OK) {
+        return err;
+    }
+    size_t n = 0;
+    err = Check(psa_mac_compute(id, PSA_ALG_HMAC(PSA_ALG_SHA_1), data, len, out, kSha1Size, &n),
+                "hmac-sha1");
+    psa_destroy_key(id);
+    return err == ESP_OK && n != kSha1Size ? ESP_FAIL : err;
+}
+
+esp_err_t Hotp(const uint8_t *key, size_t key_len, uint64_t counter, unsigned digits,
+               uint32_t *code) {
+    if (code == nullptr || digits < 6 || digits > kOtpMaxDigits) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    uint8_t message[8];
+    OtpMessage(counter, message);
+    uint8_t mac[kSha1Size];
+    const esp_err_t err = HmacSha1(key, key_len, message, sizeof message, mac);
+    if (err == ESP_OK) {
+        *code = OtpTruncate(mac, digits);
+    }
+    memset(mac, 0, sizeof mac);
+    return err;
+}
+
+esp_err_t Totp(const uint8_t *key, size_t key_len, int64_t unix_seconds, uint32_t step,
+               unsigned digits, uint32_t *code) {
+    if (step == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    return Hotp(key, key_len, OtpCounter(unix_seconds, step), digits, code);
+}
+
+esp_err_t TotpSelfTest() {
+    static const uint8_t kKey[] = "12345678901234567890";  // RFC 6238 SHA-1 seed
+    struct Vector {
+        int64_t time;
+        uint32_t code;
+    };
+    static const Vector kVectors[] = {
+        {59, 94287082},         {1111111109, 7081804},  {1111111111, 14050471},
+        {1234567890, 89005924}, {2000000000, 69279037}, {20000000000, 65353130},
+    };
+    for (const Vector &v : kVectors) {
+        uint32_t code = 0;
+        const esp_err_t err = Totp(kKey, 20, v.time, kTotpStep, 8, &code);
+        if (err != ESP_OK) {
+            return err;
+        }
+        if (code != v.code) {
+            ESP_LOGE(TAG, "totp self-test: t=%lld gave %08lu", static_cast<long long>(v.time),
+                     static_cast<unsigned long>(code));
+            return ESP_ERR_INVALID_RESPONSE;
+        }
+    }
+    return ESP_OK;
+}
+
 esp_err_t Aes256CbcEncrypt(const uint8_t key[kAes256KeySize], const uint8_t iv[kAesBlockSize],
                            uint8_t *data, size_t len) {
     return Aes256Cbc(true, key, iv, data, len);
