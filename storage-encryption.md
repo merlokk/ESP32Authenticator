@@ -28,8 +28,11 @@ A key stored in flash next to the file adds nothing. Options:
 | B | derived from a master password (PBKDF2 on the HW SHA, ~1 s) | flash dump and foreign firmware: no key on the device | FIDO2 works only after unlock (password entry: buttons + e-ink, console or web) |
 | C | KDF(HMAC eFuse, password) | as B, and a copied file does not open on another chip | both |
 
-Target for a password manager: B or C, one key for the whole store
-(`fido.bin`, `config.json`, the planned login/password/TOTP records). A alone
+FIDO2 works on a locked device (x4-design.md), so `fido.bin` cannot use a
+PIN-derived key: A for it, B or C for the records store.
+
+Target for a password manager: B or C, one key for the records store (the
+login/password/TOTP records and settings; not `fido.bin`, see above). A alone
 only defeats a desoldered flash chip. NVS can be encrypted by ESP-IDF with an
 eFuse HMAC key (`CONFIG_NVS_SEC_KEY_PROTECT_USING_HMAC`): fits A or C.
 
