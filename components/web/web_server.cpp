@@ -7,6 +7,7 @@
 #include "ble.h"
 #include "ble_fido.h"
 #include "ble_kb.h"
+#include "board_devices.h"
 #include "config.h"
 #include "esp_app_desc.h"
 #include "esp_heap_caps.h"
@@ -519,6 +520,8 @@ esp_err_t ActionApi(httpd_req_t *request) {
                 wifimgr::Apply();
                 tz::ApplyZone(config::Get().time.zone);
                 timesync::Apply();
+                boards::SetLedBrightness(config::Get().led.percent,
+                                         config::Get().led.idle_percent);
                 Apply();
             }
             break;

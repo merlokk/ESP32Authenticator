@@ -16,6 +16,7 @@
 // `led` command (boards with a WS2812):
 //   led                                  colour, effect, ceilings, wire counters
 //   led <colour> [effect] [seconds]      show it for a while (default 5 s), then back
+//   led brightness [<n> [idle]]          ceilings in percent (config.json led; saved)
 
 namespace console {
 

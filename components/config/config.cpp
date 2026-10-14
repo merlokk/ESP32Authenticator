@@ -46,6 +46,10 @@ const char kDefaultJson[] = R"json({
     "zone": "UTC",
     "server": "pool.ntp.org",
     "syncHours": 6
+  },
+  "led": {
+    "brightness": 15,
+    "idleBrightness": 7
   }
 })json";
 
@@ -225,6 +229,18 @@ bool ParseTime(const cJSON *section, Time *out, char *error, size_t size) {
         return false;
     }
     out->sync_hours = static_cast<uint8_t>(hours);
+    return true;
+}
+
+bool ParseLed(const cJSON *section, Led *out, char *error, size_t size) {
+    uint32_t percent = out->percent;
+    uint32_t idle = out->idle_percent;
+    if (!GetUint(section, "brightness", 0, 100, &percent, "led", error, size) ||
+        !GetUint(section, "idleBrightness", 0, 100, &idle, "led", error, size)) {
+        return false;
+    }
+    out->percent = static_cast<uint8_t>(percent);
+    out->idle_percent = static_cast<uint8_t>(idle);
     return true;
 }
 
@@ -445,6 +461,16 @@ bool ParseSections(const cJSON *root, Data *staged, char *error, size_t size) {
             return false;
         }
     }
+    const cJSON *led = cJSON_GetObjectItemCaseSensitive(root, "led");
+    if (led != nullptr) {
+        if (!cJSON_IsObject(led)) {
+            SetError(error, size, "led: expected an object");
+            return false;
+        }
+        if (!ParseLed(led, &parsed.led, error, size)) {
+            return false;
+        }
+    }
     return true;
 }
 
@@ -577,6 +603,9 @@ size_t Serialize(const Data &d, char *out, size_t size) {
     cJSON_AddStringToObject(time_json, "zone", d.time.zone);
     cJSON_AddStringToObject(time_json, "server", d.time.server);
     cJSON_AddNumberToObject(time_json, "syncHours", d.time.sync_hours);
+    cJSON *led = cJSON_AddObjectToObject(root, "led");
+    cJSON_AddNumberToObject(led, "brightness", d.led.percent);
+    cJSON_AddNumberToObject(led, "idleBrightness", d.led.idle_percent);
 
     // cJSON wants 5 spare bytes to be sure it fits.
     const bool ok = size > 5 && cJSON_PrintPreallocated(root, out, static_cast<int>(size - 5), 1);

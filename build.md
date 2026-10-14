@@ -193,6 +193,7 @@ Opening the port with RTS asserted resets the chip.
 | `fido2 reset` / `fido2 reset confirm` | say what would go / delete every credential and the PIN (counter kept). Waits up to 1 s for a running FIDO request, else "busy" |
 | `board` | the board built for (`devices/config.h`): clock, display, touch, LED, battery, SD, frontlight, button and device pins |
 | `led` / `led <colour> [effect] [seconds]` | the board's WS2812: what it shows, ceilings, writes / show a colour (off white red green blue amber yellow cyan magenta) and effect (solid beacon slow blink fast breathe) for 1..600 s (default 5), then back |
+| `led brightness [<n> [idle]]` | show / set the brightness ceilings in percent, normal and idle (saved) |
 | `date [info]` | UTC and local time (offset, DST), zone, board clock (kept when off or not, drift from the system clock), sync (server, interval, next, last, step, failures) |
 | `date sync` | ask the time server now and wait for it (up to 20 s) |
 | `date set [utc] <YYYY-MM-DD> <HH:MM:SS>` | set the clock: local time, or UTC with `utc`; written to the board clock too |
@@ -201,5 +202,5 @@ Opening the port with RTS asserted resets the chip.
 | `devstatus` | `version`, `info`, `board`, `date`, `wifi info`, `web`, `ble info`, `fido2 info` in one dump (also the site's Device status page) |
 | `config show` | current config as JSON, passwords masked (networks, AP, web) |
 | `config info` | file path, source (file / built-in defaults), why the file was not used |
-| `config reload` / `config save` | re-read config.json (keeps values on error) and apply Wi-Fi (incl. internet check), web and time settings / write current values |
+| `config reload` / `config save` | re-read config.json (keeps values on error) and apply Wi-Fi (incl. internet check), web, time and LED settings / write current values |
 | `efuse` | every eFuse field (list generated at build time from IDF `esp_efuse_table.csv`) and raw blocks BLK0..BLK10 |

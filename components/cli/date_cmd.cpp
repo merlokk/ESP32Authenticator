@@ -360,6 +360,32 @@ int CmdLed(int argc, char **argv) {
         printf("stack      %" PRIu32 " B free\n", s.stack_low_water);
         return 0;
     }
+    if (strcmp(argv[1], "brightness") == 0) {
+        config::Led &cfg = config::Get().led;
+        if (argc == 2) {
+            printf("brightness %u%%, idle %u%%\n", static_cast<unsigned>(cfg.percent),
+                   static_cast<unsigned>(cfg.idle_percent));
+            return 0;
+        }
+        char *end = nullptr;
+        const long percent = strtol(argv[2], &end, 10);
+        bool ok = end != argv[2] && *end == '\0' && percent >= 0 && percent <= 100 && argc <= 4;
+        long idle = cfg.idle_percent;
+        if (ok && argc == 4) {
+            idle = strtol(argv[3], &end, 10);
+            ok = end != argv[3] && *end == '\0' && idle >= 0 && idle <= 100;
+        }
+        if (!ok) {
+            printf("usage: led brightness [<0..100> [idle 0..100]]\n");
+            return 1;
+        }
+        cfg.percent = static_cast<uint8_t>(percent);
+        cfg.idle_percent = static_cast<uint8_t>(idle);
+        boards::SetLedBrightness(cfg.percent, cfg.idle_percent);
+        printf("brightness %u%%, idle %u%%\n", static_cast<unsigned>(cfg.percent),
+               static_cast<unsigned>(cfg.idle_percent));
+        return Save();
+    }
     const NamedColour *colour = nullptr;
     for (const NamedColour &c : kColours) {
         if (strcmp(argv[1], c.name) == 0) {
@@ -377,6 +403,7 @@ int CmdLed(int argc, char **argv) {
     const long seconds = argc >= 4 ? strtol(argv[3], nullptr, 10) : 5;
     if (colour == nullptr || !effect_ok || seconds < 1 || seconds > 600 || argc > 4) {
         printf("usage: led <colour> [effect] [seconds 1..600]\n");
+        printf("       led brightness [<0..100> [idle 0..100]]\n");
         printf("  colours: off white red green blue amber yellow cyan magenta\n");
         printf("  effects: solid beacon slow blink fast breathe\n");
         return 1;

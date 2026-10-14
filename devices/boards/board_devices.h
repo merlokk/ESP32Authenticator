@@ -18,6 +18,9 @@ esp_err_t Init();
 // app_main is done: the LED goes to "ready" (green, breathing, idle ceiling).
 void BootDone();
 
+// LED brightness ceilings in percent (config.json `led`); no-op without an LED.
+void SetLedBrightness(uint8_t percent, uint8_t idle_percent);
+
 // The clock that carries UTC across reboots. Valid before Init() too (timer).
 rtc::Clock &Clock();
 

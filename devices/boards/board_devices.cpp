@@ -63,6 +63,12 @@ void BootDone() {
     }
 }
 
+void SetLedBrightness(uint8_t percent, uint8_t idle_percent) {
+    if (led::Ready()) {
+        led::SetBrightness(percent, idle_percent);
+    }
+}
+
 rtc::Clock &Clock() { return *active_clock; }
 
 buttons::Button Button(ButtonId id) {

@@ -10,6 +10,7 @@
 #include "esp_netif.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "board_devices.h"
 #include "subcommand.h"
 #include "timesync.h"
 #include "timezone.h"
@@ -530,7 +531,8 @@ int CmdReload(int, char **) {
     web::Apply();
     tz::ApplyZone(config::Get().time.zone);
     timesync::Apply();
-    printf("reloaded %s, Wi-Fi, web and time settings applied\n", config::Path());
+    boards::SetLedBrightness(config::Get().led.percent, config::Get().led.idle_percent);
+    printf("reloaded %s, Wi-Fi, web, time and LED settings applied\n", config::Path());
     return 0;
 }
 

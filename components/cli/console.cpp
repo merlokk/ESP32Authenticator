@@ -245,8 +245,9 @@ const esp_console_cmd_t kCommands[] = {
     },
     {
         .command = "led",
-        .help = "The board's LED: state | <colour> [effect] [seconds] to show it for a while",
-        .hint = "[<colour> [solid|beacon|slow|blink|fast|breathe] [seconds]]",
+        .help = "The board's LED: state | <colour> [effect] [seconds] to show it for a while | "
+                "brightness [<n> [idle]] (saved)",
+        .hint = "[<colour> [effect] [seconds] | brightness [<n> [idle]]]",
         .func = &CmdLed,
         .argtable = nullptr,
         .func_w_context = nullptr,

@@ -85,6 +85,8 @@ void AssertDefaults(const config::Data &d) {
     TEST_ASSERT_EQUAL_STRING("UTC", d.time.zone);
     TEST_ASSERT_EQUAL_STRING("pool.ntp.org", d.time.server);
     TEST_ASSERT_EQUAL_UINT8(6, d.time.sync_hours);
+    TEST_ASSERT_EQUAL_UINT8(15, d.led.percent);
+    TEST_ASSERT_EQUAL_UINT8(7, d.led.idle_percent);
 }
 
 constexpr const char *kFullJson = R"json({
@@ -410,6 +412,30 @@ void test_parse_rejects_bad_time() {
     AssertParseFails(R"({"time": {"syncHours": -1}})", "time.syncHours");
 }
 
+void test_parse_led() {
+    config::Data d;
+    config::FillDefaults(&d);
+    char error[config::kErrorSize] = {};
+    TEST_ASSERT_TRUE_MESSAGE(
+        ParseText(R"({"led": {"brightness": 100, "idleBrightness": 0}})", &d, error, sizeof error),
+        error);
+    TEST_ASSERT_EQUAL_UINT8(100, d.led.percent);
+    TEST_ASSERT_EQUAL_UINT8(0, d.led.idle_percent);
+
+    char json[config::kMaxFileSize];
+    TEST_ASSERT_GREATER_THAN(0, config::Serialize(d, json, sizeof json));
+    config::Data out;
+    config::FillDefaults(&out);
+    TEST_ASSERT_TRUE_MESSAGE(ParseText(json, &out, error, sizeof error), error);
+    TEST_ASSERT_EQUAL_UINT8(100, out.led.percent);
+    TEST_ASSERT_EQUAL_UINT8(0, out.led.idle_percent);
+
+    AssertParseFails(R"({"led": 1})", "led: expected an object");
+    AssertParseFails(R"({"led": {"brightness": 101}})", "led.brightness");
+    AssertParseFails(R"({"led": {"idleBrightness": -1}})", "led.idleBrightness");
+    AssertParseFails(R"({"led": {"brightness": 1.5}})", "led.brightness");
+}
+
 void test_valid_host() {
     TEST_ASSERT_TRUE(config::ValidHost(""));
     TEST_ASSERT_TRUE(config::ValidHost("pool.ntp.org"));
@@ -687,6 +713,7 @@ void RegisterConfigTests(void) {
     RUN_TEST(test_parse_time);
     RUN_TEST(test_parse_rejects_bad_time);
     RUN_TEST(test_valid_host);
+    RUN_TEST(test_parse_led);
     RUN_TEST(test_parse_ipv4);
     RUN_TEST(test_parse_static_ip);
     RUN_TEST(test_parse_rejects_bad_static_ip);

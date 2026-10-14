@@ -58,7 +58,8 @@ Reference ESP-IDF + LVGL project: `../../ai-remote/approver-esp32` ([GitHub](htt
                "targets": ["8.8.8.8", "1.1.1.1", "9.9.9.9"]},
   "ble": {"active": false},
   "web": {"mode": "auto", "write": true, "user": "", "password": ""},
-  "time": {"zone": "UTC", "server": "pool.ntp.org", "syncHours": 6}
+  "time": {"zone": "UTC", "server": "pool.ntp.org", "syncHours": 6},
+  "led": {"brightness": 15, "idleBrightness": 7}
 }
 ```
 
@@ -71,7 +72,8 @@ true address/netmask/gateway are required, DNS optional; dotted quads, no
 leading zeros. `internet`: `intervalSeconds` 5..3600, `timeoutMs` 100..10000,
 `failures` 1..10, up to 4 IPv4 `targets` (pinged: no names). `time`: `zone` a
 table name (`date zones`) or a POSIX TZ rule; `server` a host name or IPv4,
-empty: no sync; `syncHours` 0..168, 0: no sync.
+empty: no sync; `syncHours` 0..168, 0: no sync. `led`: brightness ceilings in
+percent, 0..100 (`idleBrightness`: resting states); colours are compiled in.
 
 ## Tests
 
@@ -112,7 +114,8 @@ LED (`devices/led`, from approver-esp32-yubikey): WS2812 driven by UART1 at
 3.33 Mbaud, 6 data bits, TX inverted (two bit cells per character, no RMT);
 a task shows what it was last told (`Animator` in `led_frames.h`, pure: solid,
 beacon, blinks, a 9 s breath linear in perceived lightness; temporary
-overrides). Ceilings 40 % (normal) / 8 % (idle). Boot: red solid from the first
+overrides). Ceilings from `config.json` `led` (default 15 % / 7 % idle), set
+right after the config is read. Boot: red solid from the first
 line of `app_main` (dark = hardware fault, red = firmware running), green
 breathing at the idle ceiling when `app_main` is done.
 

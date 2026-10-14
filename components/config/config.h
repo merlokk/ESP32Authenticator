@@ -114,12 +114,19 @@ struct Time {
     uint8_t sync_hours;      // 0..168, 0: no sync
 };
 
+// Brightness ceilings of the board's LED, in percent (colours are compiled in).
+struct Led {
+    uint8_t percent;       // 0..100, every colour is scaled to it
+    uint8_t idle_percent;  // 0..100, resting states (the ready breath)
+};
+
 struct Data {
     Wifi wifi;
     InternetCheck internet;
     Ble ble;
     Web web;
     Time time;
+    Led led;
 };
 
 enum class Source : uint8_t {
