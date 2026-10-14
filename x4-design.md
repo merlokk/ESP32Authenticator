@@ -58,14 +58,14 @@ status changes, a full refresh now and then against ghosting (driver's choice).
   **counter**, **modification time** (UTC), then AES-256-GCM (format:
   storage-encryption.md). The header is authenticated (GCM associated data):
   counter and time cannot be edited without the key.
-- Every change: counter + 1, modification time = now. Without a believable
-  time (no SNTP yet, no RTC driver) the edit is still saved, with time 0
-  (unknown).
+- Every change: counter + 1, modification time = now. The X4 Pro always has
+  a time (the BM8563 RTC, corrected by SNTP), maybe off by some drift. A board
+  with no believable time (the dev board before its first sync) still saves
+  the edit, with time 0 (unknown).
 - **Sync**: the copy with the later modification time wins, also when both
   copies were changed (on two devices) since the last sync; equal times: the
-  higher counter. Time 0 loses to any known time, so an edit made without a
-  clock loses to every dated copy. The result is written with counter = max(both) + 1, so it is
-  above what either device has seen.
+  higher counter. Time 0 loses to any known time. The result is written with
+  counter = max(both) + 1, so it is above what either device has seen.
 - **Rollback**: the device keeps the highest counter it has accepted in NVS. A
   `.bin` with a lower counter is invalid (an old copy put back on the SD card
   or served by the sync service).
