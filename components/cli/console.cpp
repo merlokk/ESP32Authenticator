@@ -20,6 +20,7 @@
 #include "totp_cmd.h"
 #include "ui.h"
 #include "fido_cmd.h"
+#include "pass_cmd.h"
 #include "wifi_cmd.h"
 #include "files.h"
 #include "hardware.h"
@@ -100,6 +101,8 @@ void PrintDevStatus() {
     ble::PrintInfo();
     Section("fido2 info");
     PrintFidoInfo();
+    Section("pass info");
+    PrintPassInfo();
 }
 
 int CmdDevStatus(int, char **) {
@@ -210,6 +213,17 @@ const esp_console_cmd_t kCommands[] = {
         .context = nullptr,
     },
     {
+        .command = "pass",
+        .help = "Passwords (encrypted vault.bin; never printed): info | list [filter] | "
+                "add <site> [user] [password] [otp] | set <#> <site|user|password|otp> [value] | "
+                "delete <#> | code <#> (TOTP) | reset [confirm]",
+        .hint = "<info|list|add|set|delete|code|reset> [args]",
+        .func = &CmdPass,
+        .argtable = nullptr,
+        .func_w_context = nullptr,
+        .context = nullptr,
+    },
+    {
         .command = "wifi",
         .help = "Wi-Fi: on | off | mode <client|ap|apsta> | info | scan | "
                 "ap [<ssid> [password] [channel]] | retry | networks | set <ssid> [password] | "
@@ -272,7 +286,8 @@ const esp_console_cmd_t kCommands[] = {
     },
     {
         .command = "devstatus",
-        .help = "Everything at once: version, info, board, date, led info, wifi info, web, ble info, fido2 info "
+        .help = "Everything at once: version, info, board, date, led info, wifi info, web, ble info, fido2 info, "
+                "pass info "
                 "(also the site's Device status page)",
         .hint = nullptr,
         .func = &CmdDevStatus,

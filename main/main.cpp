@@ -1,9 +1,12 @@
+#include <cstdio>
+
 #include "ble_fido.h"
 #include "ble_kb.h"
 #include "ble.h"
 #include "board_devices.h"
 #include "config.h"
 #include "console.h"
+#include "crypto.h"
 #include "esp_log.h"
 #include "esp_ota_ops.h"
 #include "fido_ctap.h"
@@ -12,6 +15,7 @@
 #include "timesync.h"
 #include "timezone.h"
 #include "ui.h"
+#include "vault.h"
 #include "web_server.h"
 #include "wifi_manager.h"
 
@@ -41,13 +45,24 @@ void InitNvs() {
     ESP_ERROR_CHECK(err);
 }
 
+// Where store files (fido.bin, vault.bin) live: the SD card when the board has
+// one, else SPIFFS. nullptr when that file system is not mounted.
+const char *StorageDir() {
+    if (boards::kBoard.has_sd_card) {
+        ESP_LOGE(TAG, "SD card: no driver yet, no store files");
+        return nullptr;
+    }
+    return spiffs_fs::Mounted() ? spiffs_fs::kBasePath : nullptr;
+}
+
 // FIDO2 over BLE: the LionKey CTAP core behind the ble_fido transport. User
 // presence: the board's Left button (BOOT on the dev board).
-void InitFido() {
+void InitFido(const char *dir) {
     static const buttons::Button presence = boards::Button(boards::ButtonId::kLeft);
     presence.Init();
     static char store[64];
-    const bool have_fs = spiffs_fs::Mounted() && spiffs_fs::FullPath("fido.bin", store, sizeof store);
+    const bool have_fs = dir != nullptr && snprintf(store, sizeof store, "%s/fido.bin", dir) <
+                                               static_cast<int>(sizeof store);
     // The only transport today is BLE: the creator of a credential is the host
     // on the link.
     const fido_ctap_hooks_t hooks = {
@@ -62,6 +77,21 @@ void InitFido() {
     } else {
         ESP_LOGE(TAG, "fido: CTAP core init failed");
     }
+}
+
+// Passwords. Unlocked at boot with the interim key until the PIN exists.
+void InitVault(const char *dir) {
+    crypto::Init();
+    if (vault::Init(dir, boards::kBoard.max_records) != ESP_OK || dir == nullptr) {
+        return;
+    }
+    static uint8_t key[vault::kKeySize];  // not on main's stack
+    if (vault::InterimKey(key) == ESP_OK) {
+        vault::Unlock(key);
+    } else {
+        ESP_LOGE(TAG, "vault: no key, the password store stays locked");
+    }
+    vault::Wipe(key, sizeof key);
 }
 
 }  // namespace
@@ -81,7 +111,9 @@ extern "C" void app_main() {
 
     ble_kb::Register();  // BLE profiles, before the stack starts
     ble_fido::Register();
-    InitFido();
+    const char *dir = StorageDir();
+    InitFido(dir);
+    InitVault(dir);
     ESP_ERROR_CHECK(console::Init());
 
     // The web server reconciles on the Wi-Fi manager's tick (hook first); the

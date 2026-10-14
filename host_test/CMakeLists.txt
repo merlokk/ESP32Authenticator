@@ -45,6 +45,7 @@ add_executable(host_test
     test_led.cpp
     test_totp.cpp
     test_storefile.cpp
+    test_vault.cpp
     fakes/fake_platform.cpp
 
     # Under test.
@@ -60,6 +61,7 @@ add_executable(host_test
     ../devices/led/led_frames.cpp
     ../components/totp/totp.cpp
     ../components/storefile/store_header.cpp
+    ../components/vault/records.cpp
 
     "${CJSON_DIR}/cJSON.c"
     "${UNITY_DIR}/unity.c"
@@ -79,6 +81,7 @@ target_include_directories(host_test PRIVATE
     ../devices/crypto
     ../components/totp
     ../components/storefile
+    ../components/vault
     "${CJSON_DIR}"
     "${UNITY_DIR}"
 )

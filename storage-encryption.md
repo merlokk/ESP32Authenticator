@@ -1,7 +1,9 @@
 # Credential store: encryption and size
 
-Status: the store header with version and rollback check, and the RAM log in
-PSRAM, are done; encryption is not. Open decision: the key source (below).
+Status: the store header with version and rollback check, the RAM log in
+PSRAM, and the encrypted password store (`vault.bin`, AES-256-GCM, interim
+key in NVS) are done; `fido.bin` is still plain. Open decision: the key
+source (below).
 
 ## Why encrypt
 

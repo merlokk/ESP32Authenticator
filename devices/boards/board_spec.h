@@ -100,10 +100,15 @@ public:
     bool has_sd_card = false;
     bool has_frontlight = false;
 
-    // FIDO2 credentials in fido.bin (the next one gets KEY_STORE_FULL). The
-    // RAM log is ~1 KB per credential; the file lives on SPIFFS (80 KB, shared
-    // with the stock data on the X4 Pro).
+    // Store files (fido.bin, vault.bin) live on the SD card when the board has
+    // one, else on SPIFFS (80 KB, shared with the stock data on the X4 Pro;
+    // a save needs room for a second copy).
+    // FIDO2 credentials in fido.bin (the next one gets KEY_STORE_FULL); the
+    // RAM log is ~1 KB per credential.
     uint16_t fido_max_credentials = 10;
+    // Password records in vault.bin; ~1.2 KB of PSRAM each, up to ~400 B in
+    // the file (typically ~150).
+    uint16_t max_records = 50;
 
     ButtonPin buttons[kButtonCount] = {};
     I2cPins i2c;
@@ -139,6 +144,7 @@ constexpr bool UsableGpio(int8_t gpio) {
 }
 
 inline constexpr uint16_t kMaxFidoCredentials = 50;
+inline constexpr uint16_t kMaxRecords = 1000;
 
 // nullptr when the board is consistent, else what is wrong.
 constexpr const char *CheckPins(const Board &b) {
@@ -168,6 +174,9 @@ constexpr const char *CheckPins(const Board &b) {
     }
     if (b.fido_max_credentials < 1 || b.fido_max_credentials > kMaxFidoCredentials) {
         return "fido_max_credentials out of 1..50";
+    }
+    if (b.max_records < 1 || b.max_records > kMaxRecords) {
+        return "max_records out of 1..1000";
     }
     if (b.name == nullptr || b.name[0] == '\0') {
         return "no name";

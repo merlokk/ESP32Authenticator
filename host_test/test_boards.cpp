@@ -94,6 +94,12 @@ void test_boards_catch_a_device_without_pins(void) {
     Edited too_many_fido;
     too_many_fido.fido_max_credentials = boards::kMaxFidoCredentials + 1;
     TEST_ASSERT_NOT_NULL(boards::CheckPins(too_many_fido));
+    Edited no_records;
+    no_records.max_records = 0;
+    TEST_ASSERT_NOT_NULL(boards::CheckPins(no_records));
+    Edited too_many_records;
+    too_many_records.max_records = boards::kMaxRecords + 1;
+    TEST_ASSERT_NOT_NULL(boards::CheckPins(too_many_records));
 
     Edited no_presence_button;
     no_presence_button.buttons[0].gpio = boards::kNoPin;

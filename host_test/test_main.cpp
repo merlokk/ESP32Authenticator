@@ -19,6 +19,7 @@ void RegisterTimezoneTests(void);
 void RegisterLedTests(void);
 void RegisterTotpTests(void);
 void RegisterStorefileTests(void);
+void RegisterVaultTests(void);
 
 void setUp(void) {}
 
@@ -61,5 +62,6 @@ int main(int argc, char **argv) {
     if (Wanted("led")) RegisterLedTests();
     if (Wanted("totp")) RegisterTotpTests();
     if (Wanted("storefile")) RegisterStorefileTests();
+    if (Wanted("vault")) RegisterVaultTests();
     return UNITY_END();
 }

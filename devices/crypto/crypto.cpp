@@ -65,7 +65,53 @@ esp_err_t Aes256Cbc(bool encrypt, const uint8_t *key, const uint8_t *iv, uint8_t
     return err;
 }
 
+psa_key_id_t GcmKey(const uint8_t *key, bool encrypt) {
+    psa_key_attributes_t attr = PSA_KEY_ATTRIBUTES_INIT;
+    psa_set_key_type(&attr, PSA_KEY_TYPE_AES);
+    psa_set_key_bits(&attr, kAes256KeySize * 8);
+    psa_set_key_usage_flags(&attr, encrypt ? PSA_KEY_USAGE_ENCRYPT : PSA_KEY_USAGE_DECRYPT);
+    psa_set_key_algorithm(&attr, PSA_ALG_GCM);
+    psa_key_id_t id = 0;
+    return Check(psa_import_key(&attr, key, kAes256KeySize, &id), "gcm key") == ESP_OK ? id : 0;
+}
+
 }  // namespace
+
+esp_err_t Aes256GcmSeal(const uint8_t key[kAes256KeySize], const uint8_t nonce[kGcmNonceSize],
+                        const uint8_t *aad, size_t aad_len, const uint8_t *in, size_t len,
+                        uint8_t *out) {
+    const psa_key_id_t id = GcmKey(key, true);
+    if (id == 0) {
+        return ESP_FAIL;
+    }
+    size_t n = 0;
+    esp_err_t err = Check(psa_aead_encrypt(id, PSA_ALG_GCM, nonce, kGcmNonceSize, aad, aad_len,
+                                           in, len, out, len + kGcmTagSize, &n),
+                          "gcm seal");
+    if (err == ESP_OK && n != len + kGcmTagSize) {
+        err = ESP_FAIL;
+    }
+    psa_destroy_key(id);
+    return err;
+}
+
+esp_err_t Aes256GcmOpen(const uint8_t key[kAes256KeySize], const uint8_t nonce[kGcmNonceSize],
+                        const uint8_t *aad, size_t aad_len, const uint8_t *in, size_t len,
+                        uint8_t *out) {
+    const psa_key_id_t id = GcmKey(key, false);
+    if (id == 0) {
+        return ESP_FAIL;
+    }
+    size_t n = 0;
+    const psa_status_t st = psa_aead_decrypt(id, PSA_ALG_GCM, nonce, kGcmNonceSize, aad, aad_len,
+                                             in, len + kGcmTagSize, out, len, &n);
+    psa_destroy_key(id);
+    if (st == PSA_ERROR_INVALID_SIGNATURE) {
+        memset(out, 0, len);
+        return ESP_ERR_INVALID_CRC;
+    }
+    return Check(st, "gcm open") == ESP_OK && n == len ? ESP_OK : ESP_FAIL;
+}
 
 esp_err_t Init() { return Check(psa_crypto_init(), "init"); }
 

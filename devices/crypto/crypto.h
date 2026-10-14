@@ -35,6 +35,21 @@ esp_err_t Totp(const uint8_t *key, size_t key_len, int64_t unix_seconds, uint32_
 // The RFC 6238 SHA-1 vectors (8 digits) through Totp(). ESP_OK when all match.
 esp_err_t TotpSelfTest();
 
+constexpr size_t kGcmNonceSize = 12;
+constexpr size_t kGcmTagSize = 16;
+
+// AES-256-GCM. Seal: `out` (len + 16 bytes) = ciphertext, then the tag. Open:
+// `in` = ciphertext + tag (len + 16 bytes), `out` = len bytes of plaintext;
+// ESP_ERR_INVALID_CRC when the tag does not match (wrong key, tampered or
+// damaged data, other `aad`). `in` and `out` must not overlap. Never seal two
+// messages with one key and one nonce.
+esp_err_t Aes256GcmSeal(const uint8_t key[kAes256KeySize], const uint8_t nonce[kGcmNonceSize],
+                        const uint8_t *aad, size_t aad_len, const uint8_t *in, size_t len,
+                        uint8_t *out);
+esp_err_t Aes256GcmOpen(const uint8_t key[kAes256KeySize], const uint8_t nonce[kGcmNonceSize],
+                        const uint8_t *aad, size_t aad_len, const uint8_t *in, size_t len,
+                        uint8_t *out);
+
 // AES-256-CBC without padding, in place; `len` is a multiple of 16.
 esp_err_t Aes256CbcEncrypt(const uint8_t key[kAes256KeySize], const uint8_t iv[kAesBlockSize],
                            uint8_t *data, size_t len);

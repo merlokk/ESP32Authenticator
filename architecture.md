@@ -11,9 +11,9 @@ Target and status. Screen design and the open questions: [x4-design.md](x4-desig
 | BLE keyboard: types login / password / TOTP | keyboard done; typing records not yet |
 | TOTP codes | done (`crypto::Totp`, console `totp`) |
 | PIN lock (6 digits, lockout after 10 tries, wipe PIN); the PIN also derives the storage key | not yet |
-| Password manager records (site, login, password, TOTP) | not yet |
-| Store file header (version, modification time) and rollback check (highest version in NVS) | done for `fido.bin` (`storefile`) |
-| Encrypted store: one `.bin`, records + settings, behind the same header | not yet (plan: storage-encryption.md) |
+| Password records (site, user, password, TOTP): add / edit / delete | done on the console (`pass`); screen and typing not yet |
+| Store file header (version, modification time) and rollback check (highest version in NVS) | done (`storefile`) |
+| Encrypted store: `vault.bin`, AES-256-GCM, loaded whole into PSRAM | done with an interim key (NVS); the PIN-derived key not yet. `fido.bin` still plain |
 | Sync over the internet, the later modification time wins | not yet; service not chosen |
 | X4 Pro screen: status bar, credential list, pages, settings | not yet (LVGL up, no display driver) |
 | Settings: frontlight, Wi-Fi | Wi-Fi on the console and the site; frontlight not yet |
@@ -28,7 +28,7 @@ Target and status. Screen design and the open questions: [x4-design.md](x4-desig
 | UI | LVGL 9 (`components/ui`: library up, no display driver yet; today: USB console + web site) |
 | Host link | BLE HID keyboard (types credentials), BLE FIDO2 (CTAP2) |
 | Network | Wi-Fi (client / AP / AP+client) and a configuration web site |
-| Storage | `config.json` and `fido.bin` on SPIFFS, plain (encrypted storage planned) |
+| Storage | `config.json` on SPIFFS; store files (`fido.bin` plain, `vault.bin` encrypted) on the SD card when the board has one, else SPIFFS |
 
 Reference ESP-IDF + LVGL project: `../../ai-remote/approver-esp32` ([GitHub](https://github.com/merlokk/ai-remote/tree/main/approver-esp32)).
 
@@ -37,11 +37,11 @@ Reference ESP-IDF + LVGL project: `../../ai-remote/approver-esp32` ([GitHub](htt
 | Path | Contents |
 |---|---|
 | `main/` | `app_main`: OTA self-confirm, NVS, SPIFFS, config, console, Wi-Fi manager + web server, BLE autostart |
-| `components/` | app components (`cli`: USB command line; `config`: config.json; `wifimgr`: Wi-Fi policy + manager; `web`: configuration site, see Wi-Fi and web; `fido_ctap`: CTAP 2.1 core, see FIDO2; `timesync`, `timezone`: see Time; `totp`: Base32 secrets and the previous/current/next windows, codes from `crypto::Totp`; `ui`: LVGL, see UI) |
+| `components/` | app components (`cli`: USB command line; `config`: config.json; `wifimgr`: Wi-Fi policy + manager; `web`: configuration site, see Wi-Fi and web; `fido_ctap`: CTAP 2.1 core, see FIDO2; `timesync`, `timezone`: see Time; `totp`: Base32 secrets and the previous/current/next windows, codes from `crypto::Totp`; `ui`: LVGL, see UI; `storefile`: store file header, load/save with the rollback check; `vault`: passwords, see Passwords) |
 | `lib/` | third-party git submodules, used unmodified (`lionkey`) |
 | `host_test/` | host tests (Unity, MSVC), no board: see Tests |
 | `utils/` | host-side Python tools over the USB console (`device.py`: console session; `spiffs.py`: ls/info/rm/get/put; `ble.py`: ble commands, `kb` text quoting) |
-| `devices/` | hardware drivers, one component per device (`hardware`: SoC info, eFuse, USB host connected; `spiffs_fs`: SPIFFS on `spiffs` at `/spiffs`, never formatted, it holds stock data on the X4 Pro; `ble`, `ble_kb`, `ble_fido`: see BLE; `wifi`: the radio (`wifi::Radio`), no decisions, stores nothing; `buttons`: GPIO buttons, polled, pins from the board; `crypto`: hardware RNG, SHA-256, AES-256-CBC, HMAC-SHA1 via PSA, HOTP/TOTP (`otp.h`, pure: counter, truncation); `clock`: `rtc::Clock`, see Time; `led`: one WS2812 from UART1, see Boards; `boards`: board classes, see Boards). `devices/config.h`: the board the firmware is built for |
+| `devices/` | hardware drivers, one component per device (`hardware`: SoC info, eFuse, USB host connected; `spiffs_fs`: SPIFFS on `spiffs` at `/spiffs`, never formatted, it holds stock data on the X4 Pro; `ble`, `ble_kb`, `ble_fido`: see BLE; `wifi`: the radio (`wifi::Radio`), no decisions, stores nothing; `buttons`: GPIO buttons, polled, pins from the board; `crypto`: hardware RNG, SHA-256, AES-256-CBC, AES-256-GCM, HMAC-SHA1 via PSA, HOTP/TOTP (`otp.h`, pure: counter, truncation); `clock`: `rtc::Clock`, see Time; `led`: one WS2812 from UART1, see Boards; `boards`: board classes, see Boards). `devices/config.h`: the board the firmware is built for |
 
 ## Config
 
@@ -307,6 +307,33 @@ submodule) behind `ble_fido`. API: `fido_ctap_init(hooks, store)`,
 - The store is plain text today (private keys, PIN hash): encryption and an SD
   store for hundreds of keys are planned, see [storage-encryption.md](storage-encryption.md).
 - Tests: `tests/fido2` over BLE, all 67 pass on the dev board (see build.md).
+
+## Passwords
+
+`components/vault`: `vault.bin` in the store directory (`StorageDir()` in
+`main.cpp`: the SD card when the board has one, else SPIFFS; no SD driver yet,
+so no store files on the X4 Pro).
+
+- Records (`records.h`, pure, host-tested): site (1-96 bytes), user (0-96),
+  password (0-128), TOTP secret (Base32, normalized, up to 64 characters);
+  UTF-8 without control characters. A site may have several users; (site,
+  user) is unique without ASCII case. Sorted by site, then user; each record
+  has a stable ID (never reused) and its own modification time.
+- File: store header (kind 2, AES-256-GCM, random nonce per write; the header
+  is the associated data) + the serialized records + tag. Loaded whole and
+  decrypted into PSRAM at unlock, rewritten whole on every change (version,
+  `.tmp`, rollback check as for `fido.bin`, through `storefile/store_io`).
+  A write that fails reloads the file: the change is undone.
+- Refused (does not decrypt, rollback, missing while a version is kept,
+  malformed): left as is, the store is off; `pass reset confirm` writes an
+  empty store over it.
+- Key: interim, 32 random bytes in NVS (`vault/key`), unlocked at boot. The
+  PIN-derived key replaces it (storage-encryption.md); losing NVS loses the
+  passwords.
+- PSRAM: ~1.2 KB per record of the board's `max_records` (dev board 50, X4
+  Pro 500): the records, the plaintext and the file body buffers.
+- Console `pass`; passwords are never printed (list shows "set"), only typed
+  in (they stay in the up-arrow history).
 
 ## Flash layout
 

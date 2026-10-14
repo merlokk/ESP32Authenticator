@@ -196,6 +196,12 @@ Opening the port with RTS asserted resets the chip.
 | `led brightness [<n> [idle]]` | show / set the brightness ceilings in percent, normal and idle (saved) |
 | `totp <base32 secret>` | local time (and UTC), seconds left in the window, the 6-digit codes of the previous, current and next 30 s window (HMAC-SHA1). Error without a believable time. The secret is not printed or logged, but stays in the up-arrow history |
 | `totp test` | RFC 6238 SHA-1 vectors through `crypto::Totp` |
+| `pass [info]` | password store: state (why it is off), records of max, file, version and change time |
+| `pass list [filter]` | #, site / user, password set, TOTP; filter: part of site or user. Passwords are never shown |
+| `pass add <site> [user] [password] [otp]` | a record; quote values with spaces. Prints its # (sorted by site, user) |
+| `pass set <#> <site\|user\|password\|otp> [value]` | change a field, no value: clear. Prints the record's new # |
+| `pass delete <#>` / `pass code <#>` | delete a record / its TOTP codes now |
+| `pass reset` / `pass reset confirm` | say what would go / delete every record; also the way out of a refused file |
 | `date [info]` | UTC and local time (offset, DST), zone, board clock (kept when off or not, drift from the system clock), sync (server, interval, next, last, step, failures) |
 | `date sync` | ask the time server now and wait for it (up to 20 s) |
 | `date set [utc] <YYYY-MM-DD> <HH:MM:SS>` | set the clock: local time, or UTC with `utc`; written to the board clock too |
