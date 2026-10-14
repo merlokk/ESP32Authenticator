@@ -1,0 +1,4 @@
+## LVGL, as in approver-esp32 (no esp_lvgl_port: the X4 e-ink panel and GT911
+## touch drivers come later, written for this board).
+dependencies:
+  lvgl/lvgl: "^9.4.0"

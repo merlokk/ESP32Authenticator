@@ -34,3 +34,12 @@ CONFIG_BT_NIMBLE_SM_SC=y
 CONFIG_BT_NIMBLE_EXT_ADV=n
 CONFIG_BT_NIMBLE_SVC_GAP_DEVICE_NAME="ESP32 Auth"
 CONFIG_BT_NIMBLE_LOG_LEVEL_WARNING=y
+
+# LVGL (components/ui): 1-bit colour for the X4 Pro e-ink (monochrome theme);
+# every LVGL allocation (widgets, layers, draw buffers) in PSRAM through
+# components/ui/lv_mem_psram.c instead of a static pool in internal RAM; libc
+# string and printf.
+CONFIG_LV_COLOR_DEPTH_1=y
+CONFIG_LV_USE_CUSTOM_MALLOC=y
+CONFIG_LV_USE_CLIB_STRING=y
+CONFIG_LV_USE_CLIB_SPRINTF=y

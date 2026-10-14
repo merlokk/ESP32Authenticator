@@ -18,6 +18,7 @@
 #include "board_devices.h"
 #include "date_cmd.h"
 #include "totp_cmd.h"
+#include "ui.h"
 #include "fido_cmd.h"
 #include "wifi_cmd.h"
 #include "files.h"
@@ -39,6 +40,7 @@ int CmdVersion(int, char **) {
     printf("firmware   %s %s\n", app->project_name, app->version);
     printf("built      %s %s\n", app->date, app->time);
     printf("idf        %s (built with %s)\n", esp_get_idf_version(), app->idf_ver);
+    printf("lvgl       %s%s\n", ui::LvglVersion(), ui::Ready() ? "" : " (not initialised)");
 
     char sha[17] = {};
     esp_app_get_elf_sha256(sha, sizeof sha);

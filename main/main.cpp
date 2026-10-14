@@ -11,6 +11,7 @@
 #include "spiffs_fs.h"
 #include "timesync.h"
 #include "timezone.h"
+#include "ui.h"
 #include "web_server.h"
 #include "wifi_manager.h"
 
@@ -68,6 +69,8 @@ extern "C" void app_main() {
     config::Init(spiffs_fs::kBasePath);
     tz::ApplyZone(config::Get().time.zone);
     boards::SetLedBrightness(config::Get().led.percent, config::Get().led.idle_percent);
+
+    ui::Init();  // LVGL; no display driver yet
 
     ble_kb::Register();  // BLE profiles, before the stack starts
     ble_fido::Register();

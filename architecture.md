@@ -5,7 +5,7 @@
 | Layer | Choice |
 |---|---|
 | Framework | ESP-IDF (C/C++) |
-| UI | LVGL on the e-ink panel (planned; today: USB console + web site) |
+| UI | LVGL 9 (`components/ui`: library up, no display driver yet; today: USB console + web site) |
 | Host link | BLE HID keyboard (types credentials), BLE FIDO2 (CTAP2) |
 | Network | Wi-Fi (client / AP / AP+client) and a configuration web site |
 | Storage | `config.json` and `fido.bin` on SPIFFS, plain (encrypted storage planned) |
@@ -17,7 +17,7 @@ Reference ESP-IDF + LVGL project: `../../ai-remote/approver-esp32` ([GitHub](htt
 | Path | Contents |
 |---|---|
 | `main/` | `app_main`: OTA self-confirm, NVS, SPIFFS, config, console, Wi-Fi manager + web server, BLE autostart |
-| `components/` | app components (`cli`: USB command line; `config`: config.json; `wifimgr`: Wi-Fi policy + manager; `web`: configuration site, see Wi-Fi and web; `fido_ctap`: CTAP 2.1 core, see FIDO2; `timesync`, `timezone`: see Time; `totp`: Base32 secrets and the previous/current/next windows, codes from `crypto::Totp`) |
+| `components/` | app components (`cli`: USB command line; `config`: config.json; `wifimgr`: Wi-Fi policy + manager; `web`: configuration site, see Wi-Fi and web; `fido_ctap`: CTAP 2.1 core, see FIDO2; `timesync`, `timezone`: see Time; `totp`: Base32 secrets and the previous/current/next windows, codes from `crypto::Totp`; `ui`: LVGL, see UI) |
 | `lib/` | third-party git submodules, used unmodified (`lionkey`) |
 | `host_test/` | host tests (Unity, MSVC), no board: see Tests |
 | `utils/` | host-side Python tools over the USB console (`device.py`: console session; `spiffs.py`: ls/info/rm/get/put; `ble.py`: ble commands, `kb` text quoting) |
@@ -134,6 +134,17 @@ Boot: `boards::Init()` sets the system clock from the board clock (if it has a
 believable time), `config::Init`, then the zone; `timesync::Init` after the
 Wi-Fi manager. A battery-backed RTC (X4 Pro BM8563) is a second `Clock`
 later; until then the X4 Pro uses the timer clock too.
+
+## UI
+
+`components/ui`: LVGL 9.4 (`lvgl/lvgl`, as in approver-esp32, without
+`esp_lvgl_port`), `ui::Init()` in `app_main` (`lv_init`, esp_timer tick).
+`sdkconfig.defaults`: 1-bit colour (monochrome theme, for the X4 Pro e-ink),
+custom allocator `lv_mem_psram.c`: every LVGL allocation (widgets, layers,
+draw buffers) in PSRAM, internal RAM only if PSRAM is full, so Wi-Fi, BLE and
+the web server keep the internal heap. No display, input device or
+`lv_timer_handler` task yet: the X4 e-ink panel and GT911 touch drivers come
+later. Version in `version`.
 
 ## BLE
 
