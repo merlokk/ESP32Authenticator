@@ -13,6 +13,7 @@
 #include <cstdint>
 
 #include "esp_err.h"
+#include "pin_guard.h"
 #include "records.h"
 
 namespace vault {
@@ -38,18 +39,38 @@ struct Info {
     size_t file_size;
     uint32_t kdf_iterations;  // of the open store
     uint32_t unlock_ms;       // the last key derivation took
+    uint8_t pin_failures;     // wrong PINs in a row (kMaxPinTries locks)
+    uint32_t lock_left_s;     // PIN entry locked for this long, 0: free
+    bool wipe_set;            // a wipe PIN is configured
 };
+
+// From config.json `pin`; set before Unlock and again on a change.
+struct Policy {
+    uint32_t lock_seconds;  // after kMaxPinTries wrong PINs
+    const char *wipe;       // pin_guard.h text, "" for none (copied)
+};
+void SetPolicy(const Policy &policy);
+// Called after a wipe (outside the vault's lock): erase the FIDO2 credentials.
+void SetWipeHook(void (*on_wipe)());
 
 // PSRAM for `capacity` records; the file is in `dir` (nullptr: kOff).
 esp_err_t Init(const char *dir, size_t capacity);
 
 // Derives the key from `pin` and opens the store. No file yet: a new, empty
 // store with this PIN. kWrongPin: stays locked. kLocked: refused (Info::why).
+// The wipe PIN (checked first, in any state, also while locked out) erases
+// the store file, the key and the records, and calls on_wipe: kWiped.
+// kMaxPinTries wrong PINs in a row: kPinLocked for lock_seconds.
 Error Unlock(const char *pin);
 // Wipes the records and the key.
 void Lock();
 // A new salt and key from `new_pin`; the open store is rewritten with it.
+// A wrong `old_pin` counts as a wrong PIN.
 Error ChangePin(const char *old_pin, const char *new_pin);
+
+// The pin_guard.h text of a wipe PIN (random salt). Needs the open store:
+// kPinInUse if it is the PIN.
+Error MakeWipe(const char *pin, char out[kWipeTextSize]);
 
 Info GetInfo();
 

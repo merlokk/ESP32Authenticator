@@ -23,8 +23,8 @@ Firmware: C/C++ on **ESP-IDF**.
   password records (site/user/password/TOTP) in an encrypted `vault.bin`
   (AES-256-GCM, key from the 6-digit PIN, locked until `pin`; `test.pin` in
   config.json unlocks at boot) with add/edit/delete on the console (`pass`).
-- Not yet: BM8563 RTC driver, e-ink UI (LVGL), PIN lockout and wipe PIN,
-  eFuse-bound key, encrypted `fido.bin`, sync over Wi-Fi, SD card driver.
+  PIN lockout (10 tries, `pin.lockMinutes`) and a wipe PIN (`pin wipe set`).
+- Not yet: BM8563 RTC driver, e-ink UI (LVGL), eFuse-bound key, encrypted `fido.bin`, sync over Wi-Fi, SD card driver.
 
 ## Architecture
 

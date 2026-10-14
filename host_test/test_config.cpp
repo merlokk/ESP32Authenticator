@@ -88,6 +88,8 @@ void AssertDefaults(const config::Data &d) {
     TEST_ASSERT_EQUAL_UINT8(15, d.led.percent);
     TEST_ASSERT_EQUAL_UINT8(7, d.led.idle_percent);
     TEST_ASSERT_EQUAL_STRING("", d.test.pin);
+    TEST_ASSERT_EQUAL_UINT16(10, d.pin.lock_minutes);
+    TEST_ASSERT_EQUAL_STRING("", d.pin.wipe);
 }
 
 constexpr const char *kFullJson = R"json({
@@ -433,6 +435,15 @@ void test_parse_led() {
 
     AssertParseFails(R"({"led": 1})", "led: expected an object");
     AssertParseFails(R"({"test": 1})", "test: expected an object");
+    AssertParseFails(R"({"pin": {"lockMinutes": 0}})", "pin.lockMinutes");
+    AssertParseFails(R"({"pin": {"lockMinutes": 1441}})", "pin.lockMinutes");
+    AssertParseFails(R"({"pin": {"wipe": "123456"}})", "pin.wipe");  // never the PIN itself
+    const char *wipe_json =
+        R"({"pin": {"lockMinutes": 30, "wipe": "00112233445566778899aabbccddeeff:)"
+        R"(000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"}})";
+    TEST_ASSERT_TRUE_MESSAGE(ParseText(wipe_json, &d, error, sizeof error), error);
+    TEST_ASSERT_EQUAL_UINT16(30, d.pin.lock_minutes);
+    TEST_ASSERT_EQUAL_CHAR(':', d.pin.wipe[32]);
     AssertParseFails(R"({"test": {"pin": "12345"}})", "test.pin");
     AssertParseFails(R"({"test": {"pin": "12345a"}})", "test.pin");
     AssertParseFails(R"({"test": {"pin": "1234567"}})", "test.pin");

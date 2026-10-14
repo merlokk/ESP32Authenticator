@@ -123,6 +123,12 @@ const char *Describe(Error error) {
             return "the PIN is 6 digits";
         case Error::kWrongPin:
             return "wrong PIN";
+        case Error::kPinLocked:
+            return "too many wrong PINs: PIN entry is locked for a while";
+        case Error::kPinInUse:
+            return "the PIN and the wipe PIN must differ";
+        case Error::kWiped:
+            return "wiped: the password store, the FIDO2 credentials and the key are gone";
     }
     return "?";
 }

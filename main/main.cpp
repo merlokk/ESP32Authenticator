@@ -83,6 +83,13 @@ void InitFido(const char *dir) {
 // test PIN (test.pin, development only).
 void InitVault(const char *dir) {
     crypto::Init();
+    // The wipe PIN also erases the FIDO2 credentials (as `fido2 reset`).
+    const config::Pin &cfg = config::Get().pin;
+    vault::SetPolicy({static_cast<uint32_t>(cfg.lock_minutes) * 60, cfg.wipe});
+    vault::SetWipeHook([] {
+        const esp_err_t err = fido_ctap_reset();
+        ESP_LOGW(TAG, "wipe PIN: FIDO2 reset: %s", esp_err_to_name(err));
+    });
     if (vault::Init(dir, boards::kBoard.max_records) != ESP_OK || dir == nullptr) {
         return;
     }

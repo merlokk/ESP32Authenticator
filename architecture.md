@@ -10,7 +10,7 @@ Target and status. Screen design and the open questions: [x4-design.md](x4-desig
 | FIDO2 over USB | not yet |
 | BLE keyboard: types login / password / TOTP | keyboard done; typing records not yet |
 | TOTP codes | done (`crypto::Totp`, console `totp`) |
-| PIN lock (6 digits, lockout after 10 tries, wipe PIN); the PIN also derives the storage key | PIN key for `vault.bin` and console `pin` done; lockout, wipe PIN, screen not yet |
+| PIN lock (6 digits, lockout after 10 tries, wipe PIN); the PIN also derives the storage key | PIN key for `vault.bin`, lockout, wipe PIN, console `pin` done; screen not yet |
 | Password records (site, user, password, TOTP): add / edit / delete | done on the console (`pass`); screen and typing not yet |
 | Store file header (version, modification time) and rollback check (highest version in NVS) | done (`storefile`) |
 | Encrypted store: `vault.bin`, AES-256-GCM, loaded whole into PSRAM | done, key from the PIN (PBKDF2). `fido.bin` still plain |
@@ -55,6 +55,9 @@ Reference ESP-IDF + LVGL project: `../../ai-remote/approver-esp32` ([GitHub](htt
 - Save is atomic: `config.json.new`, remove, rename; boot finishes an
   interrupted write.
 - Plain text, Wi-Fi passwords included, until the encrypted storage exists.
+- `pin`: `lockMinutes` (1..1440, default 10) after 10 wrong PINs; `wipe`:
+  the wipe PIN as `<salt hex>:<SHA-256(salt || PIN) hex>` (set by
+  `pin wipe set`, masked by `config show`), never the PIN itself.
 - `test`: development aids. `test.pin` (empty or 6 digits) unlocks the vault
   at boot; masked by `config show`, never on the site. Never on a device
   with real secrets.
@@ -83,6 +86,7 @@ Reference ESP-IDF + LVGL project: `../../ai-remote/approver-esp32` ([GitHub](htt
   "web": {"mode": "auto", "write": true, "user": "", "password": ""},
   "time": {"zone": "UTC", "server": "pool.ntp.org", "syncHours": 6},
   "led": {"brightness": 15, "idleBrightness": 7},
+  "pin": {"lockMinutes": 10, "wipe": ""},
   "test": {"pin": ""}
 }
 ```
@@ -337,6 +341,17 @@ so no store files on the X4 Pro).
   PSA); salt (16 random bytes) and count in the header, a new salt on every
   PIN change or reset. Against a flash dump a 6-digit PIN falls in minutes:
   see storage-encryption.md.
+- Lockout (`pin_guard.h`, pure, host-tested): 10 wrong PINs in a row
+  (unlock, or the old PIN of a change) lock PIN entry for `pin.lockMinutes`,
+  then 10 more tries. Count and deadline (UTC) in NVS (`vault/pin_fail`,
+  `vault/pin_until`): a reboot resumes the lock with a known clock, else
+  (or with a deadline further than a full lock) starts it again. While
+  running it counts on the uptime clock.
+- Wipe PIN (`pin.wipe`): checked first, before any key derivation and also
+  while locked out. It removes `vault.bin` and its kept version (the next PIN
+  makes a new store), wipes the key and records, clears the lockout, and
+  resets FIDO2 (`fido_ctap_reset` through `vault::SetWipeHook`). It must
+  differ from the PIN (checked when set, on a PIN change and a reset).
 - Refused (rollback, missing while a version is kept, malformed, an earlier
   format without a PIN key): left as is, the store is off;
   `pass reset confirm <pin>` writes an empty store with that PIN over it.

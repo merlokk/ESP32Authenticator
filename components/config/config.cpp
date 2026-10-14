@@ -51,6 +51,10 @@ const char kDefaultJson[] = R"json({
     "brightness": 15,
     "idleBrightness": 7
   },
+  "pin": {
+    "lockMinutes": 10,
+    "wipe": ""
+  },
   "test": {
     "pin": ""
   }
@@ -245,6 +249,16 @@ bool ParseLed(const cJSON *section, Led *out, char *error, size_t size) {
     out->percent = static_cast<uint8_t>(percent);
     out->idle_percent = static_cast<uint8_t>(idle);
     return true;
+}
+
+bool ParsePin(const cJSON *section, Pin *out, char *error, size_t size) {
+    uint32_t minutes = out->lock_minutes;
+    if (!GetUint(section, "lockMinutes", 1, kMaxLockMinutes, &minutes, "pin", error, size)) {
+        return false;
+    }
+    out->lock_minutes = static_cast<uint16_t>(minutes);
+    return GetString(section, "wipe", out->wipe, sizeof out->wipe, ValidWipe,
+                     "empty or a hash from 'pin wipe set'", "pin", error, size);
 }
 
 bool ParseTest(const cJSON *section, Test *out, char *error, size_t size) {
@@ -479,6 +493,16 @@ bool ParseSections(const cJSON *root, Data *staged, char *error, size_t size) {
             return false;
         }
     }
+    const cJSON *pin = cJSON_GetObjectItemCaseSensitive(root, "pin");
+    if (pin != nullptr) {
+        if (!cJSON_IsObject(pin)) {
+            SetError(error, size, "pin: expected an object");
+            return false;
+        }
+        if (!ParsePin(pin, &parsed.pin, error, size)) {
+            return false;
+        }
+    }
     const cJSON *test = cJSON_GetObjectItemCaseSensitive(root, "test");
     if (test != nullptr) {
         if (!cJSON_IsObject(test)) {
@@ -624,6 +648,9 @@ size_t Serialize(const Data &d, char *out, size_t size) {
     cJSON *led = cJSON_AddObjectToObject(root, "led");
     cJSON_AddNumberToObject(led, "brightness", d.led.percent);
     cJSON_AddNumberToObject(led, "idleBrightness", d.led.idle_percent);
+    cJSON *pin = cJSON_AddObjectToObject(root, "pin");
+    cJSON_AddNumberToObject(pin, "lockMinutes", d.pin.lock_minutes);
+    cJSON_AddStringToObject(pin, "wipe", d.pin.wipe);
     cJSON *test = cJSON_AddObjectToObject(root, "test");
     cJSON_AddStringToObject(test, "pin", d.test.pin);
 
@@ -703,6 +730,22 @@ bool ValidApPassword(const char *password) {
 // Basic auth separates user and password with the first ':'.
 bool ValidWebUser(const char *user) {
     return strlen(user) < kWebUserSize && strchr(user, ':') == nullptr;
+}
+
+bool ValidWipe(const char *wipe) {
+    const size_t n = strlen(wipe);
+    if (n == 0) {
+        return true;
+    }
+    if (n != kWipeSize - 1 || wipe[32] != ':') {
+        return false;
+    }
+    for (size_t i = 0; i < n; ++i) {
+        if (i != 32 && strchr("0123456789abcdefABCDEF", wipe[i]) == nullptr) {
+            return false;
+        }
+    }
+    return true;
 }
 
 bool ValidTestPin(const char *pin) {

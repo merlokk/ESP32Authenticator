@@ -46,6 +46,10 @@ uint32_t NextVersion(const File &file, uint32_t current);
 // Writes `header` as given (kind set from `file`) and `body`.
 esp_err_t Save(const File &file, const Header &header, const uint8_t *body, size_t body_size);
 
+// Removes the file, its .tmp and the kept version: as if never made (the
+// next Load is kNew). For a wipe.
+void Forget(const File &file);
+
 // The highest version accepted (NVS), 0 if none.
 uint32_t KeptVersion(const File &file);
 

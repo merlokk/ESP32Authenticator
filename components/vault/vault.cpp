@@ -25,6 +25,8 @@ constexpr const char *kNvsNamespace = "vault";
 // PBKDF2 rounds for a new key (a file keeps the count it was made with).
 constexpr uint32_t kKdfIterations = 6000;  // ~0.9 s on the S3 (PSA, ~150 us each)
 constexpr size_t kKeySize = crypto::kAes256KeySize;
+constexpr const char *kNvsFailures = "pin_fail";   // u8: wrong PINs in a row
+constexpr const char *kNvsDeadline = "pin_until";  // i64: lock end, UTC (0 unknown)
 
 StaticSemaphore_t g_lock_storage;
 SemaphoreHandle_t g_lock = nullptr;
@@ -40,6 +42,15 @@ uint8_t g_key[kKeySize];
 uint8_t g_salt[storefile::kSaltSize];
 uint32_t g_iterations = 0;
 uint32_t g_unlock_ms = 0;
+
+// PIN policy (config.json `pin`) and the lockout (pin_guard.h).
+uint32_t g_lock_seconds = 600;
+bool g_has_wipe = false;
+uint8_t g_wipe_salt[kWipeSaltSize];
+uint8_t g_wipe_hash[kWipeHashSize];
+void (*g_on_wipe)() = nullptr;
+uint8_t g_failures = 0;
+int64_t g_lock_until_us = 0;  // uptime clock; 0: not locked
 
 // PSRAM: the records, their serialized plaintext and the file body.
 Record *g_slots = nullptr;
@@ -64,6 +75,101 @@ void *PsramCalloc(size_t size) {
 int64_t Now() {
     const time_t now = time(nullptr);
     return rtc::Believable(now) ? static_cast<int64_t>(now) : 0;
+}
+
+// --- lockout
+
+// NVS: only on a change (a few writes per wrong PIN at most).
+void StoreFailures(uint8_t failures, int64_t deadline_utc) {
+    nvs_handle_t h;
+    if (nvs_open(kNvsNamespace, NVS_READWRITE, &h) != ESP_OK) {
+        return;
+    }
+    nvs_set_u8(h, kNvsFailures, failures);
+    nvs_set_i64(h, kNvsDeadline, deadline_utc);
+    nvs_commit(h);
+    nvs_close(h);
+}
+
+void LoadFailures() {
+    nvs_handle_t h;
+    uint8_t failures = 0;
+    int64_t deadline = 0;
+    if (nvs_open(kNvsNamespace, NVS_READONLY, &h) == ESP_OK) {
+        nvs_get_u8(h, kNvsFailures, &failures);
+        nvs_get_i64(h, kNvsDeadline, &deadline);
+        nvs_close(h);
+    }
+    g_failures = failures;
+    const uint32_t left = LockSecondsAtBoot(failures, deadline, Now(), g_lock_seconds);
+    if (left > 0) {
+        g_lock_until_us = esp_timer_get_time() + static_cast<int64_t>(left) * 1000000;
+        ESP_LOGW(TAG, "PIN entry locked for %u s (%u wrong PINs)", static_cast<unsigned>(left),
+                 static_cast<unsigned>(failures));
+    }
+}
+
+uint32_t LockLeft() {
+    const int64_t left_us = g_lock_until_us - esp_timer_get_time();
+    return left_us > 0 ? static_cast<uint32_t>((left_us + 999999) / 1000000) : 0;
+}
+
+// Before a PIN is checked. A lock that ran out gives kMaxPinTries more tries.
+bool PinEntryAllowed() {
+    if (LockLeft() > 0) {
+        return false;
+    }
+    if (g_failures >= kMaxPinTries) {
+        g_failures = 0;
+        g_lock_until_us = 0;
+        StoreFailures(0, 0);
+    }
+    return true;
+}
+
+void PinRight() {
+    if (g_failures != 0) {
+        g_failures = 0;
+        StoreFailures(0, 0);
+    }
+}
+
+Error PinWrong() {
+    ++g_failures;
+    if (g_failures < kMaxPinTries) {
+        StoreFailures(g_failures, 0);
+        return Error::kWrongPin;
+    }
+    g_lock_until_us = esp_timer_get_time() + static_cast<int64_t>(g_lock_seconds) * 1000000;
+    const int64_t now = Now();
+    StoreFailures(g_failures, now != 0 ? now + g_lock_seconds : 0);
+    ESP_LOGW(TAG, "%u wrong PINs: PIN entry locked for %u s", static_cast<unsigned>(g_failures),
+             static_cast<unsigned>(g_lock_seconds));
+    return Error::kPinLocked;
+}
+
+// --- wipe PIN
+
+void WipeHash(const char *pin, const uint8_t salt[kWipeSaltSize], uint8_t out[kWipeHashSize]) {
+    uint8_t text[kWipeSaltSize + kPinLength];
+    memcpy(text, salt, kWipeSaltSize);
+    memcpy(text + kWipeSaltSize, pin, kPinLength);
+    crypto::Sha256(text, sizeof text, out);
+    Wipe(text, sizeof text);
+}
+
+bool IsWipePin(const char *pin) {
+    if (!g_has_wipe) {
+        return false;
+    }
+    uint8_t hash[kWipeHashSize];
+    WipeHash(pin, g_wipe_salt, hash);
+    uint8_t diff = 0;
+    for (size_t i = 0; i < kWipeHashSize; ++i) {
+        diff |= hash[i] ^ g_wipe_hash[i];
+    }
+    Wipe(hash, sizeof hash);
+    return diff == 0;
 }
 
 void ForgetKey() {
@@ -119,6 +225,21 @@ void Refuse(const char *why) {
     g_state = State::kRefused;
     g_why = why;
     ESP_LOGE(TAG, "%s not loaded: %s", g_path, why);
+}
+
+// The wipe PIN: the store file, its version, the key and the records gone;
+// the next PIN makes a new store. The lockout is cleared too.
+void WipeStore() {
+    g_records->Clear();
+    ForgetKey();
+    storefile::Forget(g_file);
+    g_header = storefile::Header();
+    g_state = State::kLocked;
+    g_why = nullptr;
+    g_failures = 0;
+    g_lock_until_us = 0;
+    StoreFailures(0, 0);
+    ESP_LOGW(TAG, "wipe PIN: %s erased", g_path);
 }
 
 void Opened() {
@@ -257,6 +378,7 @@ esp_err_t Init(const char *dir, size_t capacity) {
     }
     g_records = new (g_records_storage) Records(g_slots, capacity);
     g_state = State::kLocked;
+    LoadFailures();
     // The interim key of earlier firmware (before the PIN): gone.
     nvs_handle_t h;
     if (nvs_open(kNvsNamespace, NVS_READWRITE, &h) == ESP_OK) {
@@ -272,19 +394,44 @@ esp_err_t Init(const char *dir, size_t capacity) {
     return ESP_OK;
 }
 
-Error Unlock(const char *pin) {
-    if (!ValidPin(pin)) {
-        return Error::kBadPin;
+void SetPolicy(const Policy &policy) {
+    uint8_t salt[kWipeSaltSize];
+    uint8_t hash[kWipeHashSize];
+    const bool has_wipe = policy.wipe != nullptr && ParseWipe(policy.wipe, salt, hash);
+    if (g_lock != nullptr) {
+        xSemaphoreTake(g_lock, portMAX_DELAY);
     }
-    if (g_state == State::kOff) {
-        return Error::kLocked;
+    g_lock_seconds = policy.lock_seconds;
+    g_has_wipe = has_wipe;
+    memcpy(g_wipe_salt, salt, sizeof salt);
+    memcpy(g_wipe_hash, hash, sizeof hash);
+    if (g_lock != nullptr) {
+        xSemaphoreGive(g_lock);
     }
-    Guard guard;
+}
+
+void SetWipeHook(void (*on_wipe)()) { g_on_wipe = on_wipe; }
+
+// Under the lock; the wipe hook runs after it.
+static Error UnlockLocked(const char *pin) {
+    if (IsWipePin(pin)) {
+        WipeStore();
+        return Error::kWiped;
+    }
+    if (!PinEntryAllowed()) {
+        return Error::kPinLocked;
+    }
     if (g_state == State::kOpen) {
-        return PinMatches(pin) ? Error::kOk : Error::kWrongPin;  // stays open either way
+        // Stays open either way.
+        if (!PinMatches(pin)) {
+            return PinWrong();
+        }
+        PinRight();
+        return Error::kOk;
     }
     switch (ReadFile(pin)) {
         case Read::kOk:
+            PinRight();
             Opened();
             return Error::kOk;
         case Read::kNew:
@@ -294,6 +441,7 @@ Error Unlock(const char *pin) {
                 g_state = State::kLocked;
                 return Error::kStorage;
             }
+            PinRight();
             ESP_LOGW(TAG, "new store made with this PIN");
             Opened();
             return Error::kOk;
@@ -302,10 +450,28 @@ Error Unlock(const char *pin) {
             g_state = State::kLocked;
             g_why = nullptr;
             ESP_LOGW(TAG, "unlock: wrong PIN");
-            return Error::kWrongPin;
+            return PinWrong();
         default:
             return Error::kLocked;
     }
+}
+
+Error Unlock(const char *pin) {
+    if (!ValidPin(pin)) {
+        return Error::kBadPin;
+    }
+    if (g_state == State::kOff) {
+        return Error::kLocked;
+    }
+    Error e;
+    {
+        Guard guard;
+        e = UnlockLocked(pin);
+    }
+    if (e == Error::kWiped && g_on_wipe != nullptr) {
+        g_on_wipe();
+    }
+    return e;
 }
 
 void Lock() {
@@ -327,8 +493,15 @@ Error ChangePin(const char *old_pin, const char *new_pin) {
         return Error::kLocked;
     }
     Guard guard;
+    if (!PinEntryAllowed()) {
+        return Error::kPinLocked;
+    }
     if (!PinMatches(old_pin)) {
-        return Error::kWrongPin;
+        return PinWrong();
+    }
+    PinRight();
+    if (IsWipePin(new_pin)) {
+        return Error::kPinInUse;
     }
     uint8_t open_key[kKeySize];
     uint8_t open_salt[storefile::kSaltSize];
@@ -345,6 +518,25 @@ Error ChangePin(const char *old_pin, const char *new_pin) {
     }
     Wipe(open_key, sizeof open_key);
     return ok ? Error::kOk : Error::kStorage;
+}
+
+Error MakeWipe(const char *pin, char out[kWipeTextSize]) {
+    if (!ValidPin(pin)) {
+        return Error::kBadPin;
+    }
+    if (g_state != State::kOpen) {
+        return Error::kLocked;
+    }
+    Guard guard;
+    if (PinMatches(pin)) {
+        return Error::kPinInUse;
+    }
+    uint8_t salt[kWipeSaltSize];
+    uint8_t hash[kWipeHashSize];
+    crypto::Random(salt, sizeof salt);
+    WipeHash(pin, salt, hash);
+    FormatWipe(salt, hash, out);
+    return Error::kOk;
 }
 
 Info GetInfo() {
@@ -364,6 +556,9 @@ Info GetInfo() {
     info.file_size = storefile::FileSize(g_file);
     info.kdf_iterations = g_state == State::kOpen ? g_iterations : 0;
     info.unlock_ms = g_unlock_ms;
+    info.pin_failures = g_failures;
+    info.lock_left_s = LockLeft();
+    info.wipe_set = g_has_wipe;
     return info;
 }
 
@@ -420,6 +615,9 @@ Error Reset(const char *pin) {
         return pin == nullptr ? Error::kLocked : Error::kBadPin;
     }
     Guard guard;
+    if (pin != nullptr && IsWipePin(pin)) {
+        return Error::kPinInUse;
+    }
     if (pin != nullptr && DeriveNew(pin) != ESP_OK) {
         return Error::kStorage;
     }

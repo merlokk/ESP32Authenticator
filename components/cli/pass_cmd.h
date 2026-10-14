@@ -21,6 +21,7 @@ int CmdPass(int argc, char **argv);
 //   pin <6 digits>             unlock (no store yet: makes one with this PIN)
 //   pin change <old> <new>
 //   pin lock                   wipe the key and the records from memory
+//   pin wipe set <pin> | off   the wipe PIN (config.json pin.wipe: salted hash)
 int CmdPin(int argc, char **argv);
 
 // The `pass info` readout (used by `devstatus`).

@@ -81,6 +81,19 @@ uint32_t KeptVersion(const File &file) {
     return v;
 }
 
+void Forget(const File &file) {
+    char tmp[kPathMax];
+    TmpPath(file, tmp);
+    remove(tmp);
+    remove(file.path);
+    nvs_handle_t h;
+    if (nvs_open(file.nvs_namespace, NVS_READWRITE, &h) == ESP_OK) {
+        nvs_erase_key(h, kNvsVersion);
+        nvs_commit(h);
+        nvs_close(h);
+    }
+}
+
 size_t FileSize(const File &file) {
     struct stat st;
     return stat(file.path, &st) == 0 ? static_cast<size_t>(st.st_size) : 0;

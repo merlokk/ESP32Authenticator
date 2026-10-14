@@ -502,6 +502,9 @@ int CmdShow(int, char **) {
     if (masked.web.password[0] != '\0') {
         snprintf(masked.web.password, config::kWebPasswordSize, "***");
     }
+    if (masked.pin.wipe[0] != '\0') {
+        snprintf(masked.pin.wipe, config::kWipeSize, "***");
+    }
     if (masked.test.pin[0] != '\0') {
         snprintf(masked.test.pin, config::kPinSize, "***");
     }

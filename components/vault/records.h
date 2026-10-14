@@ -52,6 +52,9 @@ enum class Error : uint8_t {
     kStorage,   // the file could not be written: the change is undone
     kBadPin,    // not 6 digits
     kWrongPin,  // the file does not decrypt with it
+    kPinLocked,  // too many wrong PINs: wait (Info::lock_left_s)
+    kPinInUse,   // the PIN and the wipe PIN must differ
+    kWiped,      // the wipe PIN: everything erased
 };
 
 inline constexpr size_t kPinLength = 6;

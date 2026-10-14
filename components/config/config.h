@@ -37,6 +37,8 @@ constexpr size_t kErrorSize = 96;
 
 constexpr size_t kIpTextSize = 16;  // "255.255.255.255" + NUL
 constexpr size_t kPinSize = 7;       // 6 digits + NUL
+constexpr size_t kWipeSize = 98;     // "<32 hex salt>:<64 hex SHA-256>" + NUL
+constexpr uint16_t kMaxLockMinutes = 1440;
 constexpr size_t kZoneSize = 41;     // zone name or POSIX rule (tz::kMaxPosixLength)
 constexpr size_t kHostSize = 64;     // SNTP server: host name or IPv4
 constexpr uint8_t kMaxSyncHours = 168;
@@ -121,6 +123,13 @@ struct Led {
     uint8_t idle_percent;  // 0..100, resting states (the ready breath)
 };
 
+// The vault PIN (x4-design.md): the lock after 10 wrong PINs, and the wipe
+// PIN, kept only as a salted hash (set by `pin wipe set`).
+struct Pin {
+    uint16_t lock_minutes;  // 1..1440
+    char wipe[kWipeSize];   // empty: no wipe PIN
+};
+
 // Development and testing aids. Plain text in config.json: never on a
 // device that holds real secrets.
 struct Test {
@@ -134,6 +143,7 @@ struct Data {
     Web web;
     Time time;
     Led led;
+    Pin pin;
     Test test;
 };
 
@@ -172,6 +182,7 @@ bool ValidPassword(const char *password);  // empty, 8..63 chars or 64 hex digit
 bool ValidApPassword(const char *password);  // empty or 8..63 chars
 bool ValidWebUser(const char *user);         // 0..32 chars, no ':'
 bool ValidTestPin(const char *pin);          // empty or 6 digits
+bool ValidWipe(const char *wipe);            // empty or "<32 hex>:<64 hex>"
 bool ValidZone(const char *zone);            // a known zone name or a POSIX rule
 bool ValidHost(const char *host);            // empty, or a host name / IPv4: a-z 0-9 '-' '.'
 

@@ -226,8 +226,9 @@ const esp_console_cmd_t kCommands[] = {
     {
         .command = "pin",
         .help = "Vault PIN (6 digits; the key of vault.bin): [info] | <pin> to unlock (no store: "
-                "makes one) | change <old> <new> | lock",
-        .hint = "[info | <pin> | change <old> <new> | lock]",
+                "makes one; the wipe PIN erases everything) | change <old> <new> | lock | "
+                "wipe set <pin> | wipe off",
+        .hint = "[info | <pin> | change <old> <new> | lock | wipe set <pin> | wipe off]",
         .func = &CmdPin,
         .argtable = nullptr,
         .func_w_context = nullptr,

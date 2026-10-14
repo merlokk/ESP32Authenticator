@@ -62,6 +62,7 @@ add_executable(host_test
     ../components/totp/totp.cpp
     ../components/storefile/store_header.cpp
     ../components/vault/records.cpp
+    ../components/vault/pin_guard.cpp
 
     "${CJSON_DIR}/cJSON.c"
     "${UNITY_DIR}/unity.c"

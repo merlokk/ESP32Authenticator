@@ -3,6 +3,7 @@
 
 #include <cstring>
 
+#include "pin_guard.h"
 #include "records.h"
 #include "unity.h"
 
@@ -149,6 +150,62 @@ void test_vault_pin_is_six_digits(void) {
     TEST_ASSERT_FALSE(vault::ValidPin(""));
 }
 
+void test_vault_no_lock_below_ten_failures(void) {
+    TEST_ASSERT_EQUAL_UINT32(0, vault::LockSecondsAtBoot(9, 5000, 1000, 600));
+    TEST_ASSERT_EQUAL_UINT32(0, vault::LockSecondsAtBoot(0, 0, 0, 600));
+}
+
+void test_vault_lock_resumes_where_it_was_with_a_known_clock(void) {
+    TEST_ASSERT_EQUAL_UINT32(250, vault::LockSecondsAtBoot(10, 1250, 1000, 600));
+    TEST_ASSERT_EQUAL_UINT32(0, vault::LockSecondsAtBoot(10, 1000, 1000, 600));  // over
+    TEST_ASSERT_EQUAL_UINT32(0, vault::LockSecondsAtBoot(12, 900, 1000, 600));
+}
+
+void test_vault_lock_starts_again_without_a_clock_or_with_one_moved_back(void) {
+    TEST_ASSERT_EQUAL_UINT32(600, vault::LockSecondsAtBoot(10, 0, 1000, 600));
+    TEST_ASSERT_EQUAL_UINT32(600, vault::LockSecondsAtBoot(10, 1250, 0, 600));
+    // A deadline further than a full lock: the clock went back.
+    TEST_ASSERT_EQUAL_UINT32(600, vault::LockSecondsAtBoot(10, 100000, 1000, 600));
+}
+
+void test_vault_wipe_text_round_trips(void) {
+    uint8_t salt[vault::kWipeSaltSize];
+    uint8_t hash[vault::kWipeHashSize];
+    for (size_t i = 0; i < sizeof salt; ++i) salt[i] = static_cast<uint8_t>(i * 17);
+    for (size_t i = 0; i < sizeof hash; ++i) hash[i] = static_cast<uint8_t>(255 - i);
+    char text[vault::kWipeTextSize];
+    vault::FormatWipe(salt, hash, text);
+    TEST_ASSERT_EQUAL_UINT32(vault::kWipeTextSize - 1, strlen(text));
+    TEST_ASSERT_EQUAL_CHAR(':', text[32]);
+    TEST_ASSERT_EQUAL_STRING_LEN("0011223344", text, 10);
+    uint8_t salt2[vault::kWipeSaltSize];
+    uint8_t hash2[vault::kWipeHashSize];
+    TEST_ASSERT_TRUE(vault::ParseWipe(text, salt2, hash2));
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(salt, salt2, sizeof salt);
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(hash, hash2, sizeof hash);
+}
+
+void test_vault_wipe_text_must_be_exact(void) {
+    uint8_t salt[vault::kWipeSaltSize] = {};
+    uint8_t hash[vault::kWipeHashSize] = {};
+    char text[vault::kWipeTextSize + 1];
+    vault::FormatWipe(salt, hash, text);
+    TEST_ASSERT_TRUE(vault::ParseWipe(text, salt, hash));
+    text[32] = '-';
+    TEST_ASSERT_FALSE(vault::ParseWipe(text, salt, hash));
+    text[32] = ':';
+    text[5] = 'g';
+    TEST_ASSERT_FALSE(vault::ParseWipe(text, salt, hash));
+    text[5] = '0';
+    text[vault::kWipeTextSize - 2] = '\0';  // one short
+    TEST_ASSERT_FALSE(vault::ParseWipe(text, salt, hash));
+    text[vault::kWipeTextSize - 2] = '0';
+    text[vault::kWipeTextSize - 1] = '0';  // one long
+    text[vault::kWipeTextSize] = '\0';
+    TEST_ASSERT_FALSE(vault::ParseWipe(text, salt, hash));
+    TEST_ASSERT_FALSE(vault::ParseWipe("", salt, hash));
+}
+
 void test_vault_clear_wipes_secrets(void) {
     Records r(g_slots, 8);
     r.Add("site", "user", "secret", "", 0, nullptr);
@@ -171,5 +228,10 @@ void RegisterVaultTests(void) {
     RUN_TEST(test_vault_round_trip);
     RUN_TEST(test_vault_parse_refuses_malformed_data);
     RUN_TEST(test_vault_pin_is_six_digits);
+    RUN_TEST(test_vault_no_lock_below_ten_failures);
+    RUN_TEST(test_vault_lock_resumes_where_it_was_with_a_known_clock);
+    RUN_TEST(test_vault_lock_starts_again_without_a_clock_or_with_one_moved_back);
+    RUN_TEST(test_vault_wipe_text_round_trips);
+    RUN_TEST(test_vault_wipe_text_must_be_exact);
     RUN_TEST(test_vault_clear_wipes_secrets);
 }

@@ -68,6 +68,8 @@ status changes, a full refresh now and then against ghosting (driver's choice).
   (as `fido2 reset`) and the key in RAM when typed on the PIN pad.
   It has to be checked before anything is decrypted, so config keeps only a
   salted hash of it, never the PIN; it must differ from the real PIN.
+  Done on the console (`pin`, `pin wipe set`): the store file and its kept
+  version go, so the next PIN makes a new, empty store.
 
 ## Store file and sync
 

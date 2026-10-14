@@ -9,6 +9,7 @@
 
 #include "clock_math.h"
 #include "codes.h"
+#include "config.h"
 #include "subcommand.h"
 #include "vault.h"
 
@@ -33,8 +34,21 @@ int Failed(vault::Error e) {
             return 1;
         }
     }
+    const vault::Info info = vault::GetInfo();
+    if (e == vault::Error::kWrongPin) {
+        printf("wrong PIN: %u of %u tries left before a %u-minute lock\n",
+               static_cast<unsigned>(vault::kMaxPinTries - info.pin_failures),
+               static_cast<unsigned>(vault::kMaxPinTries),
+               static_cast<unsigned>(config::Get().pin.lock_minutes));
+        return 1;
+    }
+    if (e == vault::Error::kPinLocked) {
+        printf("too many wrong PINs: PIN entry locked for %u s more\n",
+               static_cast<unsigned>(info.lock_left_s));
+        return 1;
+    }
     printf("%s%s\n", vault::Describe(e),
-           e == vault::Error::kLocked && vault::GetInfo().state == vault::State::kLocked
+           e == vault::Error::kLocked && info.state == vault::State::kLocked
                ? ": enter the PIN ('pin <6 digits>')"
                : "");
     return 1;
@@ -296,7 +310,39 @@ int CmdPinInfo() {
     } else if (info.state == vault::State::kLocked) {
         printf("enter it: pin <6 digits>\n");
     }
+    printf("tries      %u wrong in a row of %u; ", static_cast<unsigned>(info.pin_failures),
+           static_cast<unsigned>(vault::kMaxPinTries));
+    if (info.lock_left_s > 0) {
+        printf("locked for %u s more\n", static_cast<unsigned>(info.lock_left_s));
+    } else {
+        printf("then a %u-minute lock\n", static_cast<unsigned>(config::Get().pin.lock_minutes));
+    }
+    printf("wipe PIN   %s\n", info.wipe_set ? "set (erases the store and FIDO2 when entered)"
+                                             : "not set ('pin wipe set <pin>')");
     return 0;
+}
+
+// pin wipe set <pin> | pin wipe off: config.json `pin.wipe`, saved at once.
+int CmdPinWipe(int argc, char **argv) {
+    config::Pin &cfg = config::Get().pin;
+    if (argc == 3 && strcmp(argv[2], "off") == 0) {
+        cfg.wipe[0] = '\0';
+    } else if (argc == 4 && strcmp(argv[2], "set") == 0) {
+        char text[vault::kWipeTextSize];
+        const vault::Error e = vault::MakeWipe(argv[3], text);
+        if (e != vault::Error::kOk) {
+            return Failed(e);
+        }
+        snprintf(cfg.wipe, sizeof cfg.wipe, "%s", text);
+    } else {
+        printf("usage: pin wipe set <pin> | pin wipe off\n");
+        return 1;
+    }
+    vault::SetPolicy({static_cast<uint32_t>(cfg.lock_minutes) * 60, cfg.wipe});
+    const esp_err_t err = config::Save();
+    printf("wipe PIN %s%s\n", cfg.wipe[0] ? "set" : "off",
+           err == ESP_OK ? ", saved" : ": config.json NOT saved");
+    return err == ESP_OK ? 0 : 1;
 }
 
 }  // namespace
@@ -310,6 +356,9 @@ int CmdPin(int argc, char **argv) {
         printf("locked: key and records wiped from memory\n");
         return 0;
     }
+    if (argc >= 2 && strcmp(argv[1], "wipe") == 0) {
+        return CmdPinWipe(argc, argv);
+    }
     if (argc == 4 && strcmp(argv[1], "change") == 0) {
         const vault::Error e = vault::ChangePin(argv[2], argv[3]);
         if (e != vault::Error::kOk) {
@@ -321,6 +370,10 @@ int CmdPin(int argc, char **argv) {
     if (argc == 2) {
         const bool had_store = vault::GetInfo().file_size != 0;
         const vault::Error e = vault::Unlock(argv[1]);
+        if (e == vault::Error::kWiped) {
+            printf("%s\n", vault::Describe(e));
+            return 0;
+        }
         if (e != vault::Error::kOk) {
             return Failed(e);
         }
@@ -329,7 +382,8 @@ int CmdPin(int argc, char **argv) {
                static_cast<unsigned>(info.count));
         return 0;
     }
-    printf("usage: pin [info] | pin <6 digits> | pin change <old> <new> | pin lock\n");
+    printf("usage: pin [info] | pin <6 digits> | pin change <old> <new> | pin lock | "
+           "pin wipe set <pin> | pin wipe off\n");
     return 1;
 }
 
