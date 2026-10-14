@@ -1,7 +1,7 @@
 # X4 Pro: functions and screen design
 
-Target design for the XTEINK X4 Pro (e-ink 800x480, 1-bit, GT911 touch, Left /
-Right / Power buttons, frontlight, microSD). Status per function:
+Target design for the XTEINK X4 Pro (e-ink 480x800 portrait, 1-bit, GT911
+touch, Left / Right / Power buttons, frontlight, microSD). Status per function:
 [architecture.md](architecture.md#functionality).
 
 ## Today
@@ -16,22 +16,27 @@ the console, the configuration site, the BLE keyboard and `totp` on the console.
 | FIDO2 key | CTAP 2.1 over BLE and USB; user presence: a button (later: a tap) |
 | PIN lock | the screen is locked by a PIN; the same PIN derives the storage key (option B / C in [storage-encryption.md](storage-encryption.md)), so nothing opens without it |
 | Password manager | records: site (name), login, password, TOTP secret; typed into the host over the BLE keyboard |
-| Encrypted store | one `.bin` file: records + settings, AES-256-GCM, with a data version |
-| Sync | over the internet; service not chosen yet (may be our own). The newer data version replaces the older one |
+| Encrypted store | one `.bin` file: records + settings, AES-256-GCM, with a counter and a modification time |
+| Sync | over the internet; service not chosen yet (may be our own). The copy changed last wins (see below) |
 | Settings | frontlight, Wi-Fi; more later |
 
 ## Screen
 
+Portrait, 480x800. The panel scans landscape (hardware.md): the driver rotates.
+
 ```
-+--------------------------------------------------------------+
-| Wi-Fi  BT  battery  SD  storage(sync)              12:34     |  status bar
-+--------------------------------------------------------------+
-| github.com      user@mail                                    |
-| mail.google.com user@gmail.com                               |  credential list
-| ...                                                          |  (one row per record)
-+--------------------------------------------------------------+
-|   <       [1]  2   3   4       >                             |  pages
-+--------------------------------------------------------------+
++------------------------------+
+| WiFi BT bat SD sync   12:34  |  status bar
++------------------------------+
+| github.com                   |
+|   user@mail                  |
+| mail.google.com              |  credential list
+|   user@gmail.com             |  (one row per record)
+| ...                          |
+|                              |
++------------------------------+
+|  <   [1]  2   3   4   >      |  pages of the list
++------------------------------+
 ```
 
 - **Status bar**: Wi-Fi, Bluetooth (host connected), battery, SD card,
@@ -49,14 +54,22 @@ status changes, a full refresh now and then against ghosting (driver's choice).
 
 ## Store file and sync
 
-- One encrypted `.bin` (records and settings): header with format version and
-  **data version**, then AES-256-GCM (format: storage-encryption.md).
-- The data version grows with every change. Sync: whichever copy has the
-  higher version wins and overwrites the other.
+- One encrypted `.bin` (records and settings). Header: format version,
+  **counter**, **modification time** (UTC), then AES-256-GCM (format:
+  storage-encryption.md). The header is authenticated (GCM associated data):
+  counter and time cannot be edited without the key.
+- Every change: counter + 1, modification time = now.
+- **Sync**: the copy with the later modification time wins, also when both
+  copies were changed (on two devices) since the last sync; equal times: the
+  higher counter. The result is written with counter = max(both) + 1, so it is
+  above what either device has seen.
+- **Rollback**: the device keeps the highest counter it has accepted in NVS. A
+  `.bin` with a lower counter is invalid (an old copy put back on the SD card
+  or served by the sync service).
 
 ## Open questions
 
-- Sync: the service; edits on two copies from the same version (the higher
-  version silently wins); detecting a rolled-back file (stored version in NVS).
+- Sync service.
+- An edit without a believable time (no SNTP yet, no RTC driver): refuse it,
+  or keep the edit and let it lose every comparison until the time is known.
 - PIN: length, attempts before wipe / delay; whether FIDO2 also waits for unlock.
-- Panel orientation (landscape 800x480 or portrait 480x800).

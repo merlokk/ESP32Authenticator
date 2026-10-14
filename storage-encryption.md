@@ -42,8 +42,10 @@ eFuse HMAC key (`CONFIG_NVS_SEC_KEY_PROTECT_USING_HMAC`): fits A or C.
   PKCS#7 padding and a separate HMAC.
 - File: `magic+version (4) | nonce (12, random per write) | ciphertext | tag (16)`:
   +32 B. Never reuse a nonce with the same key.
-- Rollback to an older valid file is not detected by GCM: a version counter in
-  NVS (or eFuse) would be needed.
+- Rollback to an older valid file is not detected by GCM: the header carries a
+  counter and a modification time (authenticated as GCM associated data), the
+  highest accepted counter is kept in NVS, and a file below it is invalid.
+  Sync: the later modification time wins (x4-design.md).
 
 ## Speed
 
