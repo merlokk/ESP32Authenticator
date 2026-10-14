@@ -54,7 +54,33 @@ char *FieldOf(Record &r, Field field) {
     }
 }
 
+bool StartsWithNoCase(const char *text, const char *prefix) {
+    for (; *prefix != '\0'; ++text, ++prefix) {
+        if (Lower(*text) != *prefix) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// "base64:<Base64>": stored as Base32 like any other.
+Error CheckBase64Otp(const char *value, char *out) {
+    uint8_t key[totp::kMaxKeyBytes];
+    const size_t bytes = totp::Base64Decode(value, key, sizeof key);
+    const bool fits = totp::Base32Encode(key, bytes, out, kOtpMax + 1);
+    Wipe(key, sizeof key);
+    if (bytes == 0 || !fits) {
+        out[0] = '\0';
+        return bytes == 0 ? Error::kBadOtp : Error::kTooLong;
+    }
+    return Error::kOk;
+}
+
 Error CheckOtp(const char *value, char *out) {
+    static constexpr char kBase64[] = "base64:";
+    if (StartsWithNoCase(value, kBase64)) {
+        return CheckBase64Otp(value + sizeof kBase64 - 1, out);
+    }
     size_t n = 0;
     for (const char *p = value; *p != '\0'; ++p) {
         if (*p == ' ' || *p == '-' || *p == '=') {
@@ -106,7 +132,7 @@ const char *Describe(Error error) {
         case Error::kBadText:
             return "control characters are not allowed";
         case Error::kBadOtp:
-            return "the TOTP secret is not Base32 (A-Z, 2-7)";
+            return "the TOTP secret is not Base32 (A-Z, 2-7) or base64:<Base64>";
         case Error::kDuplicate:
             return "this site already has this user";
         case Error::kFull:

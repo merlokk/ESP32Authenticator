@@ -639,15 +639,28 @@
       var site = input("text", record ? record.site : "");
       var user = input("text", record ? record.user : "");
       var pass = input("password", "", record ? (record.password ? "unchanged" : "none") : "none");
-      var otp = input("password", "", record ? (record.otp ? "unchanged" : "none") : "Base32, none if empty");
+      var otp = input("password", "", record ? (record.otp ? "unchanged" : "none") : "none if empty");
       box.appendChild(field("Site", site));
       box.appendChild(field("User", user));
       var row = field("Password", pass);
       row.appendChild(revealer(pass));
       box.appendChild(row);
       row = field("TOTP", otp);
+      // The secret as given: Base32 (authenticator apps) or Base64; the
+      // device keeps Base32 either way.
+      var format = el("button", "reveal", "Base32");
+      format.type = "button";
+      format.title = "the secret's encoding";
+      format.addEventListener("click", function () {
+        format.textContent = format.textContent === "Base32" ? "Base64" : "Base32";
+      });
+      row.appendChild(format);
       row.appendChild(revealer(otp));
       box.appendChild(row);
+      function secret() {
+        var value = otp.value.trim();
+        return value && format.textContent === "Base64" ? "base64:" + value : value;
+      }
 
       var actions = el("div", "row-actions");
       var save = el("button", "btn small", record ? "Save" : "Add");
@@ -655,7 +668,7 @@
       save.addEventListener("click", function () {
         if (!record) {
           send("/api/vault/add", { site: site.value.trim(), user: user.value.trim(),
-                                   password: pass.value, otp: otp.value.trim() },
+                                   password: pass.value, otp: secret() },
                function () { state.adding = false; }, "added");
           return;
         }
@@ -663,7 +676,7 @@
         if (site.value.trim() !== record.site) { body.site = site.value.trim(); any = true; }
         if (user.value.trim() !== record.user) { body.user = user.value.trim(); any = true; }
         if (pass.value !== "") { body.password = pass.value; any = true; }
-        if (otp.value.trim() !== "") { body.otp = otp.value.trim(); any = true; }
+        if (otp.value.trim() !== "") { body.otp = secret(); any = true; }
         if (!any) { said("nothing changed", "warn"); return; }
         send("/api/vault/set", body, function () { delete state.open[record.id]; }, "saved");
       });

@@ -76,6 +76,37 @@ void test_totp_base32(void) {
     TEST_ASSERT_EQUAL_MEMORY("f", out, 1);
 }
 
+void test_totp_base64(void) {
+    uint8_t out[64] = {};
+    // RFC 4648 section 10.
+    TEST_ASSERT_EQUAL_UINT32(6, totp::Base64Decode("Zm9vYmFy", out, sizeof out));
+    TEST_ASSERT_EQUAL_MEMORY("foobar", out, 6);
+    TEST_ASSERT_EQUAL_UINT32(4, totp::Base64Decode("Zm9vYg==", out, sizeof out));
+    TEST_ASSERT_EQUAL_MEMORY("foob", out, 4);
+    TEST_ASSERT_EQUAL_UINT32(5, totp::Base64Decode("Zm9v YmE", out, sizeof out));
+    // Standard and URL-safe alphabets.
+    TEST_ASSERT_EQUAL_UINT32(3, totp::Base64Decode("+/+/", out, sizeof out));
+    TEST_ASSERT_EQUAL_UINT32(0xFB, out[0]);
+    TEST_ASSERT_EQUAL_UINT32(3, totp::Base64Decode("-_-_", out, sizeof out));
+    TEST_ASSERT_EQUAL_UINT32(0xFB, out[0]);
+    TEST_ASSERT_EQUAL_UINT32(0, totp::Base64Decode("", out, sizeof out));
+    TEST_ASSERT_EQUAL_UINT32(0, totp::Base64Decode("Zm9v!", out, sizeof out));
+    TEST_ASSERT_EQUAL_UINT32(0, totp::Base64Decode("Zm9vY", out, sizeof out));  // stray digit
+    TEST_ASSERT_EQUAL_UINT32(0, totp::Base64Decode("Zm9vYmFy", out, 5));         // overflow
+}
+
+void test_totp_base32_encode(void) {
+    char text[40];
+    TEST_ASSERT_TRUE(totp::Base32Encode(reinterpret_cast<const uint8_t *>("foobar"), 6, text,
+                                        sizeof text));
+    TEST_ASSERT_EQUAL_STRING("MZXW6YTBOI", text);  // RFC 4648 without padding
+    TEST_ASSERT_TRUE(totp::Base32Encode(reinterpret_cast<const uint8_t *>("f"), 1, text,
+                                        sizeof text));
+    TEST_ASSERT_EQUAL_STRING("MY", text);
+    TEST_ASSERT_FALSE(totp::Base32Encode(reinterpret_cast<const uint8_t *>("foobar"), 6, text,
+                                         10));  // no room for the NUL
+}
+
 void test_totp_base32_rejects(void) {
     uint8_t out[4];
     TEST_ASSERT_EQUAL_UINT32(0, totp::Base32Decode("", out, sizeof out));
@@ -107,5 +138,7 @@ void RegisterTotpTests(void) {
     RUN_TEST(test_totp_counter_and_message);
     RUN_TEST(test_totp_base32);
     RUN_TEST(test_totp_base32_rejects);
+    RUN_TEST(test_totp_base64);
+    RUN_TEST(test_totp_base32_encode);
     RUN_TEST(test_totp_windows);
 }

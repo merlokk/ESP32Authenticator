@@ -55,6 +55,26 @@ void test_vault_fields_are_checked(void) {
     TEST_ASSERT_EQUAL_UINT32(1, r.Count());
 }
 
+void test_vault_otp_from_base64_is_kept_as_base32(void) {
+    Record slots[2];
+    Records r(slots, 2);
+    // "Hello!\xde\xad\xbe\xef" = JBSWY3DPEHPK3PXP in Base32.
+    TEST_ASSERT_EQUAL(Error::kOk, r.Add("a", "u", "", "base64:SGVsbG8h3q2+7w==", 0, nullptr));
+    TEST_ASSERT_EQUAL_STRING("JBSWY3DPEHPK3PXP", r.At(0).otp);
+    TEST_ASSERT_EQUAL(Error::kOk, r.Add("b", "u", "", "BASE64:SGVsbG8h3q2-7w", 0, nullptr));
+    TEST_ASSERT_EQUAL_STRING("JBSWY3DPEHPK3PXP", r.At(1).otp);
+    char out[vault::kOtpMax + 1];
+    TEST_ASSERT_EQUAL(Error::kBadOtp, vault::CheckField(Field::kOtp, "base64:", out));
+    TEST_ASSERT_EQUAL(Error::kBadOtp, vault::CheckField(Field::kOtp, "base64:a!b", out));
+    // 40 bytes fit (64 Base32 digits), 41 do not.
+    char text[80] = "base64:";
+    for (int i = 0; i < 54; ++i) std::strcat(text, "A");  // 40 bytes
+    TEST_ASSERT_EQUAL(Error::kOk, vault::CheckField(Field::kOtp, text, out));
+    TEST_ASSERT_EQUAL_UINT32(64, std::strlen(out));
+    std::strcat(text, "AA");
+    TEST_ASSERT_EQUAL(Error::kTooLong, vault::CheckField(Field::kOtp, text, out));
+}
+
 void test_vault_otp_is_normalized_base32(void) {
     Records r(g_slots, 8);
     TEST_ASSERT_EQUAL(Error::kOk, r.Add("a", "u", "", "jbsw y3dp-ehpk 3pxp==", 0, nullptr));
@@ -222,6 +242,7 @@ void RegisterVaultTests(void) {
     RUN_TEST(test_vault_the_same_user_on_a_site_is_a_duplicate);
     RUN_TEST(test_vault_fields_are_checked);
     RUN_TEST(test_vault_otp_is_normalized_base32);
+    RUN_TEST(test_vault_otp_from_base64_is_kept_as_base32);
     RUN_TEST(test_vault_full_store_refuses);
     RUN_TEST(test_vault_set_resorts_and_keeps_the_id);
     RUN_TEST(test_vault_remove_and_ids_never_repeat);

@@ -37,7 +37,7 @@ Reference ESP-IDF + LVGL project: `../../ai-remote/approver-esp32` ([GitHub](htt
 | Path | Contents |
 |---|---|
 | `main/` | `app_main`: OTA self-confirm, NVS, SPIFFS, config, console, Wi-Fi manager + web server, BLE autostart |
-| `components/` | app components (`cli`: USB command line; `config`: config.json; `wifimgr`: Wi-Fi policy + manager; `web`: configuration site, see Wi-Fi and web; `fido_ctap`: CTAP 2.1 core, see FIDO2; `timesync`, `timezone`: see Time; `totp`: Base32 secrets and the previous/current/next windows, codes from `crypto::Totp`; `ui`: LVGL, see UI; `storefile`: store file header, load/save with the rollback check; `vault`: passwords, see Passwords) |
+| `components/` | app components (`cli`: USB command line; `config`: config.json; `wifimgr`: Wi-Fi policy + manager; `web`: configuration site, see Wi-Fi and web; `fido_ctap`: CTAP 2.1 core, see FIDO2; `timesync`, `timezone`: see Time; `totp`: Base32 / Base64 secrets and the previous/current/next windows, codes from `crypto::Totp`; `ui`: LVGL, see UI; `storefile`: store file header, load/save with the rollback check; `vault`: passwords, see Passwords) |
 | `lib/` | third-party git submodules, used unmodified (`lionkey`) |
 | `host_test/` | host tests (Unity, MSVC), no board: see Tests |
 | `utils/` | host-side Python tools over the USB console (`device.py`: console session; `spiffs.py`: ls/info/rm/get/put; `ble.py`: ble commands, `kb` text quoting) |
@@ -247,7 +247,7 @@ and never starts without lwIP (an assert).
 | `POST /api/reboot?confirm=reboot` | restart |
 | `GET /api/vault` | store state, PIN tries / lock, records: id, site, user, whether a password / TOTP secret is set, modified. Never a password or secret |
 | `GET /api/vault/totp?id=N` | the record's code for the current window and the seconds left |
-| `POST /api/vault/add\|set\|delete` | `{site, user, password, otp}` / `{id, any of them}` (absent keeps, `otp: ""` removes; all checked before any is written) / `{id}` |
+| `POST /api/vault/add\|set\|delete` | `{site, user, password, otp}` / `{id, any of them}` (absent keeps, `otp: ""` removes; all checked before any is written) / `{id}`. `otp`: Base32, or `base64:<Base64>` (kept as Base32) |
 | `POST /api/vault/unlock\|lock` | `{pin}` (the wipe PIN answers as a wrong one) / `{}` |
 | `GET /api/fido`, `POST /api/fido/delete` | store info and credentials (site, user, resident, made when / by) / `{credential: 64 hex}` |
 
@@ -335,7 +335,8 @@ submodule) behind `ble_fido`. API: `fido_ctap_init(hooks, store)`,
 so no store files on the X4 Pro).
 
 - Records (`records.h`, pure, host-tested): site (1-96 bytes), user (0-96),
-  password (0-128), TOTP secret (Base32, normalized, up to 64 characters);
+  password (0-128), TOTP secret (Base32, normalized, up to 64 characters;
+  `base64:<Base64>` is taken and kept as Base32);
   UTF-8 without control characters. A site may have several users; (site,
   user) is unique without ASCII case. Sorted by site, then user; each record
   has a stable ID (never reused) and its own modification time.

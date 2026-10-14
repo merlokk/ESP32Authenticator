@@ -176,7 +176,8 @@ bool Pick(const char *number, uint32_t *id) {
 
 int CmdAdd(int argc, char **argv) {
     if (argc < 2 || argc > 5) {
-        printf("usage: pass add <site> [user] [password] [otp]\n");
+        printf("usage: pass add <site> [user] [password] [otp]   (otp: Base32, or "
+               "base64:<Base64>)\n");
         return 1;
     }
     uint32_t id = 0;
