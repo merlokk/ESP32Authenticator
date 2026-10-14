@@ -202,6 +202,7 @@ Opening the port with RTS asserted resets the chip.
 | `pass set <#> <site\|user\|password\|otp> [value]` | change a field, no value: clear. Prints the record's new # |
 | `pass delete <#>` / `pass code <#>` | delete a record / its TOTP codes now |
 | `pass reset` / `pass reset confirm [pin]` | say what would go / delete every record. Locked or refused: the PIN is required and becomes the new store's PIN; the way out of a refused file |
+| `nvs ls [namespace]` / `nvs rm <namespace> <key>` | development: NVS keys (namespace, key, type; never values) / erase one key |
 | `pin [info]` | vault locked / open / refused, key derivation (iterations, ms) |
 | `pin <6 digits>` | unlock the vault (nothing is decrypted before); no store yet: makes one with this PIN. `test.pin` in config.json does it at boot |
 | `pin change <old> <new>` / `pin lock` | new PIN (`key.bin` rewritten, the data files stay) / wipe the keys, records and FIDO2 store from memory (FIDO2 off until the PIN) |

@@ -21,6 +21,7 @@
 #include "ui.h"
 #include "fido_cmd.h"
 #include "pass_cmd.h"
+#include "nvs_cmd.h"
 #include "wifi_cmd.h"
 #include "files.h"
 #include "hardware.h"
@@ -230,6 +231,16 @@ const esp_console_cmd_t kCommands[] = {
                 "wipe set <pin> | wipe off",
         .hint = "[info | <pin> | change <old> <new> | lock | wipe set <pin> | wipe off]",
         .func = &CmdPin,
+        .argtable = nullptr,
+        .func_w_context = nullptr,
+        .context = nullptr,
+    },
+    {
+        .command = "nvs",
+        .help = "NVS keys (development): ls [namespace] (names and types, never values) | "
+                "rm <namespace> <key>",
+        .hint = "<ls|rm> [args]",
+        .func = &CmdNvs,
         .argtable = nullptr,
         .func_w_context = nullptr,
         .context = nullptr,
