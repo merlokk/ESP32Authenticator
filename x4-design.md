@@ -39,8 +39,8 @@ the console, the configuration site, the BLE keyboard and `totp` on the console.
 - **List**: records as in a password manager. A tap on a row types into the
   host: left third the login, centre the password, right third the current
   TOTP code.
-- **Pages**: switcher at the bottom, 4 pages for now; the Left / Right
-  buttons flip pages as well.
+- **Pages**: pages of the credential list; switcher at the bottom, 4 pages
+  for now, the Left / Right buttons flip them as well.
 - **Lock screen**: PIN pad (touch), shown at boot and after an idle timeout.
 - **Settings**: frontlight, Wi-Fi.
 
@@ -56,7 +56,6 @@ status changes, a full refresh now and then against ghosting (driver's choice).
 
 ## Open questions
 
-- What the 4 pages are (list pages, or list / settings / ...).
 - Sync: the service; edits on two copies from the same version (the higher
   version silently wins); detecting a rolled-back file (stored version in NVS).
 - PIN: length, attempts before wipe / delay; whether FIDO2 also waits for unlock.
