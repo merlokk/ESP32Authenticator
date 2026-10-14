@@ -18,7 +18,8 @@ Firmware: C/C++ on **ESP-IDF**.
   (`fido2 info|list|delete|reset`) and the store on the web front page; Wi-Fi
   client / AP / AP+client with static IPs and an internet check; configuration
   web site; USB console; `config.json`; time (SNTP, time zones, `rtc::Clock`
-  on the CPU timer); board classes chosen in `devices/config.h`.
+  on the CPU timer); board classes chosen in `devices/config.h`; WS2812 LED (red at boot,
+  green breathing when ready).
 - Not yet: BM8563 RTC driver, e-ink UI (LVGL), encrypted storage, credential
   records (site/login/password/TOTP), sync over Wi-Fi, microSD config.
 

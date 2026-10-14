@@ -12,6 +12,7 @@
 #include "clock_math.h"
 #include "config.h"
 #include "freertos/FreeRTOS.h"
+#include "led.h"
 #include "freertos/task.h"
 #include "subcommand.h"
 #include "timesync.h"
@@ -303,6 +304,85 @@ int CmdDate(int argc, char **argv) {
 
 int CmdBoard(int, char **) {
     boards::PrintInfo();
+    return 0;
+}
+
+namespace {
+
+struct NamedColour {
+    const char *name;
+    led::Rgb rgb;
+};
+
+constexpr NamedColour kColours[] = {
+    {"off", led::colour::kOff},       {"white", led::colour::kWhite},
+    {"red", led::colour::kRed},       {"green", led::colour::kGreen},
+    {"blue", led::colour::kBlue},     {"amber", led::colour::kAmber},
+    {"yellow", led::colour::kYellow}, {"cyan", led::colour::kCyan},
+    {"magenta", led::colour::kMagenta},
+};
+
+constexpr led::Effect kEffects[] = {led::Effect::kSolid,     led::Effect::kBeacon,
+                                    led::Effect::kSlowBlink, led::Effect::kNormBlink,
+                                    led::Effect::kFastBlink, led::Effect::kBreathe};
+
+const char *ColourName(led::Rgb rgb) {
+    for (const NamedColour &c : kColours) {
+        if (c.rgb == rgb) {
+            return c.name;
+        }
+    }
+    return "custom";
+}
+
+}  // namespace
+
+int CmdLed(int argc, char **argv) {
+    if (boards::kBoard.led == boards::LedType::kNone) {
+        printf("this board has no LED\n");
+        return 1;
+    }
+    if (!led::Ready()) {
+        printf("led        not running: the UART did not come up\n");
+        return 1;
+    }
+    if (argc == 1) {
+        const led::Status s = led::Get();
+        printf("led        %s on GPIO%d\n", boards::Name(boards::kBoard.led),
+               boards::kBoard.led_pins.data);
+        printf("showing    %s (%u,%u,%u), %s%s\n", ColourName(s.colour),
+               static_cast<unsigned>(s.colour.r), static_cast<unsigned>(s.colour.g),
+               static_cast<unsigned>(s.colour.b), led::EffectName(s.effect),
+               s.overriding ? ", for a while" : "");
+        printf("ceilings   %u%% normal, %u%% idle\n", static_cast<unsigned>(s.percent),
+               static_cast<unsigned>(s.idle_percent));
+        printf("wire       %" PRIu32 " writes, %" PRIu32 " failed\n", s.writes, s.write_failures);
+        printf("stack      %" PRIu32 " B free\n", s.stack_low_water);
+        return 0;
+    }
+    const NamedColour *colour = nullptr;
+    for (const NamedColour &c : kColours) {
+        if (strcmp(argv[1], c.name) == 0) {
+            colour = &c;
+        }
+    }
+    led::Effect effect = led::Effect::kSolid;
+    bool effect_ok = argc < 3;
+    for (led::Effect e : kEffects) {
+        if (argc >= 3 && strcmp(argv[2], led::EffectName(e)) == 0) {
+            effect = e;
+            effect_ok = true;
+        }
+    }
+    const long seconds = argc >= 4 ? strtol(argv[3], nullptr, 10) : 5;
+    if (colour == nullptr || !effect_ok || seconds < 1 || seconds > 600 || argc > 4) {
+        printf("usage: led <colour> [effect] [seconds 1..600]\n");
+        printf("  colours: off white red green blue amber yellow cyan magenta\n");
+        printf("  effects: solid beacon slow blink fast breathe\n");
+        return 1;
+    }
+    led::SetFor(colour->rgb, effect, static_cast<uint32_t>(seconds) * 1000);
+    printf("%s, %s, for %ld s\n", colour->name, led::EffectName(effect), seconds);
     return 0;
 }
 

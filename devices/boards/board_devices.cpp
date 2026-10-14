@@ -7,6 +7,7 @@
 #include "clock_math.h"
 #include "esp_log.h"
 #include "esp_rtc_time.h"
+#include "led.h"
 #include "timer_clock.h"
 
 namespace boards {
@@ -14,6 +15,9 @@ namespace boards {
 namespace {
 
 constexpr const char *TAG = "board";
+
+// UART1: UART0 is the ROM's and the default console's.
+constexpr uart_port_t kLedUart = UART_NUM_1;
 
 rtc::TimerClock timer_clock;
 rtc::Clock *active_clock = &timer_clock;
@@ -34,6 +38,12 @@ void PrintUtc(const char *label, int64_t utc_us) {
 
 esp_err_t Init() {
     ESP_LOGI(TAG, "%s", kBoard.name);
+    if (kBoard.led == LedType::kWs2812 &&
+        led::Init(kLedUart, static_cast<gpio_num_t>(kBoard.led_pins.data)) == ESP_OK) {
+        // Red solid while booting: a dark board is a hardware fault, a red one
+        // is running firmware, and it shows a reset from across the room.
+        led::Set(led::colour::kRed, led::Effect::kSolid);
+    }
     if (kBoard.hw_clock != HwClockType::kNone) {
         // TODO: BM8563 driver; until then the time is lost at power-off.
         ESP_LOGW(TAG, "no %s driver yet, using the %s", Name(kBoard.hw_clock), timer_clock.Name());
@@ -45,6 +55,12 @@ esp_err_t Init() {
     }
     rtc::SetSystemTimeFrom(*active_clock);
     return ESP_OK;
+}
+
+void BootDone() {
+    if (led::Ready()) {
+        led::SetIdle(led::colour::kGreen, led::Effect::kBreathe);
+    }
 }
 
 rtc::Clock &Clock() { return *active_clock; }

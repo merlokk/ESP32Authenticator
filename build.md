@@ -76,7 +76,7 @@ host_test\run.cmd [suite...]   # host tests, no board (MSVC); see architecture.m
 ```
 
 Suites: `config`, `wifi_policy`, `reachability`, `web_auth`, `web_paths`,
-`web_settings`, `clock`, `boards`, `timesync`, `timezone`. Run them after any change to those components.
+`web_settings`, `clock`, `boards`, `timesync`, `timezone`, `led`. Run them after any change to those components.
 
 `tests/fido2/`: CTAP2 authenticator suite (pytest + python-fido2,
 `pip install -r tests/fido2/requirements.txt`). Transport-agnostic, checked
@@ -192,6 +192,7 @@ Opening the port with RTS asserted resets the chip.
 | `fido2 delete <#\|id>` | delete one: number from `fido2 list` (1-2 digits) or a unique id prefix (4+ hex digits; numbers shift after a delete) |
 | `fido2 reset` / `fido2 reset confirm` | say what would go / delete every credential and the PIN (counter kept). Waits up to 1 s for a running FIDO request, else "busy" |
 | `board` | the board built for (`devices/config.h`): clock, display, touch, LED, battery, SD, frontlight, button and device pins |
+| `led` / `led <colour> [effect] [seconds]` | the board's WS2812: what it shows, ceilings, writes / show a colour (off white red green blue amber yellow cyan magenta) and effect (solid beacon slow blink fast breathe) for 1..600 s (default 5), then back |
 | `date [info]` | UTC and local time (offset, DST), zone, board clock (kept when off or not, drift from the system clock), sync (server, interval, next, last, step, failures) |
 | `date sync` | ask the time server now and wait for it (up to 20 s) |
 | `date set [utc] <YYYY-MM-DD> <HH:MM:SS>` | set the clock: local time, or UTC with `utc`; written to the board clock too |

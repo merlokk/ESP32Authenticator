@@ -10,9 +10,13 @@
 
 namespace boards {
 
-// Picks the clock (a hardware RTC when the board has one and a driver exists,
-// else the timer clock), seeds the system clock from it. Before config and Wi-Fi.
+// The LED first (red: the firmware is booting), then the clock (a hardware RTC
+// when the board has one and a driver exists, else the timer clock), which
+// seeds the system clock. First thing in app_main.
 esp_err_t Init();
+
+// app_main is done: the LED goes to "ready" (green, breathing, idle ceiling).
+void BootDone();
 
 // The clock that carries UTC across reboots. Valid before Init() too (timer).
 rtc::Clock &Clock();

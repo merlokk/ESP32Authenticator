@@ -12,11 +12,16 @@
 //
 // `board` command: the board this firmware is built for (devices/config.h),
 // its devices and pins.
+//
+// `led` command (boards with a WS2812):
+//   led                                  colour, effect, ceilings, wire counters
+//   led <colour> [effect] [seconds]      show it for a while (default 5 s), then back
 
 namespace console {
 
 int CmdDate(int argc, char **argv);
 int CmdBoard(int argc, char **argv);
+int CmdLed(int argc, char **argv);
 
 // Readout reused by `devstatus`.
 void PrintDateInfo();

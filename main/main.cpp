@@ -59,8 +59,8 @@ void InitFido() {
 }  // namespace
 
 extern "C" void app_main() {
+    boards::Init();  // LED red; the board's clock seeds the system clock (UTC)
     ConfirmRunningApp();
-    boards::Init();  // the board's clock seeds the system clock (UTC)
     InitNvs();
     spiffs_fs::Init();  // not fatal: the console reports an unmounted fs
     // config.json from SPIFFS; built-in defaults if missing/invalid or unmounted.
@@ -82,4 +82,5 @@ extern "C" void app_main() {
     if (config::Get().ble.active) {
         ble::On();
     }
+    boards::BootDone();  // LED: ready
 }

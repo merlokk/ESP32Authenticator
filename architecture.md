@@ -21,7 +21,7 @@ Reference ESP-IDF + LVGL project: `../../ai-remote/approver-esp32` ([GitHub](htt
 | `lib/` | third-party git submodules, used unmodified (`lionkey`) |
 | `host_test/` | host tests (Unity, MSVC), no board: see Tests |
 | `utils/` | host-side Python tools over the USB console (`device.py`: console session; `spiffs.py`: ls/info/rm/get/put; `ble.py`: ble commands, `kb` text quoting) |
-| `devices/` | hardware drivers, one component per device (`hardware`: SoC info, eFuse, USB host connected; `spiffs_fs`: SPIFFS on `spiffs` at `/spiffs`, never formatted, it holds stock data on the X4 Pro; `ble`, `ble_kb`, `ble_fido`: see BLE; `wifi`: the radio (`wifi::Radio`), no decisions, stores nothing; `buttons`: GPIO buttons, polled, pins from the board; `crypto`: hardware RNG, SHA-256, AES-256-CBC via PSA; `clock`: `rtc::Clock`, see Time; `boards`: board classes, see Boards). `devices/config.h`: the board the firmware is built for |
+| `devices/` | hardware drivers, one component per device (`hardware`: SoC info, eFuse, USB host connected; `spiffs_fs`: SPIFFS on `spiffs` at `/spiffs`, never formatted, it holds stock data on the X4 Pro; `ble`, `ble_kb`, `ble_fido`: see BLE; `wifi`: the radio (`wifi::Radio`), no decisions, stores nothing; `buttons`: GPIO buttons, polled, pins from the board; `crypto`: hardware RNG, SHA-256, AES-256-CBC via PSA; `clock`: `rtc::Clock`, see Time; `led`: one WS2812 from UART1, see Boards; `boards`: board classes, see Boards). `devices/config.h`: the board the firmware is built for |
 
 ## Config
 
@@ -80,7 +80,7 @@ cannot link on Windows), Unity from ESP-IDF, cJSON from `managed_components/`
 (run `idf.py build` once). `fakes/` shadows the few ESP-IDF headers used.
 Pattern from approver-esp32. Suites: `config`, `wifi_policy`, `reachability`,
 `web_auth`, `web_paths` (paths + server policy), `web_settings`, `clock`,
-`boards`, `timesync`, `timezone`; only code with
+`boards`, `timesync`, `timezone`, `led`; only code with
 no hardware (pure headers) is under test.
 
 ```powershell
@@ -105,7 +105,16 @@ has its pins) is a `static_assert` and a host test.
 | `X4Pro` (`x4_pro.h`) | XTEINK X4 Pro, pins from [hardware.md](hardware.md) |
 
 `board_devices.h` carries it out: `boards::Init()` (the clock), `Clock()`,
-`Button(id)`, `PrintInfo()` (`board`). No display, touch, LED or SD driver yet.
+`Button(id)`, `PrintInfo()` (`board`), `BootDone()`. No display, touch or SD
+driver yet.
+
+LED (`devices/led`, from approver-esp32-yubikey): WS2812 driven by UART1 at
+3.33 Mbaud, 6 data bits, TX inverted (two bit cells per character, no RMT);
+a task shows what it was last told (`Animator` in `led_frames.h`, pure: solid,
+beacon, blinks, a 9 s breath linear in perceived lightness; temporary
+overrides). Ceilings 40 % (normal) / 8 % (idle). Boot: red solid from the first
+line of `app_main` (dark = hardware fault, red = firmware running), green
+breathing at the idle ceiling when `app_main` is done.
 
 ## Time
 

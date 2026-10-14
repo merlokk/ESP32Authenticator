@@ -244,6 +244,15 @@ const esp_console_cmd_t kCommands[] = {
         .context = nullptr,
     },
     {
+        .command = "led",
+        .help = "The board's LED: state | <colour> [effect] [seconds] to show it for a while",
+        .hint = "[<colour> [solid|beacon|slow|blink|fast|breathe] [seconds]]",
+        .func = &CmdLed,
+        .argtable = nullptr,
+        .func_w_context = nullptr,
+        .context = nullptr,
+    },
+    {
         .command = "devstatus",
         .help = "Everything at once: version, info, board, date, wifi info, web, ble info, fido2 info "
                 "(also the site's Device status page)",
