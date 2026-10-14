@@ -38,6 +38,10 @@ add_executable(host_test
     test_web_auth.cpp
     test_web_paths.cpp
     test_web_settings.cpp
+    test_clock.cpp
+    test_boards.cpp
+    test_timesync.cpp
+    test_timezone.cpp
     fakes/fake_platform.cpp
 
     # Under test.
@@ -48,6 +52,8 @@ add_executable(host_test
     ../components/web/web_paths.cpp
     ../components/web/web_policy.cpp
     ../components/web/web_settings.cpp
+    ../components/timesync/sync_policy.cpp
+    ../components/timezone/zones.cpp
 
     "${CJSON_DIR}/cJSON.c"
     "${UNITY_DIR}/unity.c"
@@ -59,6 +65,10 @@ target_include_directories(host_test PRIVATE
     ../components/config
     ../components/wifimgr
     ../components/web
+    ../components/timesync
+    ../components/timezone
+    ../drivers/clock
+    ../drivers/boards
     "${CJSON_DIR}"
     "${UNITY_DIR}"
 )

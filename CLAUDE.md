@@ -17,9 +17,10 @@ Firmware: C/C++ on **ESP-IDF**.
   bonding and host switching; FIDO2 credential management on the console
   (`fido2 info|list|delete|reset`) and the store on the web front page; Wi-Fi
   client / AP / AP+client with static IPs and an internet check; configuration
-  web site; USB console; `config.json`.
-- Not yet: e-ink UI (LVGL), encrypted storage, credential records
-  (site/login/password/TOTP), sync over Wi-Fi, microSD config.
+  web site; USB console; `config.json`; time (SNTP, time zones, `rtc::Clock`
+  on the CPU timer); board classes chosen in `drivers/config.h`.
+- Not yet: BM8563 RTC driver, e-ink UI (LVGL), encrypted storage, credential
+  records (site/login/password/TOTP), sync over Wi-Fi, microSD config.
 
 ## Architecture
 

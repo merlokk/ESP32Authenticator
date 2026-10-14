@@ -17,11 +17,11 @@ Reference ESP-IDF + LVGL project: `../../ai-remote/approver-esp32` ([GitHub](htt
 | Path | Contents |
 |---|---|
 | `main/` | `app_main`: OTA self-confirm, NVS, SPIFFS, config, console, Wi-Fi manager + web server, BLE autostart |
-| `components/` | app components (`cli`: USB command line; `config`: config.json; `wifimgr`: Wi-Fi policy + manager; `web`: configuration site, see Wi-Fi and web; `fido_ctap`: CTAP 2.1 core, see FIDO2) |
+| `components/` | app components (`cli`: USB command line; `config`: config.json; `wifimgr`: Wi-Fi policy + manager; `web`: configuration site, see Wi-Fi and web; `fido_ctap`: CTAP 2.1 core, see FIDO2; `timesync`, `timezone`: see Time) |
 | `lib/` | third-party git submodules, used unmodified (`lionkey`) |
 | `host_test/` | host tests (Unity, MSVC), no board: see Tests |
 | `utils/` | host-side Python tools over the USB console (`device.py`: console session; `spiffs.py`: ls/info/rm/get/put; `ble.py`: ble commands, `kb` text quoting) |
-| `drivers/` | hardware drivers, one component per device (`hardware`: SoC info, eFuse, USB host connected; `spiffs_fs`: SPIFFS on `spiffs` at `/spiffs`, never formatted, it holds stock data on the X4 Pro; `ble`, `ble_kb`, `ble_fido`: see BLE; `wifi`: the radio (`wifi::Radio`), no decisions, stores nothing; `buttons`: GPIO buttons, polled; `crypto`: hardware RNG, SHA-256, AES-256-CBC via PSA) |
+| `drivers/` | hardware drivers, one component per device (`hardware`: SoC info, eFuse, USB host connected; `spiffs_fs`: SPIFFS on `spiffs` at `/spiffs`, never formatted, it holds stock data on the X4 Pro; `ble`, `ble_kb`, `ble_fido`: see BLE; `wifi`: the radio (`wifi::Radio`), no decisions, stores nothing; `buttons`: GPIO buttons, polled, pins from the board; `crypto`: hardware RNG, SHA-256, AES-256-CBC via PSA; `clock`: `rtc::Clock`, see Time; `boards`: board classes, see Boards). `drivers/config.h`: the board the firmware is built for |
 
 ## Config
 
@@ -57,7 +57,8 @@ Reference ESP-IDF + LVGL project: `../../ai-remote/approver-esp32` ([GitHub](htt
   "internet": {"check": true, "intervalSeconds": 60, "timeoutMs": 2000, "failures": 2,
                "targets": ["8.8.8.8", "1.1.1.1", "9.9.9.9"]},
   "ble": {"active": false},
-  "web": {"mode": "auto", "write": true, "user": "", "password": ""}
+  "web": {"mode": "auto", "write": true, "user": "", "password": ""},
+  "time": {"zone": "UTC", "server": "pool.ntp.org", "syncHours": 6}
 }
 ```
 
@@ -68,7 +69,9 @@ channel 1..13. Change the default AP password. `ip` (optional, per network):
 `static` false or absent is DHCP (the typed fields are kept); with `static`
 true address/netmask/gateway are required, DNS optional; dotted quads, no
 leading zeros. `internet`: `intervalSeconds` 5..3600, `timeoutMs` 100..10000,
-`failures` 1..10, up to 4 IPv4 `targets` (pinged: no names).
+`failures` 1..10, up to 4 IPv4 `targets` (pinged: no names). `time`: `zone` a
+table name (`date zones`) or a POSIX TZ rule; `server` a host name or IPv4,
+empty: no sync; `syncHours` 0..168, 0: no sync.
 
 ## Tests
 
@@ -76,13 +79,48 @@ leading zeros. `internet`: `intervalSeconds` 5..3600, `timeoutMs` 100..10000,
 cannot link on Windows), Unity from ESP-IDF, cJSON from `managed_components/`
 (run `idf.py build` once). `fakes/` shadows the few ESP-IDF headers used.
 Pattern from approver-esp32. Suites: `config`, `wifi_policy`, `reachability`,
-`web_auth`, `web_paths` (paths + server policy), `web_settings`; only code with
+`web_auth`, `web_paths` (paths + server policy), `web_settings`, `clock`,
+`boards`, `timesync`, `timezone`; only code with
 no hardware (pure headers) is under test.
 
 ```powershell
 host_test\run.cmd            # all suites
 host_test\run.cmd config     # suites whose name contains "config"
 ```
+
+## Boards
+
+`drivers/boards`: one class per board, deriving from `boards::Board`
+(`board_spec.h`, pure): `hw_clock` (none, BM8563), `display` (none, e-ink
+800x480), `touch` (none, GT911), `led` (none, WS2812), `battery` (none,
+CW2017), `has_sd_card`, `has_frontlight`, and GPIOs for the buttons (Left,
+Right, Power; Left is FIDO2 user presence) and every device. Chosen at build
+time: `kBoardId` in `drivers/config.h` -> `boards::kBoard` (`board.h`,
+constexpr); `CheckPins` (no shared GPIO, no USB/flash/PSRAM pin, every device
+has its pins) is a `static_assert` and a host test.
+
+| Class | Board |
+|---|---|
+| `DevBoard` (`dev_board.h`) | bare ESP32-S3 dev board (YD-ESP32-S3 type): BOOT = Left on GPIO0, WS2812 on GPIO48, no RTC |
+| `X4Pro` (`x4_pro.h`) | XTEINK X4 Pro, pins from [hardware.md](hardware.md) |
+
+`board_devices.h` carries it out: `boards::Init()` (the clock), `Clock()`,
+`Button(id)`, `PrintInfo()` (`board`). No display, touch, LED or SD driver yet.
+
+## Time
+
+The clock is UTC; a zone is presentation only.
+
+| Part | Role |
+|---|---|
+| `drivers/clock` | `rtc::Clock` interface: carries UTC to the next boot (`Read`/`Write`, `KeepsTimeWhenOff`). `TimerClock`: the chip's RTC timer + state in RTC no-init memory, kept by software resets, lost at power-off. `clock_math.h` (pure): date <-> Unix, believable range 2024..2099, the timer state (magic + FNV check) |
+| `components/timesync` | SNTP (`esp_netif_sntp`), one task, 1 s tick. `sync_policy.h` (pure, from approver-esp32): sync at boot / when the internet appears / every `syncHours`; no re-sync within 5 min of a good one (flapping link); failure retry 1 min doubling to 15 min. Internet = a client link with an address not reported offline by the check. An answer outside 2024..2099 is refused. The result goes to the board clock |
+| `components/timezone` | `zones.h` (pure): 72 named zones -> POSIX rules, aliases (Europe/Kiev, GMT), a raw rule accepted; `timezone.h`: `TZ` + `tzset`, offset, DST |
+
+Boot: `boards::Init()` sets the system clock from the board clock (if it has a
+believable time), `config::Init`, then the zone; `timesync::Init` after the
+Wi-Fi manager. A battery-backed RTC (X4 Pro BM8563) is a second `Clock`
+later; until then the X4 Pro uses the timer clock too.
 
 ## BLE
 
@@ -164,7 +202,7 @@ and never starts without lwIP (an assert).
   network, signal, address static/dhcp, MAC, internet, AP), Bluetooth (BLE,
   keyboard, FIDO2 readiness and counts; `stored` with a bar of the slots used,
   amber from 80 %, red from 90 %; PIN and attempts left; signature counter),
-  Device (uptime, heap, PSRAM, SPIFFS with a bar of the space used, amber
+  Device (local time and zone, time sync, uptime, heap, PSRAM, SPIFFS with a bar of the space used, amber
   from 80 %, red from 95 %, firmware).
 - Pages and `app.js` are cached for an hour: after a reflash, reload with
   Ctrl+F5 to get the new script.

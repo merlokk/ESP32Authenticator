@@ -214,6 +214,16 @@
         by("fido-meter").style.display = "none";
       }
 
+      if (d.time_utc > 0) {
+        // The device's local time: UTC shifted by its zone, printed as UTC.
+        var off = d.time_offset, a = Math.abs(off);
+        var local = new Date((d.time_utc + off) * 1000).toISOString().slice(0, 19).replace("T", " ");
+        text(by("time"), local + " " + d.time_zone + " (UTC" + (off < 0 ? "-" : "+") +
+             ("0" + Math.floor(a / 3600)).slice(-2) + ":" + ("0" + Math.floor(a % 3600 / 60)).slice(-2) + ")");
+      } else { text(by("time"), "not set", "warn"); }
+      text(by("time-sync"), d.time_sync + (d.time_sync_ago_s >= 0 ? ", last " +
+           duration(d.time_sync_ago_s) + " ago" : ""),
+           d.time_sync === "ok" ? "ok" : d.time_sync === "failing" ? "bad" : "faint");
       text(by("uptime"), duration(d.uptime_s));
       text(by("heap"), bytes(d.heap_free) + ", lowest " + bytes(d.heap_low));
       text(by("psram"), bytes(d.psram_free));

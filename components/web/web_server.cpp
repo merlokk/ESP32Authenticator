@@ -21,6 +21,8 @@
 #include "freertos/task.h"
 #include "host/ble_hs.h"
 #include "spiffs_fs.h"
+#include "timesync.h"
+#include "timezone.h"
 #include "web_auth.h"
 #include "web_paths.h"
 #include "web_settings.h"
@@ -91,7 +93,7 @@ class Held {
 };
 
 // httpd is one task serving one request at a time: these cannot be re-entered.
-char g_json[1024];
+char g_json[1536];
 char g_body[kMaxSettingsBody + 1];  // a POST body in, or a settings document out
 constexpr size_t kMaxScan = 12;
 wifi::ScanResult g_scan[kMaxScan];
@@ -229,6 +231,19 @@ esp_err_t StatusApi(httpd_req_t *request) {
     const bool ble_on = ble::IsOn();
     const bool ble_connected = ble_on && ble::ConnHandle() != BLE_HS_CONN_HANDLE_NONE;
 
+    // UTC seconds (0: not set) and the zone's offset now; the page formats it.
+    const time_t now = time(nullptr);
+    const bool time_set = now >= 1704067200;  // 2024-01-01, rtc::Believable's floor
+    const timesync::Status sync = timesync::Get();
+    const char *sync_state = !sync.enabled          ? "off"
+                             : sync.syncing         ? "syncing"
+                             : sync.failures > 0    ? "failing"
+                             : sync.ever_synced     ? "ok"
+                             : !sync.internet       ? "waiting"
+                                                    : "pending";
+    char zone[2 * config::kZoneSize + 8];
+    Escape(config::Get().time.zone, zone, sizeof zone);
+
     char ssid[2 * wifi::kSsidSize + 8];
     char ap_ssid[2 * wifi::kSsidSize + 8];
     char ip[16];
@@ -254,7 +269,9 @@ esp_err_t StatusApi(httpd_req_t *request) {
         ",\"fido_requests\":%" PRIu32 ",\"fido_errors\":%" PRIu32
         ",\"fido_store\":%s,\"fido_creds\":%u,\"fido_resident\":%u,\"fido_max\":%u"
         ",\"fido_used\":%u,\"fido_size\":%u,\"fido_pin\":%s,\"fido_pin_retries\":%u"
-        ",\"fido_counter\":%" PRIu32 "}",
+        ",\"fido_counter\":%" PRIu32
+        ",\"time_utc\":%lld,\"time_offset\":%d,\"time_zone\":\"%s\",\"time_sync\":\"%s\""
+        ",\"time_sync_ago_s\":%ld}",
         app->version, app->idf_ver, static_cast<uint32_t>(esp_timer_get_time() / 1000000),
         static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL)),
         static_cast<unsigned>(heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL)),
@@ -270,7 +287,9 @@ esp_err_t StatusApi(httpd_req_t *request) {
         static_cast<unsigned>(store.discoverable), static_cast<unsigned>(store.max_credentials),
         static_cast<unsigned>(store.store_used), static_cast<unsigned>(store.store_size),
         store.pin_set ? "true" : "false", static_cast<unsigned>(store.pin_retries),
-        store.sign_count);
+        store.sign_count, time_set ? static_cast<long long>(now) : 0LL,
+        time_set ? tz::OffsetSeconds(now) : 0, zone, sync_state,
+        sync.since_last_ms == timesync::kNever ? -1L : static_cast<long>(sync.since_last_ms / 1000));
     return SendJson(request, nullptr, g_json);
 }
 
@@ -498,6 +517,8 @@ esp_err_t ActionApi(httpd_req_t *request) {
             err = config::Reload();
             if (err == ESP_OK) {
                 wifimgr::Apply();
+                tz::ApplyZone(config::Get().time.zone);
+                timesync::Apply();
                 Apply();
             }
             break;

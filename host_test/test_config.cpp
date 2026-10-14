@@ -82,6 +82,9 @@ void AssertDefaults(const config::Data &d) {
     TEST_ASSERT_TRUE(d.web.write);
     TEST_ASSERT_EQUAL_STRING("", d.web.user);
     TEST_ASSERT_EQUAL_STRING("", d.web.password);
+    TEST_ASSERT_EQUAL_STRING("UTC", d.time.zone);
+    TEST_ASSERT_EQUAL_STRING("pool.ntp.org", d.time.server);
+    TEST_ASSERT_EQUAL_UINT8(6, d.time.sync_hours);
 }
 
 constexpr const char *kFullJson = R"json({
@@ -363,6 +366,62 @@ void test_parse_rejects_bad_hostname() {
     AssertParseFails(R"({"wifi": {"hostname": "end-"}})", "wifi.hostname");
 }
 
+// --- Time ----------------------------------------------------------------------
+
+void test_parse_time() {
+    config::Data d;
+    config::FillDefaults(&d);
+    char error[config::kErrorSize] = {};
+    TEST_ASSERT_TRUE_MESSAGE(
+        ParseText(R"({"time": {"zone": "Europe/Kyiv", "server": "10.0.0.1", "syncHours": 0}})", &d,
+                  error, sizeof error),
+        error);
+    TEST_ASSERT_EQUAL_STRING("Europe/Kyiv", d.time.zone);
+    TEST_ASSERT_EQUAL_STRING("10.0.0.1", d.time.server);
+    TEST_ASSERT_EQUAL_UINT8(0, d.time.sync_hours);
+
+    // A raw POSIX rule, and an empty server (no sync).
+    TEST_ASSERT_TRUE_MESSAGE(
+        ParseText(R"({"time": {"zone": "<+05>-5", "server": "", "syncHours": 168}})", &d, error,
+                  sizeof error),
+        error);
+    TEST_ASSERT_EQUAL_STRING("<+05>-5", d.time.zone);
+    TEST_ASSERT_EQUAL_STRING("", d.time.server);
+    TEST_ASSERT_EQUAL_UINT8(168, d.time.sync_hours);
+
+    char json[config::kMaxFileSize];
+    TEST_ASSERT_GREATER_THAN(0, config::Serialize(d, json, sizeof json));
+    config::Data out;
+    config::FillDefaults(&out);
+    TEST_ASSERT_TRUE_MESSAGE(ParseText(json, &out, error, sizeof error), error);
+    TEST_ASSERT_EQUAL_STRING(d.time.zone, out.time.zone);
+    TEST_ASSERT_EQUAL_STRING(d.time.server, out.time.server);
+    TEST_ASSERT_EQUAL_UINT8(d.time.sync_hours, out.time.sync_hours);
+}
+
+void test_parse_rejects_bad_time() {
+    AssertParseFails(R"({"time": 1})", "time: expected an object");
+    AssertParseFails(R"({"time": {"zone": "Europe/Kyev"}})", "time.zone");
+    AssertParseFails(R"({"time": {"zone": ""}})", "time.zone");
+    AssertParseFails(R"({"time": {"server": "ntp server"}})", "time.server");
+    AssertParseFails(R"({"time": {"server": ".pool.ntp.org"}})", "time.server");
+    AssertParseFails(R"({"time": {"server": "pool..ntp.org"}})", "time.server");
+    AssertParseFails(R"({"time": {"syncHours": 169}})", "time.syncHours");
+    AssertParseFails(R"({"time": {"syncHours": -1}})", "time.syncHours");
+}
+
+void test_valid_host() {
+    TEST_ASSERT_TRUE(config::ValidHost(""));
+    TEST_ASSERT_TRUE(config::ValidHost("pool.ntp.org"));
+    TEST_ASSERT_TRUE(config::ValidHost("time-a.nist.gov"));
+    TEST_ASSERT_TRUE(config::ValidHost("192.168.1.1"));
+    TEST_ASSERT_FALSE(config::ValidHost("ntp.org."));
+    TEST_ASSERT_FALSE(config::ValidHost("-ntp.org"));
+    TEST_ASSERT_FALSE(config::ValidHost("ntp-.org"));
+    TEST_ASSERT_FALSE(config::ValidHost("ntp_1.org"));
+    TEST_ASSERT_FALSE(config::ValidHost("http://ntp.org"));
+}
+
 // --- Serialize -------------------------------------------------------------------
 
 void test_serialize_round_trip() {
@@ -395,6 +454,9 @@ void test_serialize_round_trip() {
     TEST_ASSERT_EQUAL(in.web.write, out.web.write);
     TEST_ASSERT_EQUAL_STRING(in.web.user, out.web.user);
     TEST_ASSERT_EQUAL_STRING(in.web.password, out.web.password);
+    TEST_ASSERT_EQUAL_STRING(in.time.zone, out.time.zone);
+    TEST_ASSERT_EQUAL_STRING(in.time.server, out.time.server);
+    TEST_ASSERT_EQUAL_UINT8(in.time.sync_hours, out.time.sync_hours);
 }
 
 void test_serialize_static_ip_round_trip() {
@@ -622,6 +684,9 @@ void RegisterConfigTests(void) {
     RUN_TEST(test_parse_rejects_bad_wifi_and_web_fields);
     RUN_TEST(test_parse_internet_check);
     RUN_TEST(test_parse_rejects_bad_internet_check);
+    RUN_TEST(test_parse_time);
+    RUN_TEST(test_parse_rejects_bad_time);
+    RUN_TEST(test_valid_host);
     RUN_TEST(test_parse_ipv4);
     RUN_TEST(test_parse_static_ip);
     RUN_TEST(test_parse_rejects_bad_static_ip);

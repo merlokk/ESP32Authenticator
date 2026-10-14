@@ -15,6 +15,7 @@
 #include "freertos/task.h"
 #include "ble.h"
 #include "ble_cmd.h"
+#include "date_cmd.h"
 #include "fido_cmd.h"
 #include "wifi_cmd.h"
 #include "files.h"
@@ -78,6 +79,10 @@ void PrintDevStatus() {
     CmdVersion(0, nullptr);
     Section("info");
     hardware::PrintShortInfo();
+    Section("board");
+    CmdBoard(0, nullptr);
+    Section("date");
+    PrintDateInfo();
     Section("wifi info");
     PrintWifiInfo();
     Section("web");
@@ -218,8 +223,27 @@ const esp_console_cmd_t kCommands[] = {
         .context = nullptr,
     },
     {
+        .command = "date",
+        .help = "Clock and time zone: info | sync | set [utc] <YYYY-MM-DD> <HH:MM:SS> | "
+                "zone [<name|rule>] | zones [filter] | server <host|off> | hours <0..168>",
+        .hint = "[info|sync|set|zone|zones|server|hours] [args]",
+        .func = &CmdDate,
+        .argtable = nullptr,
+        .func_w_context = nullptr,
+        .context = nullptr,
+    },
+    {
+        .command = "board",
+        .help = "The board this firmware is built for (drivers/config.h): devices and pins",
+        .hint = nullptr,
+        .func = &CmdBoard,
+        .argtable = nullptr,
+        .func_w_context = nullptr,
+        .context = nullptr,
+    },
+    {
         .command = "devstatus",
-        .help = "Everything at once: version, info, wifi info, web, ble info, fido2 info "
+        .help = "Everything at once: version, info, board, date, wifi info, web, ble info, fido2 info "
                 "(also the site's Device status page)",
         .hint = nullptr,
         .func = &CmdDevStatus,

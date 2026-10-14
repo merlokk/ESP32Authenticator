@@ -1,7 +1,7 @@
 #include "ble_fido.h"
 #include "ble_kb.h"
 #include "ble.h"
-#include "buttons.h"
+#include "board_devices.h"
 #include "config.h"
 #include "console.h"
 #include "esp_log.h"
@@ -9,6 +9,8 @@
 #include "fido_ctap.h"
 #include "nvs_flash.h"
 #include "spiffs_fs.h"
+#include "timesync.h"
+#include "timezone.h"
 #include "web_server.h"
 #include "wifi_manager.h"
 
@@ -39,13 +41,14 @@ void InitNvs() {
 }
 
 // FIDO2 over BLE: the LionKey CTAP core behind the ble_fido transport. User
-// presence: Left button (GPIO0, the BOOT button on the dev board).
+// presence: the board's Left button (BOOT on the dev board).
 void InitFido() {
-    buttons::kLeft.Init();
+    static const buttons::Button presence = boards::Button(boards::ButtonId::kLeft);
+    presence.Init();
     static char store[64];
     const bool have_fs = spiffs_fs::Mounted() && spiffs_fs::FullPath("fido.bin", store, sizeof store);
     const fido_ctap_hooks_t hooks = {ble_fido::Keepalive, ble_fido::Cancelled,
-                                     [] { return buttons::kLeft.Pressed(); }};
+                                     [] { return presence.Pressed(); }};
     if (fido_ctap_init(&hooks, have_fs ? store : nullptr) == ESP_OK) {
         ble_fido::SetMessageHandler(fido_ctap_request);
     } else {
@@ -57,11 +60,13 @@ void InitFido() {
 
 extern "C" void app_main() {
     ConfirmRunningApp();
+    boards::Init();  // the board's clock seeds the system clock (UTC)
     InitNvs();
     spiffs_fs::Init();  // not fatal: the console reports an unmounted fs
     // config.json from SPIFFS; built-in defaults if missing/invalid or unmounted.
     // TODO: look on the microSD card first.
     config::Init(spiffs_fs::kBasePath);
+    tz::ApplyZone(config::Get().time.zone);
 
     ble_kb::Register();  // BLE profiles, before the stack starts
     ble_fido::Register();
@@ -72,6 +77,8 @@ extern "C" void app_main() {
     // manager task follows config.json (radio off unless wifi.active).
     ESP_ERROR_CHECK(web::Init());
     ESP_ERROR_CHECK(wifimgr::Init());
+    // SNTP when the internet is up; the result goes back to the board's clock.
+    ESP_ERROR_CHECK(timesync::Init(&boards::Clock()));
     if (config::Get().ble.active) {
         ble::On();
     }

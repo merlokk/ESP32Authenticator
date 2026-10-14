@@ -1,0 +1,311 @@
+#include "date_cmd.h"
+
+#include <sys/time.h>
+
+#include <cinttypes>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <ctime>
+
+#include "board_devices.h"
+#include "clock_math.h"
+#include "config.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "subcommand.h"
+#include "timesync.h"
+#include "timezone.h"
+
+namespace console {
+
+namespace {
+
+void PrintAge(uint32_t ms) {
+    const uint32_t s = ms / 1000;
+    if (s < 120) {
+        printf("%" PRIu32 " s", s);
+    } else if (s < 2 * 3600) {
+        printf("%" PRIu32 " min", s / 60);
+    } else {
+        printf("%" PRIu32 " h %02" PRIu32 " min", s / 3600, s / 60 % 60);
+    }
+}
+
+void PrintOffset(int offset) {
+    printf("UTC%c%02d:%02d", offset < 0 ? '-' : '+', abs(offset) / 3600, abs(offset) % 3600 / 60);
+}
+
+char Lower(char c) { return c >= 'A' && c <= 'Z' ? static_cast<char>(c - 'A' + 'a') : c; }
+
+bool Contains(const char *text, const char *part) {  // case-insensitive
+    for (; *text != '\0'; ++text) {
+        size_t i = 0;
+        while (part[i] != '\0' && Lower(text[i]) == Lower(part[i])) {
+            ++i;
+        }
+        if (part[i] == '\0') {
+            return true;
+        }
+    }
+    return part[0] == '\0';
+}
+
+int Save() {
+    const esp_err_t err = config::Save();
+    if (err != ESP_OK) {
+        printf("applied, but config.json not saved: %s\n", esp_err_to_name(err));
+        return 1;
+    }
+    printf("saved %s\n", config::Path());
+    return 0;
+}
+
+int CmdInfo(int, char **) {
+    const time_t now = time(nullptr);
+    const config::Time &cfg = config::Get().time;
+    if (rtc::Believable(now)) {
+        const rtc::DateTime u = rtc::FromUnix(now);
+        printf("utc        %04u-%02u-%02u %02u:%02u:%02u\n", u.year, u.month, u.day, u.hour,
+               u.minute, u.second);
+        struct tm local = {};
+        localtime_r(&now, &local);
+        char text[32];
+        strftime(text, sizeof text, "%Y-%m-%d %H:%M:%S %a", &local);
+        printf("local      %s, ", text);
+        PrintOffset(tz::OffsetSeconds(now));
+        printf("%s\n", tz::IsDaylightSaving(now) ? ", DST" : "");
+    } else {
+        printf("utc        not set ('date set' or a sync)\n");
+    }
+    printf("zone       %s (TZ=%s)\n", cfg.zone, tz::Current());
+
+    rtc::Clock &clock = boards::Clock();
+    int64_t clock_us = 0;
+    bool valid = false;
+    const esp_err_t err = clock.Read(&clock_us, &valid);
+    printf("clock      %s, %s, ", clock.Name(),
+           clock.KeepsTimeWhenOff() ? "keeps time when off" : "lost at power-off");
+    if (err != ESP_OK) {
+        printf("read failed: %s\n", esp_err_to_name(err));
+    } else if (!valid) {
+        printf("no time\n");
+    } else {
+        const int64_t drift_ms = (clock_us - rtc::SystemTimeUs()) / 1000;
+        printf("%+" PRId64 " ms from the system clock\n", drift_ms);
+    }
+
+    printf("sync       ");
+    if (cfg.sync_hours == 0 || cfg.server[0] == '\0') {
+        printf("off (server '%s', every %u h)\n", cfg.server, static_cast<unsigned>(cfg.sync_hours));
+        return 0;
+    }
+    printf("%s every %u h", cfg.server, static_cast<unsigned>(cfg.sync_hours));
+    if (!timesync::Ready()) {
+        printf(", not started\n");
+        return 0;
+    }
+    const timesync::Status s = timesync::Get();
+    if (s.syncing) {
+        printf(", syncing now");
+    } else if (!s.internet) {
+        printf(", waiting for the internet");
+    } else if (s.next_in_ms != timesync::kNever) {
+        printf(", next in ");
+        PrintAge(s.next_in_ms);
+    }
+    printf("\n");
+    if (s.ever_synced) {
+        printf("last sync  ");
+        PrintAge(s.since_last_ms);
+        printf(" ago, stepped %+d s, %u ok\n", static_cast<int>(s.last_step_seconds),
+               static_cast<unsigned>(s.successes));
+    } else {
+        printf("last sync  never\n");
+    }
+    if (s.failures > 0) {
+        printf("failures   %u in a row (%s)\n", static_cast<unsigned>(s.failures),
+               esp_err_to_name(s.last_error));
+    }
+    return 0;
+}
+
+int CmdSync(int, char **) {
+    const config::Time &cfg = config::Get().time;
+    if (cfg.sync_hours == 0 || cfg.server[0] == '\0') {
+        printf("sync is off: 'date server <host>' and 'date hours <n>'\n");
+        return 1;
+    }
+    timesync::Status s = timesync::Get();
+    if (!s.internet) {
+        printf("no internet: it syncs when the internet is up\n");
+        return 1;
+    }
+    const uint16_t ok = s.successes;
+    const uint16_t failed = s.failures;
+    timesync::SyncNow();
+    printf("asking %s...\n", cfg.server);
+    for (int i = 0; i < 80; ++i) {  // 20 s: the exchange is bounded at 15 s
+        vTaskDelay(pdMS_TO_TICKS(250));
+        s = timesync::Get();
+        if (!s.syncing && (s.successes != ok || s.failures != failed)) {
+            break;
+        }
+    }
+    if (s.successes != ok) {
+        printf("synced, stepped %+d s\n", static_cast<int>(s.last_step_seconds));
+        return CmdInfo(0, nullptr);
+    }
+    printf("no time: %s\n", s.failures != failed ? esp_err_to_name(s.last_error) : "still waiting");
+    return 1;
+}
+
+int CmdSet(int argc, char **argv) {
+    const bool utc = argc == 4 && strcmp(argv[1], "utc") == 0;
+    if (argc != (utc ? 4 : 3)) {
+        printf("usage: date set [utc] <YYYY-MM-DD> <HH:MM:SS>   (local time without 'utc')\n");
+        return 1;
+    }
+    const char *date = argv[utc ? 2 : 1];
+    const char *clock_text = argv[utc ? 3 : 2];
+    unsigned year = 0, month = 0, day = 0, hour = 0, minute = 0, second = 0;
+    char extra = 0;
+    if (sscanf(date, "%4u-%2u-%2u%c", &year, &month, &day, &extra) != 3 ||
+        sscanf(clock_text, "%2u:%2u:%2u%c", &hour, &minute, &second, &extra) != 3) {
+        printf("could not parse '%s %s': expected YYYY-MM-DD HH:MM:SS\n", date, clock_text);
+        return 1;
+    }
+    const rtc::DateTime t = {static_cast<uint16_t>(year), static_cast<uint8_t>(month),
+                             static_cast<uint8_t>(day),  static_cast<uint8_t>(hour),
+                             static_cast<uint8_t>(minute), static_cast<uint8_t>(second)};
+    if (!rtc::Valid(t)) {
+        printf("not a date\n");
+        return 1;
+    }
+    time_t seconds = 0;
+    if (utc) {
+        seconds = static_cast<time_t>(rtc::ToUnix(t));
+    } else {
+        struct tm local = {};
+        local.tm_year = t.year - 1900;
+        local.tm_mon = t.month - 1;
+        local.tm_mday = t.day;
+        local.tm_hour = t.hour;
+        local.tm_min = t.minute;
+        local.tm_sec = t.second;
+        local.tm_isdst = -1;  // libc decides from the zone
+        seconds = mktime(&local);
+    }
+    if (!rtc::Believable(seconds)) {
+        printf("outside %d..%d: not set\n", rtc::kEarliestYear, rtc::kLatestYear);
+        return 1;
+    }
+    const timeval tv = {.tv_sec = seconds, .tv_usec = 0};
+    settimeofday(&tv, nullptr);
+    const esp_err_t err = rtc::StoreSystemTime(boards::Clock());
+    if (err != ESP_OK) {
+        printf("system clock set, %s not: %s\n", boards::Clock().Name(), esp_err_to_name(err));
+    }
+    return CmdInfo(0, nullptr);
+}
+
+int CmdZone(int argc, char **argv) {
+    config::Time &cfg = config::Get().time;
+    if (argc < 2) {
+        printf("zone       %s (TZ=%s), ", cfg.zone, tz::Current());
+        PrintOffset(tz::OffsetSeconds());
+        printf("%s\n", tz::IsDaylightSaving() ? ", DST now" : "");
+        return 0;
+    }
+    const char *zone = argv[1];
+    if (!config::ValidZone(zone)) {
+        printf("'%s' is neither a zone ('date zones') nor a POSIX TZ rule\n", zone);
+        return 1;
+    }
+    // A raw rule a table zone shares is stored under the zone's name.
+    const char *name = tz::Lookup(zone) == nullptr ? tz::NameFor(zone) : nullptr;
+    snprintf(cfg.zone, sizeof cfg.zone, "%s", name != nullptr ? name : zone);
+    tz::ApplyZone(cfg.zone);
+    printf("zone       %s (TZ=%s), ", cfg.zone, tz::Current());
+    PrintOffset(tz::OffsetSeconds());
+    printf("%s\n", tz::IsDaylightSaving() ? ", DST now" : "");
+    return Save();
+}
+
+int CmdZones(int argc, char **argv) {
+    const char *filter = argc >= 2 ? argv[1] : nullptr;
+    size_t shown = 0;
+    for (size_t i = 0; i < tz::Count(); ++i) {
+        const tz::Zone &zone = tz::At(i);
+        if (filter != nullptr && !Contains(zone.name, filter)) {
+            continue;
+        }
+        printf("%-22s %s\n", zone.name, zone.posix);
+        ++shown;
+    }
+    printf("%u of %u zones; a POSIX TZ rule is accepted too\n", static_cast<unsigned>(shown),
+           static_cast<unsigned>(tz::Count()));
+    return 0;
+}
+
+int CmdServer(int argc, char **argv) {
+    config::Time &cfg = config::Get().time;
+    if (argc < 2) {
+        printf("server     %s\n", cfg.server[0] != '\0' ? cfg.server : "(none: no sync)");
+        return 0;
+    }
+    const char *host = strcmp(argv[1], "off") == 0 ? "" : argv[1];
+    if (!config::ValidHost(host)) {
+        printf("'%s' is not a host name or IPv4 address\n", host);
+        return 1;
+    }
+    snprintf(cfg.server, sizeof cfg.server, "%s", host);
+    timesync::Apply();
+    printf("server     %s\n", cfg.server[0] != '\0' ? cfg.server : "(none: no sync)");
+    return Save();
+}
+
+int CmdHours(int argc, char **argv) {
+    config::Time &cfg = config::Get().time;
+    if (argc < 2) {
+        printf("every      %u h%s\n", static_cast<unsigned>(cfg.sync_hours),
+               cfg.sync_hours == 0 ? " (no sync)" : "");
+        return 0;
+    }
+    char *end = nullptr;
+    const long hours = strtol(argv[1], &end, 10);
+    if (end == argv[1] || *end != '\0' || hours < 0 || hours > config::kMaxSyncHours) {
+        printf("expected 0..%u hours (0: no sync)\n", static_cast<unsigned>(config::kMaxSyncHours));
+        return 1;
+    }
+    cfg.sync_hours = static_cast<uint8_t>(hours);
+    timesync::Apply();
+    printf("every      %u h%s\n", static_cast<unsigned>(cfg.sync_hours),
+           cfg.sync_hours == 0 ? " (no sync)" : "");
+    return Save();
+}
+
+constexpr Subcommand kDateSubcommands[] = {
+    {"info", &CmdInfo},     {"sync", &CmdSync},     {"set", &CmdSet},     {"zone", &CmdZone},
+    {"zones", &CmdZones},   {"server", &CmdServer}, {"hours", &CmdHours},
+};
+
+}  // namespace
+
+int CmdDate(int argc, char **argv) {
+    if (argc < 2) {
+        return CmdInfo(argc, argv);
+    }
+    return Dispatch(kDateSubcommands, argc, argv,
+                    "date [info] | sync | set [utc] <YYYY-MM-DD> <HH:MM:SS> | "
+                    "zone [<name|rule>] | zones [filter] | server <host|off> | hours <0..168>");
+}
+
+int CmdBoard(int, char **) {
+    boards::PrintInfo();
+    return 0;
+}
+
+void PrintDateInfo() { CmdInfo(0, nullptr); }
+
+}  // namespace console

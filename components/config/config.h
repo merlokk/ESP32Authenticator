@@ -36,6 +36,9 @@ constexpr size_t kWebPasswordSize = 65;  // 64 chars + NUL
 constexpr size_t kErrorSize = 96;
 
 constexpr size_t kIpTextSize = 16;  // "255.255.255.255" + NUL
+constexpr size_t kZoneSize = 41;     // zone name or POSIX rule (tz::kMaxPosixLength)
+constexpr size_t kHostSize = 64;     // SNTP server: host name or IPv4
+constexpr uint8_t kMaxSyncHours = 168;
 
 // A fixed address for one network (per network: home DHCP, office static).
 // Kept as typed; `enabled` false is DHCP and keeps the fields for later.
@@ -104,11 +107,19 @@ struct Web {
     char password[kWebPasswordSize];
 };
 
+// The clock is UTC; `zone` is how a time is shown and how a typed time is read.
+struct Time {
+    char zone[kZoneSize];    // table name (Europe/Kyiv) or raw POSIX rule
+    char server[kHostSize];  // empty: no sync
+    uint8_t sync_hours;      // 0..168, 0: no sync
+};
+
 struct Data {
     Wifi wifi;
     InternetCheck internet;
     Ble ble;
     Web web;
+    Time time;
 };
 
 enum class Source : uint8_t {
@@ -145,6 +156,8 @@ bool ValidSsid(const char *ssid);          // 1..32 bytes
 bool ValidPassword(const char *password);  // empty, 8..63 chars or 64 hex digits
 bool ValidApPassword(const char *password);  // empty or 8..63 chars
 bool ValidWebUser(const char *user);         // 0..32 chars, no ':'
+bool ValidZone(const char *zone);            // a known zone name or a POSIX rule
+bool ValidHost(const char *host);            // empty, or a host name / IPv4: a-z 0-9 '-' '.'
 
 // Dotted quad to esp_netif's form (first octet in the low byte). Strict:
 // four decimal octets 0..255, no leading zeros ("010" is octal elsewhere),

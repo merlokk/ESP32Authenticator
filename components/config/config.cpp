@@ -7,6 +7,7 @@
 
 #include "cJSON.h"
 #include "esp_log.h"
+#include "zones.h"
 
 namespace config {
 
@@ -40,6 +41,11 @@ const char kDefaultJson[] = R"json({
     "write": true,
     "user": "",
     "password": ""
+  },
+  "time": {
+    "zone": "UTC",
+    "server": "pool.ntp.org",
+    "syncHours": 6
   }
 })json";
 
@@ -207,6 +213,19 @@ bool ParseWeb(const cJSON *web, Web *out, char *error, size_t size) {
                      "0..32 characters, no ':'", "web", error, size) &&
            GetString(web, "password", out->password, sizeof out->password, ValidWebPassword,
                      "0..64 characters", "web", error, size);
+}
+
+bool ParseTime(const cJSON *section, Time *out, char *error, size_t size) {
+    uint32_t hours = out->sync_hours;
+    if (!GetString(section, "zone", out->zone, sizeof out->zone, ValidZone,
+                   "a zone name (date zones) or a POSIX TZ rule", "time", error, size) ||
+        !GetString(section, "server", out->server, sizeof out->server, ValidHost,
+                   "empty or a host name / IPv4 address", "time", error, size) ||
+        !GetUint(section, "syncHours", 0, kMaxSyncHours, &hours, "time", error, size)) {
+        return false;
+    }
+    out->sync_hours = static_cast<uint8_t>(hours);
+    return true;
 }
 
 bool AlwaysValid(const char *) { return true; }
@@ -416,6 +435,16 @@ bool ParseSections(const cJSON *root, Data *staged, char *error, size_t size) {
             return false;
         }
     }
+    const cJSON *time_json = cJSON_GetObjectItemCaseSensitive(root, "time");
+    if (time_json != nullptr) {
+        if (!cJSON_IsObject(time_json)) {
+            SetError(error, size, "time: expected an object");
+            return false;
+        }
+        if (!ParseTime(time_json, &parsed.time, error, size)) {
+            return false;
+        }
+    }
     return true;
 }
 
@@ -544,6 +573,10 @@ size_t Serialize(const Data &d, char *out, size_t size) {
     cJSON_AddBoolToObject(web, "write", d.web.write);
     cJSON_AddStringToObject(web, "user", d.web.user);
     cJSON_AddStringToObject(web, "password", d.web.password);
+    cJSON *time_json = cJSON_AddObjectToObject(root, "time");
+    cJSON_AddStringToObject(time_json, "zone", d.time.zone);
+    cJSON_AddStringToObject(time_json, "server", d.time.server);
+    cJSON_AddNumberToObject(time_json, "syncHours", d.time.sync_hours);
 
     // cJSON wants 5 spare bytes to be sure it fits.
     const bool ok = size > 5 && cJSON_PrintPreallocated(root, out, static_cast<int>(size - 5), 1);
@@ -621,6 +654,31 @@ bool ValidApPassword(const char *password) {
 // Basic auth separates user and password with the first ':'.
 bool ValidWebUser(const char *user) {
     return strlen(user) < kWebUserSize && strchr(user, ':') == nullptr;
+}
+
+bool ValidZone(const char *zone) {
+    return strlen(zone) < kZoneSize && tz::Resolve(zone) != nullptr;
+}
+
+// Labels of letters, digits and '-', joined by single dots.
+bool ValidHost(const char *host) {
+    const size_t n = strlen(host);
+    if (n == 0) {
+        return true;
+    }
+    if (n >= kHostSize || host[0] == '.' || host[0] == '-' || host[n - 1] == '.' ||
+        host[n - 1] == '-') {
+        return false;
+    }
+    for (size_t i = 0; i < n; ++i) {
+        const char c = host[i];
+        const bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                        (c >= '0' && c <= '9') || c == '-' || c == '.';
+        if (!ok || (c == '.' && (host[i + 1] == '.' || host[i + 1] == '-' || host[i - 1] == '-'))) {
+            return false;
+        }
+    }
+    return true;
 }
 
 bool ParseIpv4(const char *text, uint32_t *out) {

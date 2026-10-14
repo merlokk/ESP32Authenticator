@@ -3,6 +3,9 @@
 namespace buttons {
 
 esp_err_t Button::Init() const {
+    if (!Present()) {
+        return ESP_ERR_NOT_FOUND;
+    }
     const gpio_config_t io = {
         .pin_bit_mask = 1ULL << gpio_,
         .mode = GPIO_MODE_INPUT,
@@ -13,6 +16,8 @@ esp_err_t Button::Init() const {
     return gpio_config(&io);
 }
 
-bool Button::Pressed() const { return (gpio_get_level(gpio_) == 0) == active_low_; }
+bool Button::Pressed() const {
+    return Present() && (gpio_get_level(gpio_) == 0) == active_low_;
+}
 
 }  // namespace buttons

@@ -76,7 +76,7 @@ host_test\run.cmd [suite...]   # host tests, no board (MSVC); see architecture.m
 ```
 
 Suites: `config`, `wifi_policy`, `reachability`, `web_auth`, `web_paths`,
-`web_settings`. Run them after any change to those components.
+`web_settings`, `clock`, `boards`, `timesync`, `timezone`. Run them after any change to those components.
 
 `tests/fido2/`: CTAP2 authenticator suite (pytest + python-fido2,
 `pip install -r tests/fido2/requirements.txt`). Transport-agnostic, checked
@@ -191,8 +191,14 @@ Opening the port with RTS asserted resets the chip.
 | `fido2 list` | credentials: #, id (first 8 hex digits), resident, site (RP ID, `...` if truncated), user name (display name) |
 | `fido2 delete <#\|id>` | delete one: number from `fido2 list` (1-2 digits) or a unique id prefix (4+ hex digits; numbers shift after a delete) |
 | `fido2 reset` / `fido2 reset confirm` | say what would go / delete every credential and the PIN (counter kept). Waits up to 1 s for a running FIDO request, else "busy" |
-| `devstatus` | `version`, `info`, `wifi info`, `web`, `ble info`, `fido2 info` in one dump (also the site's Device status page) |
+| `board` | the board built for (`drivers/config.h`): clock, display, touch, LED, battery, SD, frontlight, button and device pins |
+| `date [info]` | UTC and local time (offset, DST), zone, board clock (kept when off or not, drift from the system clock), sync (server, interval, next, last, step, failures) |
+| `date sync` | ask the time server now and wait for it (up to 20 s) |
+| `date set [utc] <YYYY-MM-DD> <HH:MM:SS>` | set the clock: local time, or UTC with `utc`; written to the board clock too |
+| `date zone [<name\|rule>]` / `date zones [filter]` | show / set the time zone, a table name or a POSIX TZ rule (saved) / the zone table |
+| `date server <host\|off>` / `date hours <0..168>` | SNTP server / sync interval, `off` or 0: no sync (saved) |
+| `devstatus` | `version`, `info`, `board`, `date`, `wifi info`, `web`, `ble info`, `fido2 info` in one dump (also the site's Device status page) |
 | `config show` | current config as JSON, passwords masked (networks, AP, web) |
 | `config info` | file path, source (file / built-in defaults), why the file was not used |
-| `config reload` / `config save` | re-read config.json (keeps values on error) and apply Wi-Fi (incl. internet check) and web settings / write current values |
+| `config reload` / `config save` | re-read config.json (keeps values on error) and apply Wi-Fi (incl. internet check), web and time settings / write current values |
 | `efuse` | every eFuse field (list generated at build time from IDF `esp_efuse_table.csv`) and raw blocks BLK0..BLK10 |

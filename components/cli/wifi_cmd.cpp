@@ -11,6 +11,8 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "subcommand.h"
+#include "timesync.h"
+#include "timezone.h"
 #include "web_server.h"
 #include "wifi_manager.h"
 
@@ -526,7 +528,9 @@ int CmdReload(int, char **) {
     }
     wifimgr::Apply();
     web::Apply();
-    printf("reloaded %s, Wi-Fi and web settings applied\n", config::Path());
+    tz::ApplyZone(config::Get().time.zone);
+    timesync::Apply();
+    printf("reloaded %s, Wi-Fi, web and time settings applied\n", config::Path());
     return 0;
 }
 
