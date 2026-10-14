@@ -252,6 +252,7 @@ void Off() { Set(colour::kOff, Effect::kSolid); }
 Status Get() {
     Status out;
     out.ready = state.ready;
+    out.port = state.port;
     out.percent = state.percent;
     out.idle_percent = state.idle_percent;
     out.writes = state.writes;

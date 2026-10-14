@@ -61,6 +61,8 @@ int CmdVersion(int, char **) {
 int CmdHwInfo(int, char **) {
     hardware::PrintInfo();
     boards::PrintClock();
+    printf("[led]\n");
+    PrintLedInfo();
     return 0;
 }
 
@@ -258,9 +260,9 @@ const esp_console_cmd_t kCommands[] = {
     },
     {
         .command = "led",
-        .help = "The board's LED: state | <colour> [effect] [seconds] to show it for a while | "
+        .help = "The board's LED: [info] | <colour> [effect] [seconds] to show it for a while | "
                 "brightness [<n> [idle]] (saved)",
-        .hint = "[<colour> [effect] [seconds] | brightness [<n> [idle]]]",
+        .hint = "[info | <colour> [effect] [seconds] | brightness [<n> [idle]]]",
         .func = &CmdLed,
         .argtable = nullptr,
         .func_w_context = nullptr,
@@ -305,7 +307,7 @@ const esp_console_cmd_t kCommands[] = {
     },
     {
         .command = "hwinfo",
-        .help = "Print chip and IDs, flash, PSRAM, eFuse, NVS, partitions, temperature, clock",
+        .help = "Print chip and IDs, flash, PSRAM, eFuse, NVS, partitions, temperature, clock, LED",
         .hint = nullptr,
         .func = &CmdHwInfo,
         .argtable = nullptr,

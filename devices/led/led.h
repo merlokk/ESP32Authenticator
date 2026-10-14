@@ -23,6 +23,7 @@ inline constexpr uint32_t kRefreshMs = 1000;
 
 struct Status {
     bool ready = false;
+    uart_port_t port = UART_NUM_1;
     Rgb colour{};
     Effect effect = Effect::kSolid;
     uint8_t percent = 0;

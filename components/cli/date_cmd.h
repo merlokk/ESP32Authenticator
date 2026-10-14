@@ -14,7 +14,7 @@
 // its devices and pins.
 //
 // `led` command (boards with a WS2812):
-//   led                                  colour, effect, ceilings, wire counters
+//   led [info]                           pin, UART, colour, effect, ceilings, wire counters
 //   led <colour> [effect] [seconds]      show it for a while (default 5 s), then back
 //   led brightness [<n> [idle]]          ceilings in percent (config.json led; saved)
 
@@ -24,7 +24,8 @@ int CmdDate(int argc, char **argv);
 int CmdBoard(int argc, char **argv);
 int CmdLed(int argc, char **argv);
 
-// Readout reused by `devstatus`.
+// Readouts reused by `devstatus` and `hwinfo`.
 void PrintDateInfo();
+int PrintLedInfo();
 
 }  // namespace console

@@ -337,7 +337,34 @@ const char *ColourName(led::Rgb rgb) {
 
 }  // namespace
 
+int PrintLedInfo() {
+    if (boards::kBoard.led == boards::LedType::kNone) {
+        printf("led        none on this board\n");
+        return 0;
+    }
+    printf("led        %s on GPIO%d", boards::Name(boards::kBoard.led),
+           boards::kBoard.led_pins.data);
+    if (!led::Ready()) {
+        printf(", not running: the UART did not come up\n");
+        return 1;
+    }
+    const led::Status s = led::Get();
+    printf(", UART%d\n", static_cast<int>(s.port));
+    printf("showing    %s (%u,%u,%u), %s%s\n", ColourName(s.colour),
+           static_cast<unsigned>(s.colour.r), static_cast<unsigned>(s.colour.g),
+           static_cast<unsigned>(s.colour.b), led::EffectName(s.effect),
+           s.overriding ? ", for a while" : "");
+    printf("ceilings   %u%% normal, %u%% idle\n", static_cast<unsigned>(s.percent),
+           static_cast<unsigned>(s.idle_percent));
+    printf("wire       %" PRIu32 " writes, %" PRIu32 " failed\n", s.writes, s.write_failures);
+    printf("stack      %" PRIu32 " B free\n", s.stack_low_water);
+    return 0;
+}
+
 int CmdLed(int argc, char **argv) {
+    if (argc == 1 || strcmp(argv[1], "info") == 0) {
+        return PrintLedInfo();
+    }
     if (boards::kBoard.led == boards::LedType::kNone) {
         printf("this board has no LED\n");
         return 1;
@@ -345,20 +372,6 @@ int CmdLed(int argc, char **argv) {
     if (!led::Ready()) {
         printf("led        not running: the UART did not come up\n");
         return 1;
-    }
-    if (argc == 1) {
-        const led::Status s = led::Get();
-        printf("led        %s on GPIO%d\n", boards::Name(boards::kBoard.led),
-               boards::kBoard.led_pins.data);
-        printf("showing    %s (%u,%u,%u), %s%s\n", ColourName(s.colour),
-               static_cast<unsigned>(s.colour.r), static_cast<unsigned>(s.colour.g),
-               static_cast<unsigned>(s.colour.b), led::EffectName(s.effect),
-               s.overriding ? ", for a while" : "");
-        printf("ceilings   %u%% normal, %u%% idle\n", static_cast<unsigned>(s.percent),
-               static_cast<unsigned>(s.idle_percent));
-        printf("wire       %" PRIu32 " writes, %" PRIu32 " failed\n", s.writes, s.write_failures);
-        printf("stack      %" PRIu32 " B free\n", s.stack_low_water);
-        return 0;
     }
     if (strcmp(argv[1], "brightness") == 0) {
         config::Led &cfg = config::Get().led;
