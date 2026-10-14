@@ -237,7 +237,7 @@ and never starts without lwIP (an assert).
 
 | Route | |
 |---|---|
-| `GET /`, `/*.html`, `/app.js` | pages: front (network, BLE, device), Wi-Fi settings, device status, hardware info (from device status), restart. Whitelist of names/extensions; anything else, e.g. `/config.json`, is the 404 page |
+| `GET /`, `/*.html`, `/app.js` | pages: front (network, BLE, device), passwords, FIDO2, Wi-Fi settings, device status, hardware info (from device status), restart. Whitelist of names/extensions; anything else, e.g. `/config.json`, is the 404 page |
 | `GET /api/status` | firmware, heap, SPIFFS, Wi-Fi (IP, MAC, internet), AP, BLE, FIDO (readiness, requests, credentials stored of max, store bytes, PIN set and attempts, signature counter, file version and modification time; `fido_store` false while a request holds the store, `fido_off` why FIDO2 is off). No secrets |
 | `GET /api/devstatus` | the console's `devstatus` dump (stdout swapped for the request) |
 | `GET /api/hwinfo` | the console's `hwinfo` dump, the same way (eFuse key purposes and flags only, no NVS values) |
@@ -245,11 +245,20 @@ and never starts without lwIP (an assert).
 | `GET /api/wifi/scan` | access points (hidden/duplicate names dropped) |
 | `POST /api/action?do=save\|reload\|retry` | save config.json / reload it / put Wi-Fi settings on the radio |
 | `POST /api/reboot?confirm=reboot` | restart |
+| `GET /api/vault` | store state, PIN tries / lock, records: id, site, user, whether a password / TOTP secret is set, modified. Never a password or secret |
+| `GET /api/vault/totp?id=N` | the record's code for the current window and the seconds left |
+| `POST /api/vault/add\|set\|delete` | `{site, user, password, otp}` / `{id, any of them}` (absent keeps, `otp: ""` removes; all checked before any is written) / `{id}` |
+| `POST /api/vault/unlock\|lock` | `{pin}` (the wipe PIN answers as a wrong one) / `{}` |
+| `GET /api/fido`, `POST /api/fido/delete` | store info and credentials (site, user, resident, made when / by) / `{credential: 64 hex}` |
 
 - Basic auth over every route when `web.user` and `web.password` are both set
   (console only: `web login`); the header is compared to the encoded expected
   value, never decoded, constant-time. Not TLS.
 - `web.write` false: settings and actions refused (403), pages read-only.
+- Vault / FIDO2 POSTs (`web_admin.h`, pure): a field whitelist, only
+  `Content-Type: application/json` (a cross-site form cannot send it without
+  a preflight), the body and parsed strings wiped after use; logs carry the
+  verb and outcome only.
 - Costs ~7 KB of internal heap while up.
 - Names from the air (SSIDs) are inserted as text, never as HTML; JSON strings
   are escaped.

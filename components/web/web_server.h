@@ -5,6 +5,7 @@
 // holds the reader's stock data).
 //
 // Routes: GET pages, /api/status, /api/devstatus and /api/hwinfo (console dumps),
+// /api/vault and /api/fido (web_admin_routes.h),
 // /api/settings, /api/wifi/scan; POST /api/settings, /api/action?do=,
 // /api/reboot?confirm=reboot. Every handler goes through basic auth first
 // (web_auth.h); web.write false refuses the POSTs except reboot.

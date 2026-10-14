@@ -38,6 +38,7 @@ add_executable(host_test
     test_web_auth.cpp
     test_web_paths.cpp
     test_web_settings.cpp
+    test_web_admin.cpp
     test_clock.cpp
     test_boards.cpp
     test_timesync.cpp
@@ -56,6 +57,7 @@ add_executable(host_test
     ../components/web/web_paths.cpp
     ../components/web/web_policy.cpp
     ../components/web/web_settings.cpp
+    ../components/web/web_admin.cpp
     ../components/timesync/sync_policy.cpp
     ../components/timezone/zones.cpp
     ../devices/led/led_frames.cpp

@@ -12,6 +12,7 @@ void RegisterReachabilityTests(void);
 void RegisterWebAuthTests(void);
 void RegisterWebPathTests(void);
 void RegisterWebSettingsTests(void);
+void RegisterWebAdminTests(void);
 void RegisterClockTests(void);
 void RegisterBoardTests(void);
 void RegisterTimesyncTests(void);
@@ -55,6 +56,7 @@ int main(int argc, char **argv) {
     if (Wanted("web_auth")) RegisterWebAuthTests();
     if (Wanted("web_paths")) RegisterWebPathTests();
     if (Wanted("web_settings")) RegisterWebSettingsTests();
+    if (Wanted("web_admin")) RegisterWebAdminTests();
     if (Wanted("clock")) RegisterClockTests();
     if (Wanted("boards")) RegisterBoardTests();
     if (Wanted("timesync")) RegisterTimesyncTests();

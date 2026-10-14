@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0b0d0c">
+<title>FIDO2</title>
+<style>html,body{margin:0;background:#0b0d0c;color:#d6ded8;
+font:16px/1.5 system-ui,-apple-system,sans-serif}
+body{padding:0 16px 40px}</style>
+</head>
+<body data-page="fido">
+<div class="wrap">
+<header>
+  <h1>FIDO2</h1>
+  <span class="lamp" id="lamp">reading&hellip;</span>
+</header>
+
+<p class="lead" id="state">&nbsp;</p>
+
+<nav>
+  <a class="btn" href="/">
+    <span class="chev">&lsaquo;</span>
+    <span class="grow"><span class="name">Back</span></span>
+  </a>
+</nav>
+
+<div class="notice" id="said" hidden></div>
+
+<h2>Store</h2>
+<table>
+  <tr><th>stored</th><td id="stored">&hellip;</td></tr>
+  <tr><th>pin</th><td id="pin">&hellip;</td></tr>
+  <tr><th>counter</th><td id="counter">&hellip;</td></tr>
+  <tr><th>file</th><td id="file">&hellip;</td></tr>
+</table>
+
+<h2>Credentials</h2>
+<div id="credentials"></div>
+
+<footer>
+  A deleted credential is gone: the site no longer accepts this key until it
+  is registered again. Keys never leave the device.
+</footer>
+</div>
+<script src="/app.js"></script>
+</body>
+</html>

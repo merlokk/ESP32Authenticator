@@ -21,7 +21,8 @@ Firmware: C/C++ on **ESP-IDF**.
   on the CPU timer); board classes chosen in `devices/config.h`; WS2812 LED (red at boot,
   green breathing when ready); TOTP codes on the console (`totp`); LVGL 9 library (no display driver);
   password records (site/user/password/TOTP) in `vault.bin` with
-  add/edit/delete on the console (`pass`); `vault.bin` and `fido.bin` are
+  add/edit/delete on the console (`pass`) and the web site (with FIDO2
+  credentials and TOTP codes); `vault.bin` and `fido.bin` are
   AES-256-GCM with a key from the 6-digit PIN (the same on synced devices;
   a PIN change re-keys both), locked until `pin` (`test.pin` in config.json
   unlocks at boot).

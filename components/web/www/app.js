@@ -86,7 +86,14 @@
     "padding:14px 0 0;border-top:1px solid var(--line)}",
     ".sticky .btn{justify-content:center}",
     "#scan-list{display:flex;flex-direction:column;gap:8px;margin:0 0 14px}",
-    "#scan-list .btn.small .sub{display:inline;margin-left:10px}"
+    "#scan-list .btn.small .sub{display:inline;margin-left:10px}",
+    ".who{flex:1;min-width:0;color:var(--text);font-size:15px;overflow-wrap:anywhere}",
+    ".tags{display:flex;flex-wrap:wrap;gap:4px 14px;margin:0 0 10px;font-size:13px}",
+    ".card .row-actions{margin:0}.card .row-actions .btn.small{min-height:42px}",
+    ".edit{margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}",
+    ".totp:not(:empty){margin-top:10px}",
+    ".code{font-size:28px;font-weight:600;letter-spacing:.08em;color:var(--green);",
+    "font-variant-numeric:tabular-nums}"
   ].join("");
 
   var style = document.createElement("style");
@@ -542,12 +549,349 @@
     load();
   }
 
+  // --- shared by the password and FIDO2 pages -----------------------------------
+
+  function revealer(input) {
+    var button = el("button", "reveal", "show");
+    button.type = "button";
+    button.addEventListener("click", function () {
+      input.type = input.type === "password" ? "text" : "password";
+      button.textContent = input.type === "password" ? "show" : "hide";
+    });
+    return button;
+  }
+
+  function field(label, input) {
+    var row = el("div", "field");
+    row.appendChild(el("label", "", label));
+    row.appendChild(input);
+    return row;
+  }
+
+  function input(type, value, placeholder) {
+    var node = el("input");
+    node.type = type;
+    node.autocomplete = type === "password" ? "new-password" : "off";
+    node.spellcheck = false;
+    node.setAttribute("autocapitalize", "off");
+    if (value) node.value = value;
+    if (placeholder) node.placeholder = placeholder;
+    return node;
+  }
+
+  // Tap, then tap again within 4 s: a delete never happens on one stray tap.
+  function twoTap(button, word, action) {
+    var armed = 0;
+    button.addEventListener("click", function () {
+      if (armed && Date.now() < armed) { armed = 0; action(); return; }
+      armed = Date.now() + 4000;
+      var was = button.textContent;
+      button.textContent = word;
+      setTimeout(function () { armed = 0; button.textContent = was; }, 4000);
+    });
+  }
+
+  function when(utc, offset) { return utc > 0 ? localTime(utc, offset) : "?"; }
+
+  // --- passwords ------------------------------------------------------------------
+
+  function passwordsPage() {
+    var state = { records: [], writable: true, offset: 0, open: {}, adding: false };
+    var ticker = null;  // the TOTP code on show: { id, node, until, timer }
+
+    function stopCode() {
+      if (ticker) { clearInterval(ticker.timer); ticker = null; }
+    }
+
+    // The current window's code; asked again when the window turns.
+    function showCode(record, box) {
+      if (ticker && ticker.id === record.id) { stopCode(); box.textContent = ""; return; }
+      stopCode();
+      box.textContent = "…";
+      getJson("/api/vault/totp?id=" + record.id, function (d) {
+        var mine = { id: record.id, node: box, until: Date.now() + d.remaining * 1000 };
+        ticker = mine;
+        function paint() {
+          if (ticker !== mine) return;
+          var left = Math.max(0, Math.ceil((mine.until - Date.now()) / 1000));
+          box.textContent = "";
+          box.appendChild(el("span", "code", d.code.slice(0, 3) + " " + d.code.slice(3)));
+          box.appendChild(el("span", "faint", " " + left + " s"));
+          if (left === 0) { stopCode(); showCode(record, box); }
+        }
+        mine.timer = setInterval(paint, 500);
+        paint();
+      }, function (why) { box.textContent = why; box.className = "totp bad"; });
+    }
+
+    function send(url, body, done, okWord) {
+      said("writing…");
+      post(url, body, function () {
+        said(okWord, "ok");
+        if (done) done();
+        load();
+      }, function (why) { said(why, "bad"); });
+    }
+
+    // One record's edit box (or the new record's, without `record`).
+    function editor(record) {
+      var box = el("div", "edit");
+      var site = input("text", record ? record.site : "");
+      var user = input("text", record ? record.user : "");
+      var pass = input("password", "", record ? (record.password ? "unchanged" : "none") : "none");
+      var otp = input("password", "", record ? (record.otp ? "unchanged" : "none") : "Base32, none if empty");
+      box.appendChild(field("Site", site));
+      box.appendChild(field("User", user));
+      var row = field("Password", pass);
+      row.appendChild(revealer(pass));
+      box.appendChild(row);
+      row = field("TOTP", otp);
+      row.appendChild(revealer(otp));
+      box.appendChild(row);
+
+      var actions = el("div", "row-actions");
+      var save = el("button", "btn small", record ? "Save" : "Add");
+      save.type = "button";
+      save.addEventListener("click", function () {
+        if (!record) {
+          send("/api/vault/add", { site: site.value.trim(), user: user.value.trim(),
+                                   password: pass.value, otp: otp.value.trim() },
+               function () { state.adding = false; }, "added");
+          return;
+        }
+        var body = { id: record.id }, any = false;
+        if (site.value.trim() !== record.site) { body.site = site.value.trim(); any = true; }
+        if (user.value.trim() !== record.user) { body.user = user.value.trim(); any = true; }
+        if (pass.value !== "") { body.password = pass.value; any = true; }
+        if (otp.value.trim() !== "") { body.otp = otp.value.trim(); any = true; }
+        if (!any) { said("nothing changed", "warn"); return; }
+        send("/api/vault/set", body, function () { delete state.open[record.id]; }, "saved");
+      });
+      actions.appendChild(save);
+      if (record && record.otp) {
+        var drop = el("button", "btn small", "Remove TOTP");
+        drop.type = "button";
+        twoTap(drop, "Tap again to remove", function () {
+          send("/api/vault/set", { id: record.id, otp: "" },
+               function () { delete state.open[record.id]; }, "TOTP removed");
+        });
+        actions.appendChild(drop);
+      }
+      var cancel = el("button", "btn small", "Cancel");
+      cancel.type = "button";
+      cancel.addEventListener("click", function () {
+        if (record) delete state.open[record.id]; else state.adding = false;
+        draw();
+      });
+      actions.appendChild(cancel);
+      box.appendChild(actions);
+      if (!state.writable) {
+        var all = box.querySelectorAll("button:not(.reveal), input");
+        for (var i = 0; i < all.length; i++) all[i].disabled = true;
+      }
+      return box;
+    }
+
+    function card(record) {
+      var node = el("div", "card");
+      var head = el("div", "card-head");
+      var name = el("span", "who");
+      name.appendChild(el("b", "", record.site));
+      if (record.user) name.appendChild(el("span", "", " / " + record.user));
+      head.appendChild(name);
+      var drop = el("button", "drop", "×");
+      drop.type = "button";
+      drop.title = "delete";
+      drop.disabled = !state.writable;
+      twoTap(drop, "?", function () {
+        send("/api/vault/delete", { id: record.id }, function () { delete state.open[record.id]; },
+             "deleted " + record.site);
+      });
+      head.appendChild(drop);
+      node.appendChild(head);
+
+      var line = el("div", "tags");
+      line.appendChild(el("span", record.password ? "ok" : "faint",
+                          record.password ? "password set" : "no password"));
+      line.appendChild(el("span", "faint", "changed " + when(record.modified, state.offset)));
+      node.appendChild(line);
+
+      var actions = el("div", "row-actions");
+      var edit = el("button", "btn small", "Edit");
+      edit.type = "button";
+      edit.addEventListener("click", function () {
+        if (state.open[record.id]) delete state.open[record.id]; else state.open[record.id] = true;
+        draw();
+      });
+      actions.appendChild(edit);
+      var code = el("div", "totp");
+      if (record.otp) {
+        var show = el("button", "btn small", "TOTP code");
+        show.type = "button";
+        show.addEventListener("click", function () { showCode(record, code); });
+        actions.appendChild(show);
+      }
+      node.appendChild(actions);
+      if (record.otp) node.appendChild(code);
+      if (state.open[record.id]) node.appendChild(editor(record));
+      return node;
+    }
+
+    // Built from nodes, never innerHTML: names are whatever was typed.
+    function draw() {
+      stopCode();
+      var box = by("records");
+      box.textContent = "";
+      if (state.adding) {
+        var fresh = el("div", "card");
+        fresh.appendChild(el("div", "card-head", "New record"));
+        fresh.appendChild(editor(null));
+        box.appendChild(fresh);
+      }
+      var words = by("filter").value.trim().toLowerCase();
+      var shown = 0;
+      state.records.forEach(function (record) {
+        if (words && (record.site + " " + record.user).toLowerCase().indexOf(words) < 0) return;
+        box.appendChild(card(record));
+        ++shown;
+      });
+      if (shown === 0 && !state.adding) {
+        box.appendChild(el("p", "hint", state.records.length ? "Nothing matches." : "No records yet."));
+      }
+      by("add").disabled = !state.writable || state.adding;
+      by("lock").disabled = !state.writable;
+    }
+
+    function load() {
+      getJson("/api/vault", function (d) {
+        state.records = d.records || [];
+        state.writable = d.writable !== false;
+        state.offset = d.time_offset || 0;
+        var open = d.state === "open";
+        by("unlock").hidden = d.state !== "locked";
+        by("open").hidden = !open;
+        if (open) {
+          lamp("ok", "open");
+          by("state").textContent = d.count + " of " + d.capacity + " records, version " +
+            d.version + ", changed " + when(d.modified, state.offset) + ".";
+          draw();
+        } else if (d.state === "locked") {
+          stopCode();
+          lamp("warn", "locked");
+          by("state").textContent = d.lock_left_s > 0
+            ? "Too many wrong PINs: try again in " + duration(d.lock_left_s) + "."
+            : d.pin_failures > 0 ? (d.pin_tries - d.pin_failures) + " of " + d.pin_tries + " tries left."
+            : "Locked: nothing is decrypted until the PIN.";
+          by("pin").focus();
+        } else {
+          lamp("bad", d.state);
+          by("state").textContent = d.state === "refused"
+            ? "The store file is refused: " + d.why + ". The console's 'pass reset' replaces it."
+            : "No storage.";
+        }
+        if (!state.writable) said("read-only: web.write is false in config.json", "bad");
+      }, function (why) { lamp("bad", why); });
+    }
+
+    function unlock() {
+      var pin = by("pin").value;
+      if (!/^[0-9]{6}$/.test(pin)) { said("the PIN is 6 digits", "warn"); return; }
+      said("checking… about a second");
+      by("pin-go").disabled = true;
+      post("/api/vault/unlock", { pin: pin }, function () {
+        by("pin").value = "";
+        by("pin-go").disabled = false;
+        said("unlocked", "ok");
+        load();
+      }, function (why) {
+        by("pin").value = "";
+        by("pin-go").disabled = false;
+        said(why, "bad");
+        load();
+      });
+    }
+
+    by("pin-go").addEventListener("click", unlock);
+    by("pin").addEventListener("keydown", function (event) { if (event.key === "Enter") unlock(); });
+    by("filter").addEventListener("input", draw);
+    by("add").addEventListener("click", function () { state.adding = true; draw(); });
+    by("lock").addEventListener("click", function () {
+      post("/api/vault/lock", {}, function () { said("locked", "ok"); load(); },
+           function (why) { said(why, "bad"); });
+    });
+    load();
+  }
+
+  // --- FIDO2 ------------------------------------------------------------------------
+
+  function fidoPage() {
+    function load() {
+      getJson("/api/fido", function (d) {
+        lamp("ok", d.count + " stored");
+        by("state").textContent = "Credentials made by sites through this key (WebAuthn).";
+        text(by("stored"), d.count + " of " + d.max + " (" + d.resident + " resident), " +
+             bytes(d.used) + " of " + bytes(d.size));
+        text(by("pin"), d.pin_set ? "set, " + d.pin_retries + " attempt(s) left" : "not set",
+             !d.pin_set ? "faint" : d.pin_retries <= 3 ? "warn" : "ok");
+        text(by("counter"), d.counter + " signature(s)");
+        text(by("file"), d.version ? "version " + d.version + ", changed " +
+             when(d.modified, d.time_offset) : "none yet");
+
+        var box = by("credentials");
+        box.textContent = "";
+        if (!d.credentials.length) box.appendChild(el("p", "hint", "None."));
+        d.credentials.forEach(function (c) {
+          var node = el("div", "card");
+          var head = el("div", "card-head");
+          var name = el("span", "who");
+          name.appendChild(el("b", "", c.rp + (c.rp_cut ? "…" : "")));
+          var who = c.user || "";
+          if (c.display && c.display !== c.user) who += (who ? " " : "") + "(" + c.display + ")";
+          if (who) name.appendChild(el("span", "", " / " + who));
+          head.appendChild(name);
+          var drop = el("button", "drop", "×");
+          drop.type = "button";
+          drop.title = "delete";
+          drop.disabled = !d.writable;
+          twoTap(drop, "?", function () {
+            said("deleting…");
+            post("/api/fido/delete", { credential: c.id }, function () {
+              said("deleted " + c.rp, "ok");
+              load();
+            }, function (why) { said(why, "bad"); });
+          });
+          head.appendChild(drop);
+          node.appendChild(head);
+          var line = el("div", "tags");
+          line.appendChild(el("span", c.resident ? "ok" : "faint", c.resident ? "resident" : "not resident"));
+          line.appendChild(el("span", "faint", "made " + when(c.created, d.time_offset)));
+          if (c.host) line.appendChild(el("span", "faint", "by " + c.host));
+          line.appendChild(el("span", "faint", "id " + c.id.slice(0, 8)));
+          node.appendChild(line);
+          box.appendChild(node);
+        });
+        if (!d.writable) said("read-only: web.write is false in config.json", "bad");
+      }, function (why, status) {
+        lamp(status === 409 ? "warn" : "bad", status === 409 ? "off" : "error");
+        said(why, status === 409 ? "" : "bad");
+        ["stored", "pin", "counter", "file"].forEach(function (id) { text(by(id), "-", "faint"); });
+        by("credentials").textContent = "";
+        if (status === 409) {
+          by("state").textContent = "FIDO2 is off until the PIN: unlock on the Passwords page.";
+        }
+      });
+    }
+    load();
+  }
+
   var pages = {
     front: frontPage,
     devstatus: function () { dumpPage("/api/devstatus"); },
     hwinfo: function () { dumpPage("/api/hwinfo"); },
     reboot: rebootPage,
-    wifi: wifiPage
+    wifi: wifiPage,
+    passwords: passwordsPage,
+    fido: fidoPage
   };
   var which = document.body.getAttribute("data-page");
   if (pages[which]) pages[which]();

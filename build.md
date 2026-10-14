@@ -139,6 +139,9 @@ Up when `web` says `running`; `web` prints the address(es).
   `/api/wifi/scan`.
 - Front page: network (address, MAC, internet), BLE and the FIDO2 store
   (credentials used of 10, PIN, counter), device; the bars show what is used.
+- Passwords page: unlock with the PIN, find, add, edit (password and TOTP
+  write-only: an empty box keeps), delete (tap twice), the current TOTP code,
+  lock. FIDO2 page: the credentials, delete (tap twice).
 - Pages and `app.js` are cached for an hour: after a reflash reload with
   Ctrl+F5.
 

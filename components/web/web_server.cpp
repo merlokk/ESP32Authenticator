@@ -24,6 +24,8 @@
 #include "spiffs_fs.h"
 #include "timesync.h"
 #include "timezone.h"
+#include "vault.h"
+#include "web_admin_routes.h"
 #include "web_auth.h"
 #include "web_paths.h"
 #include "web_settings.h"
@@ -52,6 +54,8 @@ WWW_FILE(reboot_page, reboot_html)
 WWW_FILE(not_found_page, 404_html)
 WWW_FILE(unauthorised_page, 401_html)
 WWW_FILE(app_script, app_js)
+WWW_FILE(passwords_page, passwords_html)
+WWW_FILE(fido_page, fido_html)
 
 struct Page {
     const char *name;
@@ -68,6 +72,8 @@ const Page kPages[] = {
     {"404.html", not_found_page_start, not_found_page_end},
     {"401.html", unauthorised_page_start, unauthorised_page_end},
     {"app.js", app_script_start, app_script_end},
+    {"passwords.html", passwords_page_start, passwords_page_end},
+    {"fido.html", fido_page_start, fido_page_end},
 };
 
 const Page *FindPage(const char *name) {
@@ -121,6 +127,11 @@ void FormatIp(uint32_t ip, char *out, size_t size) {
                   static_cast<unsigned>((ip >> 24) & 0xFF));
 }
 
+}  // namespace
+
+// Shared with web_admin_routes.cpp (web_admin_routes.h).
+namespace detail {
+
 // JSON string escape (SSIDs are arbitrary bytes).
 size_t Escape(const char *in, char *out, size_t size) {
     size_t n = 0;
@@ -139,6 +150,12 @@ size_t Escape(const char *in, char *out, size_t size) {
     return n;
 }
 
+}  // namespace detail
+
+using namespace detail;
+
+namespace {
+
 esp_err_t SendPage(httpd_req_t *request, const Page &page) {
     httpd_resp_set_type(request, ContentType(page.name));
     const size_t size = static_cast<size_t>(page.end - page.start);
@@ -153,6 +170,10 @@ esp_err_t NotFound(httpd_req_t *request) {
     httpd_resp_set_status(request, "404 Not Found");
     return SendPage(request, *FindPage(kNotFoundName));
 }
+
+}  // namespace
+
+namespace detail {
 
 esp_err_t Unauthorised(httpd_req_t *request) {
     Count(&g_status.unauthorised);
@@ -195,6 +216,21 @@ esp_err_t Refuse(httpd_req_t *request, const char *status, const char *why) {
 }
 
 bool WritingAllowed() { return config::Get().web.write; }
+
+void CountApi() { Count(&g_status.api); }
+
+const char *Body() { return g_body; }
+
+void WipeBody() { vault::Wipe(g_body, sizeof g_body); }
+
+char *Scratch(size_t *size) {
+    *size = sizeof g_json;
+    return g_json;
+}
+
+}  // namespace detail
+
+namespace {
 
 // --- handlers -------------------------------------------------------------------
 
@@ -462,6 +498,10 @@ esp_err_t WifiScanApi(httpd_req_t *request) {
     return SendJson(request, nullptr, g_body);
 }
 
+}  // namespace
+
+namespace detail {
+
 // A body larger than the buffer is refused, not truncated.
 bool ReadBody(httpd_req_t *request, size_t *length) {
     *length = 0;
@@ -483,6 +523,10 @@ bool ReadBody(httpd_req_t *request, size_t *length) {
     *length = taken;
     return true;
 }
+
+}  // namespace detail
+
+namespace {
 
 // Memory only; the radio is not re-applied here (that would drop the link
 // this page came over): "retry" is its own action.
@@ -589,7 +633,7 @@ esp_err_t StartLocked() {
     config.task_priority = 2;
     config.stack_size = 4096;
     config.max_open_sockets = 4;
-    config.max_uri_handlers = 10;
+    config.max_uri_handlers = 16;
     config.lru_purge_enable = true;  // a browser's idle socket must not block the next
     config.uri_match_fn = httpd_uri_match_wildcard;
     esp_err_t err = httpd_start(&g_server, &config);
@@ -609,7 +653,6 @@ esp_err_t StartLocked() {
         {.uri = "/api/settings", .method = HTTP_POST, .handler = SettingsPost, .user_ctx = nullptr},
         {.uri = "/api/action", .method = HTTP_POST, .handler = ActionApi, .user_ctx = nullptr},
         {.uri = "/api/reboot", .method = HTTP_POST, .handler = RebootApi, .user_ctx = nullptr},
-        {.uri = "/*", .method = HTTP_GET, .handler = File, .user_ctx = nullptr},
     };
     for (const httpd_uri_t &route : routes) {
         err = httpd_register_uri_handler(g_server, &route);
@@ -619,6 +662,19 @@ esp_err_t StartLocked() {
             ESP_LOGE(TAG, "handler %s: %s", route.uri, esp_err_to_name(err));
             return err;
         }
+    }
+    // Then the password and FIDO2 pages' API, then the files ("/*" last).
+    err = RegisterAdminRoutes(g_server);
+    if (err == ESP_OK) {
+        const httpd_uri_t files = {
+            .uri = "/*", .method = HTTP_GET, .handler = File, .user_ctx = nullptr};
+        err = httpd_register_uri_handler(g_server, &files);
+    }
+    if (err != ESP_OK) {
+        httpd_stop(g_server);
+        g_server = nullptr;
+        ESP_LOGE(TAG, "handlers: %s", esp_err_to_name(err));
+        return err;
     }
     g_status.cost =
         static_cast<uint32_t>(before - heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
