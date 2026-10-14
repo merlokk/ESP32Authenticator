@@ -370,10 +370,6 @@ int CmdPin(int argc, char **argv) {
     if (argc == 2) {
         const bool had_store = vault::GetInfo().file_size != 0;
         const vault::Error e = vault::Unlock(argv[1]);
-        if (e == vault::Error::kWiped) {
-            printf("%s\n", vault::Describe(e));
-            return 0;
-        }
         if (e != vault::Error::kOk) {
             return Failed(e);
         }

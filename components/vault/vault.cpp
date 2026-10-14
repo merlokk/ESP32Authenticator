@@ -228,7 +228,7 @@ void Refuse(const char *why) {
 }
 
 // The wipe PIN: the store file, its version, the key and the records gone;
-// the next PIN makes a new store. The lockout is cleared too.
+// the next PIN makes a new store. Nothing logged: the log is on the console.
 void WipeStore() {
     g_records->Clear();
     ForgetKey();
@@ -236,10 +236,6 @@ void WipeStore() {
     g_header = storefile::Header();
     g_state = State::kLocked;
     g_why = nullptr;
-    g_failures = 0;
-    g_lock_until_us = 0;
-    StoreFailures(0, 0);
-    ESP_LOGW(TAG, "wipe PIN: %s erased", g_path);
 }
 
 void Opened() {
@@ -412,11 +408,21 @@ void SetPolicy(const Policy &policy) {
 
 void SetWipeHook(void (*on_wipe)()) { g_on_wipe = on_wipe; }
 
-// Under the lock; the wipe hook runs after it.
-static Error UnlockLocked(const char *pin) {
+// Under the lock; the wipe hook runs after it (`*wiped`).
+static Error UnlockLocked(const char *pin, bool *wiped) {
     if (IsWipePin(pin)) {
+        // Erase, then answer exactly as a wrong PIN on a locked store would:
+        // the same result, the same count, the same time (one derivation),
+        // the same log line.
         WipeStore();
-        return Error::kWiped;
+        *wiped = true;
+        if (!PinEntryAllowed()) {
+            return Error::kPinLocked;
+        }
+        DeriveNew(pin);
+        ForgetKey();
+        ESP_LOGW(TAG, "unlock: wrong PIN");
+        return PinWrong();
     }
     if (!PinEntryAllowed()) {
         return Error::kPinLocked;
@@ -464,11 +470,12 @@ Error Unlock(const char *pin) {
         return Error::kLocked;
     }
     Error e;
+    bool wiped = false;
     {
         Guard guard;
-        e = UnlockLocked(pin);
+        e = UnlockLocked(pin, &wiped);
     }
-    if (e == Error::kWiped && g_on_wipe != nullptr) {
+    if (wiped && g_on_wipe != nullptr) {
         g_on_wipe();
     }
     return e;

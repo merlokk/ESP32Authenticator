@@ -205,7 +205,7 @@ Opening the port with RTS asserted resets the chip.
 | `pin [info]` | vault locked / open / refused, key derivation (iterations, ms) |
 | `pin <6 digits>` | unlock the vault (nothing is decrypted before); no store yet: makes one with this PIN. `test.pin` in config.json does it at boot |
 | `pin change <old> <new>` / `pin lock` | new PIN (new salt, file rewritten) / wipe the key and records from memory |
-| `pin wipe set <pin>` / `pin wipe off` | the wipe PIN (needs the open store; must differ from the PIN), saved to config.json as a salted hash. Entering it with `pin` erases the password store and the FIDO2 credentials |
+| `pin wipe set <pin>` / `pin wipe off` | the wipe PIN (needs the open store; must differ from the PIN), saved to config.json as a salted hash. Entering it with `pin` erases the password store and the FIDO2 credentials and answers "wrong PIN" |
 
 `pin` also shows wrong PINs in a row and the lock: 10 wrong PINs lock PIN
 entry for `pin.lockMinutes` (config.json), also across a reboot.

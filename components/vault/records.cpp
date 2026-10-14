@@ -127,8 +127,7 @@ const char *Describe(Error error) {
             return "too many wrong PINs: PIN entry is locked for a while";
         case Error::kPinInUse:
             return "the PIN and the wipe PIN must differ";
-        case Error::kWiped:
-            return "wiped: the password store, the FIDO2 credentials and the key are gone";
+
     }
     return "?";
 }

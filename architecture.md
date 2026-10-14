@@ -349,8 +349,10 @@ so no store files on the X4 Pro).
   running it counts on the uptime clock.
 - Wipe PIN (`pin.wipe`): checked first, before any key derivation and also
   while locked out. It removes `vault.bin` and its kept version (the next PIN
-  makes a new store), wipes the key and records, clears the lockout, and
-  resets FIDO2 (`fido_ctap_reset` through `vault::SetWipeHook`). It must
+  makes a new store), wipes the key and records, and resets FIDO2
+  (`fido_ctap_reset` through `vault::SetWipeHook`, its log muted). Then it
+  answers as a wrong PIN: same result and count (it can start the lock),
+  one key derivation, the same log line; the erase adds ~0.4 s. It must
   differ from the PIN (checked when set, on a PIN change and a reset).
 - Refused (rollback, missing while a version is kept, malformed, an earlier
   format without a PIN key): left as is, the store is off;

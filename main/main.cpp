@@ -87,8 +87,11 @@ void InitVault(const char *dir) {
     const config::Pin &cfg = config::Get().pin;
     vault::SetPolicy({static_cast<uint32_t>(cfg.lock_minutes) * 60, cfg.wipe});
     vault::SetWipeHook([] {
-        const esp_err_t err = fido_ctap_reset();
-        ESP_LOGW(TAG, "wipe PIN: FIDO2 reset: %s", esp_err_to_name(err));
+        // Quietly: the wipe PIN looks like a wrong PIN, also in the log.
+        const esp_log_level_t level = esp_log_level_get("fido_ctap");
+        esp_log_level_set("fido_ctap", ESP_LOG_NONE);
+        fido_ctap_reset();
+        esp_log_level_set("fido_ctap", level);
     });
     if (vault::Init(dir, boards::kBoard.max_records) != ESP_OK || dir == nullptr) {
         return;

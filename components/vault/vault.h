@@ -50,7 +50,8 @@ struct Policy {
     const char *wipe;       // pin_guard.h text, "" for none (copied)
 };
 void SetPolicy(const Policy &policy);
-// Called after a wipe (outside the vault's lock): erase the FIDO2 credentials.
+// Called after a wipe (outside the vault's lock): erase the FIDO2 credentials,
+// without a log line.
 void SetWipeHook(void (*on_wipe)());
 
 // PSRAM for `capacity` records; the file is in `dir` (nullptr: kOff).
@@ -59,7 +60,8 @@ esp_err_t Init(const char *dir, size_t capacity);
 // Derives the key from `pin` and opens the store. No file yet: a new, empty
 // store with this PIN. kWrongPin: stays locked. kLocked: refused (Info::why).
 // The wipe PIN (checked first, in any state, also while locked out) erases
-// the store file, the key and the records, and calls on_wipe: kWiped.
+// the store file, the key and the records, and calls on_wipe; it answers as a
+// wrong PIN (kWrongPin / kPinLocked, counted, same time, nothing logged).
 // kMaxPinTries wrong PINs in a row: kPinLocked for lock_seconds.
 Error Unlock(const char *pin);
 // Wipes the records and the key.
