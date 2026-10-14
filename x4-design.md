@@ -90,3 +90,5 @@ status changes, a full refresh now and then against ghosting (driver's choice).
 ## Open questions
 
 - Sync service.
+- Sleep: light (RAM and key kept, FIDO2 without a PIN) or deep (a reboot: PIN
+  again), decided by measured power draw.
