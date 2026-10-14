@@ -279,9 +279,9 @@ submodule) behind `ble_fido`. API: `fido_ctap_init(hooks, store)`,
   (`fido_ctap_stopped_reason`, console and site); `fido2 reset confirm`
   writes an empty store over it. A file above NVS (power loss after the file,
   or a synced copy) is accepted. A header-less file before any version is
-  migrated once. No file at all (SPIFFS formatted): an empty store, the kept
-  version back to 0 (so deleting the file and rebooting also lifts the
-  rollback check). A save is .tmp, remove, rename: at boot a .tmp with no
+  migrated once. No file at all with a version kept (deleted, SPIFFS
+  formatted) is refused too (an old copy would otherwise follow an empty
+  one); `fido2 reset` starts an empty store above the kept version. A save is .tmp, remove, rename: at boot a .tmp with no
   file is taken, a .tmp next to the file dropped. `Newer()` holds the sync rule. Max credentials: the board's
   `fido_max_credentials` (10 on both boards, 1..50); lionkey stores
   non-discoverable ones too, one more gets KEY_STORE_FULL. The RAM log

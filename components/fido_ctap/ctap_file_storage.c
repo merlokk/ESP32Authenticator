@@ -8,8 +8,7 @@
 // - Rollback: every write takes a version above the file's and NVS's, and
 //   NVS (`fido/store_ver`) keeps the highest one accepted, written after the
 //   file. A file below it (an old copy put back) is refused and left as is;
-//   so is a file without a header once a version is kept. No file at all
-//   (SPIFFS formatted): an empty one, the kept version back to 0.
+//   so is a file without a header, or no file at all, once a version is kept.
 // - Deleted items are dropped (compaction) only at init: later the core keeps
 //   item handles (offsets), which compaction would move.
 // - The global signature counter lives in NVS: otherwise every assertion
@@ -58,10 +57,10 @@ static bool nvs_version(uint32_t *out) {
     return found;
 }
 
-// Written only when it grows (NVS wear: storage-encryption.md), unless `force`.
-static void set_version(uint32_t version, bool force) {
+// Written only when it grows (NVS wear: storage-encryption.md).
+static void keep_version(uint32_t version) {
     uint32_t kept;
-    if (!force && nvs_version(&kept) && kept >= version) {
+    if (nvs_version(&kept) && kept >= version) {
         return;
     }
     nvs_handle_t h;
@@ -78,8 +77,6 @@ static void set_version(uint32_t version, bool force) {
         ESP_LOGE(TAG, "store version %u not kept: %s", (unsigned)version, esp_err_to_name(err));
     }
 }
-
-static void keep_version(uint32_t version) { set_version(version, false); }
 
 // The file saves write next to it first.
 static void tmp_path(const char *path, char *out, size_t size) {
@@ -202,13 +199,15 @@ static bool load(ctap_file_storage_context_t *ctx, bool *rewrite) {
     struct stat st;
     if (stat(ctx->path, &st) != 0) {
         if (errno == ENOENT) {
-            // No file (first boot, SPIFFS formatted): an empty store. A version
-            // kept from an earlier file starts again from 0.
+            // No file and no version: the first boot, an empty store. With a
+            // version kept, the file was deleted (or SPIFFS formatted): refused
+            // like a rollback, since an old copy would be taken after an empty
+            // one; `fido2 reset` starts an empty store above that version.
             uint32_t kept;
-            if (nvs_version(&kept) && kept != 0) {
-                ESP_LOGW(TAG, "%s missing, version %u: an empty store from version 0", ctx->path,
-                         (unsigned)kept);
-                set_version(0, true);
+            if (nvs_version(&kept)) {
+                ESP_LOGE(TAG, "%s missing, version %u was seen", ctx->path, (unsigned)kept);
+                ctx->refused = "the store file is missing";
+                return false;
             }
             *rewrite = true;
             return true;

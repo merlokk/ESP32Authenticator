@@ -55,8 +55,9 @@ typedef struct {
 // Loads the credential store from `store_path` (NULL: RAM only, lost on
 // reboot) and starts the core; up to `max_credentials` (the board's
 // fido_max_credentials; the 1+th gets KEY_STORE_FULL). A store file that is
-// refused (older than the version kept in NVS, damaged, larger than the RAM
-// log) is not touched: FIDO2 stays off (fido_ctap_stopped_reason). The reset
+// refused (older than the version kept in NVS, missing while one is kept,
+// damaged, larger than the RAM log) is not touched: FIDO2 stays off
+// (fido_ctap_stopped_reason). The reset
 // window (10 s) starts here.
 esp_err_t fido_ctap_init(const fido_ctap_hooks_t *hooks, const char *store_path,
                          size_t max_credentials);
