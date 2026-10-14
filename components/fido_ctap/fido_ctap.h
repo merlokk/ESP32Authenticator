@@ -14,6 +14,19 @@
 extern "C" {
 #endif
 
+// The host that sent the request: kept with every credential it creates.
+typedef enum {
+    FIDO_CTAP_TRANSPORT_NONE = 0,
+    FIDO_CTAP_TRANSPORT_BLE = 1,
+    FIDO_CTAP_TRANSPORT_USB = 2,
+} fido_ctap_transport_t;
+
+typedef struct {
+    uint8_t transport;  // fido_ctap_transport_t
+    uint8_t addr_type;  // BLE: 0 public, 1 random (static); identity address
+    uint8_t addr[6];    // BLE: most significant byte first, as printed
+} fido_ctap_client_t;
+
 // Called from the task that runs fido_ctap_request().
 typedef struct {
     // Processing status for the host: 1 = processing, 2 = user presence needed.
@@ -22,6 +35,8 @@ typedef struct {
     bool (*cancelled)(void);
     // Level of the user presence input (button held down).
     bool (*button_pressed)(void);
+    // The current host; false (or NULL hook) when unknown.
+    bool (*client)(fido_ctap_client_t *out);
 } fido_ctap_hooks_t;
 
 // RAM log for `n` credentials (~635 bytes each at most, rounded up), plus the
@@ -70,6 +85,8 @@ typedef struct {
     bool discoverable;
     uint8_t cred_protect;  // 1..3 (credProtect extension), 0 if unset
     size_t size;           // bytes in the store
+    // Who created it; transport NONE for credentials made before this was kept.
+    fido_ctap_client_t created_by;
 } fido_ctap_credential_t;
 
 esp_err_t fido_ctap_info(fido_ctap_info_t *out);

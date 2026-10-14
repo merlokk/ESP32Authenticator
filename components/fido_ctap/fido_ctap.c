@@ -119,6 +119,7 @@ esp_err_t fido_ctap_init(const fido_ctap_hooks_t *h, const char *store_path,
         .mem = {.memory_size = size, .memory = memory, .write_index = 0},
         .path = store_path,
         .max_credentials = max_credentials,
+        .client = h->client,
     };
     ctap_file_storage_context_t *fresh = heap_caps_malloc(sizeof init, MALLOC_CAP_8BIT);
     if (fresh == NULL) {
@@ -265,6 +266,7 @@ esp_err_t fido_ctap_list(fido_ctap_credential_t *out, size_t capacity, size_t *c
         c->discoverable = ctap_credential_is_discoverable(&credential);
         c->cred_protect = (uint8_t)(source->flags & CTAP_CREDENTIAL_SOURCE_CTAP_flags_credProtect);
         c->size = item.size;
+        c->created_by = ctap_file_storage_creator(&storage, source->id);
     }
     admin_give();
     return ESP_OK;

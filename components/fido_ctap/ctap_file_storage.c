@@ -13,11 +13,14 @@
 
 #include "ctap_file_storage.h"
 
+#include <stddef.h>
+
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+#include "ctap_credentials_store.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "nvs.h"
@@ -135,20 +138,129 @@ static size_t count_credentials(const ctap_storage_t *storage) {
     return n;
 }
 
+// --- creator items
+
+typedef struct {
+    uint8_t id[32];
+    fido_ctap_client_t client;
+} creator_item_t;
+
+#define CREDENTIAL_ID_OFFSET offsetof(ctap_credential_source_t, id)
+
+// The credential ID of a credential item's data, false if too short.
+static bool id_of(const uint8_t *data, size_t size, uint8_t id[32]) {
+    if (size < CREDENTIAL_ID_OFFSET + 32) {
+        return false;
+    }
+    memcpy(id, data + CREDENTIAL_ID_OFFSET, 32);
+    return true;
+}
+
+// The live item with this handle (any key), false if none.
+static bool item_at(const ctap_storage_t *storage, uint32_t handle, ctap_storage_item_t *out) {
+    ctap_storage_item_t item = {.handle = 0, .key = 0};
+    while (ctap_memory_storage_find_item(storage, &item) == CTAP_STORAGE_OK) {
+        if (item.handle == handle) {
+            *out = item;
+            return true;
+        }
+        item.key = 0;
+    }
+    return false;
+}
+
+static bool find_creator(const ctap_storage_t *storage, const uint8_t id[32],
+                         ctap_storage_item_t *out) {
+    ctap_storage_item_t item = {.handle = 0, .key = CTAP_FILE_STORAGE_KEY_CREATOR};
+    while (ctap_memory_storage_find_item(storage, &item) == CTAP_STORAGE_OK) {
+        if (item.size >= sizeof(creator_item_t) && memcmp(item.data, id, 32) == 0) {
+            *out = item;
+            return true;
+        }
+    }
+    return false;
+}
+
+static void delete_creator(const ctap_storage_t *storage, const uint8_t id[32]) {
+    ctap_storage_item_t item;
+    if (find_creator(storage, id, &item)) {
+        ctap_memory_storage_delete_item(storage, item.handle);
+    }
+}
+
+// Records the current host as the creator of credential `id`. Best effort: a
+// missing record only shows as "unknown".
+static void add_creator(const ctap_storage_t *storage, const uint8_t id[32]) {
+    creator_item_t record;
+    memset(&record, 0, sizeof record);
+    memcpy(record.id, id, 32);
+    bool (*client)(fido_ctap_client_t *) = ctx_of(storage)->client;
+    if (client == NULL || !client(&record.client)) {
+        return;
+    }
+    ctap_storage_item_t item = {.handle = 0,
+                                .key = CTAP_FILE_STORAGE_KEY_CREATOR,
+                                .size = sizeof record,
+                                .data = (const uint8_t *)&record};
+    if (ctap_memory_storage_create_or_update_item(storage, &item) != CTAP_STORAGE_OK) {
+        ESP_LOGW(TAG, "no room for the creator record");
+    }
+}
+
+fido_ctap_client_t ctap_file_storage_creator(const ctap_storage_t *storage, const uint8_t id[32]) {
+    fido_ctap_client_t client;
+    memset(&client, 0, sizeof client);
+    ctap_storage_item_t item;
+    if (find_creator(storage, id, &item)) {
+        memcpy(&client, item.data + 32, sizeof client);
+    }
+    return client;
+}
+
+// --- items
+
 ctap_storage_status_t ctap_file_storage_create_or_update_item(const ctap_storage_t *storage,
                                                               ctap_storage_item_t *item) {
-    if (item->key == CTAP_STORAGE_KEY_CREDENTIAL && item->handle == 0 &&
+    const bool credential = item->key == CTAP_STORAGE_KEY_CREDENTIAL;
+    if (credential && item->handle == 0 &&
         count_credentials(storage) >= ctx_of(storage)->max_credentials) {
         return CTAP_STORAGE_OUT_OF_MEMORY_ERROR;  // a new one, not an overwrite
     }
+    // An overwrite with another ID is a new credential in the old slot.
+    uint8_t old_id[32];
+    ctap_storage_item_t old;
+    const bool had_old = credential && item->handle != 0 && item_at(storage, item->handle, &old) &&
+                         id_of(old.data, old.size, old_id);
+    uint8_t new_id[32];
+    const bool has_new = credential && id_of(item->data, item->size, new_id);
     const ctap_storage_status_t st = ctap_memory_storage_create_or_update_item(storage, item);
-    return st == CTAP_STORAGE_OK ? save(storage) : st;
+    if (st != CTAP_STORAGE_OK) {
+        return st;
+    }
+    if (has_new && !(had_old && memcmp(old_id, new_id, 32) == 0)) {
+        if (had_old) {
+            delete_creator(storage, old_id);
+        }
+        add_creator(storage, new_id);
+    }
+    return save(storage);
 }
 
 ctap_storage_status_t ctap_file_storage_delete_item(const ctap_storage_t *storage,
                                                     uint32_t item_handle) {
+    uint8_t id[32];
+    ctap_storage_item_t item;
+    const bool credential = item_at(storage, item_handle, &item) &&
+                            item.key == CTAP_STORAGE_KEY_CREDENTIAL &&
+                            id_of(item.data, item.size, id);
     const ctap_storage_status_t st = ctap_memory_storage_delete_item(storage, item_handle);
-    return st == CTAP_STORAGE_OK ? save(storage) : st;
+    if (st != CTAP_STORAGE_OK) {
+        return st;
+    }
+    if (credential) {
+        delete_creator(storage, id);
+    }
+    return save(storage);
 }
 
 ctap_storage_status_t ctap_file_storage_increment_counter(const ctap_storage_t *storage,

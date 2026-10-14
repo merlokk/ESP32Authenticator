@@ -3,12 +3,22 @@
 // LionKey storage: its RAM log (ctap_memory_storage) mirrored to a file.
 
 #include "ctap_memory_storage.h"
+#include "fido_ctap.h"
 
 typedef struct {
     ctap_memory_storage_context_t mem;  // first: the memory storage casts the context to it
     const char *path;                   // NULL: RAM only
     size_t max_credentials;             // KEY_STORE_FULL beyond it
+    bool (*client)(fido_ctap_client_t *out);  // creator of new credentials, may be NULL
 } ctap_file_storage_context_t;
+
+// Our own item next to each credential (lionkey ignores unknown keys): the
+// credential ID and the host that created it. Created, replaced and deleted
+// together with the credential.
+#define CTAP_FILE_STORAGE_KEY_CREATOR 0x100u
+
+// The creator of a credential; transport NONE when not recorded.
+fido_ctap_client_t ctap_file_storage_creator(const ctap_storage_t *storage, const uint8_t id[32]);
 
 ctap_storage_status_t ctap_file_storage_init(const ctap_storage_t *storage);
 ctap_storage_status_t ctap_file_storage_create_or_update_item(const ctap_storage_t *storage,

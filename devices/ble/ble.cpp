@@ -786,6 +786,18 @@ esp_err_t Disconnect() {
 
 uint16_t ConnHandle() { return conn_handle; }
 
+bool PeerIdentity(uint8_t *type, uint8_t addr[6]) {
+    ble_gap_conn_desc desc = {};
+    if (conn_handle == BLE_HS_CONN_HANDLE_NONE || ble_gap_conn_find(conn_handle, &desc) != 0) {
+        return false;
+    }
+    *type = desc.peer_id_addr.type;
+    for (int i = 0; i < 6; ++i) {
+        addr[i] = desc.peer_id_addr.val[5 - i];  // NimBLE: little-endian
+    }
+    return true;
+}
+
 bool LinkSecure() {
     ble_gap_conn_desc desc = {};
     return conn_handle != BLE_HS_CONN_HANDLE_NONE && ble_gap_conn_find(conn_handle, &desc) == 0 &&

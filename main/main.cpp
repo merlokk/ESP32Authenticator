@@ -48,8 +48,14 @@ void InitFido() {
     presence.Init();
     static char store[64];
     const bool have_fs = spiffs_fs::Mounted() && spiffs_fs::FullPath("fido.bin", store, sizeof store);
-    const fido_ctap_hooks_t hooks = {ble_fido::Keepalive, ble_fido::Cancelled,
-                                     [] { return presence.Pressed(); }};
+    // The only transport today is BLE: the creator of a credential is the host
+    // on the link.
+    const fido_ctap_hooks_t hooks = {
+        ble_fido::Keepalive, ble_fido::Cancelled, [] { return presence.Pressed(); },
+        [](fido_ctap_client_t *out) {
+            out->transport = FIDO_CTAP_TRANSPORT_BLE;
+            return ble::PeerIdentity(&out->addr_type, out->addr);
+        }};
     if (fido_ctap_init(&hooks, have_fs ? store : nullptr, boards::kBoard.fido_max_credentials) ==
         ESP_OK) {
         ble_fido::SetMessageHandler(fido_ctap_request);

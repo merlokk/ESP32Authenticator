@@ -87,6 +87,16 @@ int CmdList(int, char **) {
             }
             printf("\n");
         }
+        const fido_ctap_client_t &by = c.created_by;
+        if (by.transport == FIDO_CTAP_TRANSPORT_BLE) {
+            printf("                   by %02x:%02x:%02x:%02x:%02x:%02x (BLE, %s)\n", by.addr[0],
+                   by.addr[1], by.addr[2], by.addr[3], by.addr[4], by.addr[5],
+                   by.addr_type == 0 ? "public" : "random");
+        } else if (by.transport == FIDO_CTAP_TRANSPORT_USB) {
+            printf("                   by USB\n");
+        } else {
+            printf("                   by unknown host\n");
+        }
     }
     printf("%u credential(s); 'fido2 delete <#|id>'\n", static_cast<unsigned>(count));
     return 0;

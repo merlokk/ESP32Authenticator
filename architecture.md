@@ -267,7 +267,10 @@ submodule) behind `ble_fido`. API: `fido_ctap_init(hooks, store)`,
   `fido_max_credentials` (10 on both boards, 1..50); lionkey stores
   non-discoverable ones too, one more gets KEY_STORE_FULL. The RAM log
   (`FIDO_CTAP_STORE_BYTES`: 1 KB per credential + 2 KB, 12 KB for 10) and the
-  compaction buffer are in PSRAM. A file larger than the log (limit lowered)
+  compaction buffer are in PSRAM. Next to each credential the store keeps a
+  creator item of its own (key 0x100, ignored by lionkey): credential ID,
+  transport, the host's BLE identity address. Made, replaced and deleted with
+  the credential; shown by `fido2 list`. A file larger than the log (limit lowered)
   is not loaded or touched: FIDO2 stays off.
   The signature counter is in NVS (`fido/sign_count`), kept by reset.
 - User presence: a fresh press of the Left button (GPIO0, BOOT on the dev

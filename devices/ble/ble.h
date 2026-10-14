@@ -83,6 +83,10 @@ uint16_t ConnHandle();
 // True when the link is encrypted and authenticated.
 bool LinkSecure();
 
+// Identity address of the connected host (resolved after bonding), most
+// significant byte first; `type` 0 public, 1 random. False without a link.
+bool PeerIdentity(uint8_t *type, uint8_t addr[6]);
+
 // Usable ATT payload for notifications on the current link (MTU - 3).
 uint16_t NotifyPayload();
 
