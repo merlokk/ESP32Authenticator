@@ -100,6 +100,11 @@ public:
     bool has_sd_card = false;
     bool has_frontlight = false;
 
+    // FIDO2 credentials in fido.bin (the next one gets KEY_STORE_FULL). The
+    // RAM log is ~1 KB per credential; the file lives on SPIFFS (80 KB, shared
+    // with the stock data on the X4 Pro).
+    uint16_t fido_max_credentials = 10;
+
     ButtonPin buttons[kButtonCount] = {};
     I2cPins i2c;
     DisplayPins display_pins;
@@ -133,6 +138,8 @@ constexpr bool UsableGpio(int8_t gpio) {
     return gpio != 19 && gpio != 20 && !(gpio >= 26 && gpio <= 37);
 }
 
+inline constexpr uint16_t kMaxFidoCredentials = 50;
+
 // nullptr when the board is consistent, else what is wrong.
 constexpr const char *CheckPins(const Board &b) {
     const int8_t pins[] = {
@@ -158,6 +165,9 @@ constexpr const char *CheckPins(const Board &b) {
                 return "two lines share a GPIO";
             }
         }
+    }
+    if (b.fido_max_credentials < 1 || b.fido_max_credentials > kMaxFidoCredentials) {
+        return "fido_max_credentials out of 1..50";
     }
     if (b.name == nullptr || b.name[0] == '\0') {
         return "no name";

@@ -18,6 +18,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "nvs.h"
 
@@ -62,7 +63,12 @@ static ctap_storage_status_t save(const ctap_storage_t *storage) {
 // used). Returns false if out of memory.
 static bool compact(const ctap_storage_t *storage) {
     ctap_file_storage_context_t *ctx = ctx_of(storage);
-    uint8_t *fresh = calloc(1, ctx->mem.memory_size);
+    // PSRAM, like the RAM log itself (fido_ctap.c); internal RAM only if full.
+    uint8_t *fresh =
+        heap_caps_calloc(1, ctx->mem.memory_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (fresh == NULL) {
+        fresh = heap_caps_calloc(1, ctx->mem.memory_size, MALLOC_CAP_8BIT);
+    }
     if (fresh == NULL) {
         return false;
     }
@@ -81,7 +87,8 @@ static bool compact(const ctap_storage_t *storage) {
     }
     memcpy(ctx->mem.memory, fresh, ctx->mem.memory_size);
     ctx->mem.write_index = out_ctx.write_index;
-    free(fresh);
+    memset(fresh, 0, ctx->mem.memory_size);  // private keys
+    heap_caps_free(fresh);
     return true;
 }
 
@@ -94,7 +101,15 @@ ctap_storage_status_t ctap_file_storage_init(const ctap_storage_t *storage) {
         FILE *f = fopen(ctx->path, "rb");
         if (f != NULL) {
             loaded = fread(ctx->mem.memory, 1, ctx->mem.memory_size, f);
+            // More than fits: the limit was lowered. Truncating would lose
+            // credentials on the next save, so the file is left as it is.
+            const bool too_big = loaded == ctx->mem.memory_size && fgetc(f) != EOF;
             fclose(f);
+            if (too_big) {
+                ESP_LOGE(TAG, "%s is larger than the %u-byte store: not loaded", ctx->path,
+                         (unsigned)ctx->mem.memory_size);
+                return CTAP_STORAGE_ERROR;
+            }
         } else if (errno != ENOENT) {
             ESP_LOGE(TAG, "cannot read %s: errno %d", ctx->path, errno);
             return CTAP_STORAGE_ERROR;

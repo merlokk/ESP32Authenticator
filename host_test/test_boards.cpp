@@ -34,6 +34,7 @@ void test_boards_dev_board(void) {
     TEST_ASSERT_FALSE(kDev.HasButton(ButtonId::kRight));
     TEST_ASSERT_FALSE(kDev.has_sd_card);
     TEST_ASSERT_FALSE(kDev.NeedsI2c());
+    TEST_ASSERT_EQUAL_UINT16(10, kDev.fido_max_credentials);
 }
 
 void test_boards_x4_pro(void) {
@@ -86,6 +87,13 @@ void test_boards_catch_a_device_without_pins(void) {
     Edited sd_without_pins;
     sd_without_pins.has_sd_card = true;
     TEST_ASSERT_NOT_NULL(boards::CheckPins(sd_without_pins));
+
+    Edited no_fido;
+    no_fido.fido_max_credentials = 0;
+    TEST_ASSERT_NOT_NULL(boards::CheckPins(no_fido));
+    Edited too_many_fido;
+    too_many_fido.fido_max_credentials = boards::kMaxFidoCredentials + 1;
+    TEST_ASSERT_NOT_NULL(boards::CheckPins(too_many_fido));
 
     Edited no_presence_button;
     no_presence_button.buttons[0].gpio = boards::kNoPin;

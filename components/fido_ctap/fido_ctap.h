@@ -24,9 +24,17 @@ typedef struct {
     bool (*button_pressed)(void);
 } fido_ctap_hooks_t;
 
+// RAM log for `n` credentials (~635 bytes each at most, rounded up), plus the
+// PIN state and room for items replaced during this boot (dropped at the next).
+#define FIDO_CTAP_STORE_BYTES(n) ((size_t)(n) * 1024 + 2048)
+
 // Loads the credential store from `store_path` (NULL: RAM only, lost on
-// reboot) and starts the core. The reset window (10 s) starts here.
-esp_err_t fido_ctap_init(const fido_ctap_hooks_t *hooks, const char *store_path);
+// reboot) and starts the core; up to `max_credentials` (the board's
+// fido_max_credentials; the 1+th gets KEY_STORE_FULL). A store file larger than
+// the RAM log (the limit was lowered) is not loaded and not touched: FIDO2
+// stays off. The reset window (10 s) starts here.
+esp_err_t fido_ctap_init(const fido_ctap_hooks_t *hooks, const char *store_path,
+                         size_t max_credentials);
 
 // One CTAP message: `msg` = command byte + CBOR parameters; `out` = status
 // byte + CBOR response. Returns the response length. Blocks while waiting for

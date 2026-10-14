@@ -116,7 +116,8 @@ host_test\run.cmd config     # suites whose name contains "config"
 (`board_spec.h`, pure): `hw_clock` (none, BM8563), `display` (none, e-ink
 800x480), `touch` (none, GT911), `led` (none, WS2812), `battery` (none,
 CW2017), `has_sd_card`, `has_frontlight`, and GPIOs for the buttons (Left,
-Right, Power; Left is FIDO2 user presence) and every device. Chosen at build
+Right, Power; Left is FIDO2 user presence) and every device, and
+`fido_max_credentials` (the size of `fido.bin`). Chosen at build
 time: `kBoardId` in `devices/config.h` -> `boards::kBoard` (`board.h`,
 constexpr); `CheckPins` (no shared GPIO, no USB/flash/PSRAM pin, every device
 has its pins) is a `static_assert` and a host test.
@@ -261,9 +262,13 @@ submodule) behind `ble_fido`. API: `fido_ctap_init(hooks, store)`,
 - Crypto: lionkey's table with RNG, SHA-256, AES from the `crypto` driver;
   P-256 on lionkey's micro-ecc (no ECC accelerator on the S3; its `uECC_*`
   symbols are renamed `lk_uECC_*`, NimBLE's tinycrypt has the same names).
-- Store: `/spiffs/fido.bin` = lionkey's RAM log (12 KB), rewritten whole
-  through a temp file on every change, compacted at boot. Max 10 credentials:
-  lionkey stores non-discoverable ones too, the 11th gets KEY_STORE_FULL.
+- Store: `/spiffs/fido.bin` = lionkey's RAM log, rewritten whole through a
+  temp file on every change, compacted at boot. Max credentials: the board's
+  `fido_max_credentials` (10 on both boards, 1..50); lionkey stores
+  non-discoverable ones too, one more gets KEY_STORE_FULL. The RAM log
+  (`FIDO_CTAP_STORE_BYTES`: 1 KB per credential + 2 KB, 12 KB for 10) and the
+  compaction buffer are in PSRAM. A file larger than the log (limit lowered)
+  is not loaded or touched: FIDO2 stays off.
   The signature counter is in NVS (`fido/sign_count`), kept by reset.
 - User presence: a fresh press of the Left button (GPIO0, BOOT on the dev
   board) within 30 s; KEEPALIVE every 300 ms; CANCEL aborts the wait.

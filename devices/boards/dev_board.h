@@ -13,6 +13,7 @@ public:
     constexpr DevBoard() {
         name = "ESP32-S3 dev board";
         led = LedType::kWs2812;
+        fido_max_credentials = 10;
         buttons[static_cast<size_t>(ButtonId::kLeft)] = {0, true};  // BOOT, also the ROM strap
         led_pins.data = 48;
     }

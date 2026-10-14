@@ -7,6 +7,7 @@
 #include "ctap.h"
 #include "ctap_credentials_store.h"
 #include "ctap_file_storage.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -15,10 +16,6 @@
 
 static const char *TAG = "fido_ctap";
 
-#define MAX_CREDENTIALS 10
-// Working copy in RAM: 10 credentials of at most ~635 bytes, the PIN state,
-// plus room for items replaced during this boot (dropped at the next one).
-#define STORE_SIZE (12 * 1024)
 #define UP_TIMEOUT_MS 30000
 #define KEEPALIVE_MS 300  // while processing / waiting for the user
 #define UP_POLL_MS 20
@@ -37,13 +34,16 @@ extern const ctap_crypto_t fido_ctap_crypto;
 
 // --- storage
 
-static uint8_t store_memory[STORE_SIZE] __attribute__((aligned(4)));
-static ctap_file_storage_context_t storage_ctx = {
-    .mem = {.memory_size = sizeof store_memory, .memory = store_memory, .write_index = 0},
+// The RAM log is sized from max_credentials at init and lives in PSRAM. Its
+// context has const members (lionkey), so it is built at init on the heap and
+// `storage.context` repointed; until then an empty one.
+static ctap_file_storage_context_t empty_ctx = {
+    .mem = {.memory_size = 0, .memory = NULL, .write_index = 0},
     .path = NULL,
-    .max_credentials = MAX_CREDENTIALS,
+    .max_credentials = 0,
 };
-static const ctap_storage_t storage = CTAP_FILE_STORAGE_CONST_INIT(&storage_ctx);
+static ctap_file_storage_context_t *ctx = &empty_ctx;
+static ctap_storage_t storage = CTAP_FILE_STORAGE_CONST_INIT(&empty_ctx);
 
 static ctap_state_t state = CTAP_STATE_CONST_INIT(&fido_ctap_crypto, &storage);
 
@@ -99,12 +99,36 @@ ctap_user_presence_result_t ctap_wait_for_user_presence(void) {
 
 // --- API
 
-esp_err_t fido_ctap_init(const fido_ctap_hooks_t *h, const char *store_path) {
+esp_err_t fido_ctap_init(const fido_ctap_hooks_t *h, const char *store_path,
+                         size_t max_credentials) {
+    if (max_credentials == 0 || ready) {
+        return ESP_ERR_INVALID_ARG;
+    }
     if (lock == NULL) {
         lock = xSemaphoreCreateMutexStatic(&lock_storage);
     }
+    const size_t size = FIDO_CTAP_STORE_BYTES(max_credentials);
+    uint8_t *memory = heap_caps_calloc(1, size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (memory == NULL) {
+        memory = heap_caps_calloc(1, size, MALLOC_CAP_8BIT);
+    }
+    if (memory == NULL) {
+        return ESP_ERR_NO_MEM;
+    }
+    const ctap_file_storage_context_t init = {
+        .mem = {.memory_size = size, .memory = memory, .write_index = 0},
+        .path = store_path,
+        .max_credentials = max_credentials,
+    };
+    ctap_file_storage_context_t *fresh = heap_caps_malloc(sizeof init, MALLOC_CAP_8BIT);
+    if (fresh == NULL) {
+        heap_caps_free(memory);
+        return ESP_ERR_NO_MEM;
+    }
+    memcpy(fresh, &init, sizeof init);
+    ctx = fresh;
+    storage.context = ctx;
     hooks = *h;
-    storage_ctx.path = store_path;
     if (storage.init(&storage) != CTAP_STORAGE_OK) {
         return ESP_FAIL;
     }
@@ -113,8 +137,8 @@ esp_err_t fido_ctap_init(const fido_ctap_hooks_t *h, const char *store_path) {
     }
     ctap_init(&state);
     ready = true;
-    ESP_LOGI(TAG, "ready, store %u of %u bytes", (unsigned)storage_ctx.mem.write_index,
-             (unsigned)sizeof store_memory);
+    ESP_LOGI(TAG, "ready, store %u of %u bytes, up to %u credentials",
+             (unsigned)ctx->mem.write_index, (unsigned)size, (unsigned)max_credentials);
     return ESP_OK;
 }
 
@@ -189,12 +213,12 @@ esp_err_t fido_ctap_info(fido_ctap_info_t *out) {
         return err;
     }
     memset(out, 0, sizeof *out);
-    out->store_used = storage_ctx.mem.write_index;
-    out->store_size = sizeof store_memory;
-    out->max_credentials = storage_ctx.max_credentials;
-    out->persistent = storage_ctx.path != NULL;
+    out->store_used = ctx->mem.write_index;
+    out->store_size = ctx->mem.memory_size;
+    out->max_credentials = ctx->max_credentials;
+    out->persistent = ctx->path != NULL;
     struct stat st;
-    if (storage_ctx.path != NULL && stat(storage_ctx.path, &st) == 0) {
+    if (ctx->path != NULL && stat(ctx->path, &st) == 0) {
         out->file_size = (size_t)st.st_size;
     }
     ctap_storage_item_t item = {.handle = 0, .key = CTAP_STORAGE_KEY_CREDENTIAL};

@@ -25,6 +25,6 @@ struct BoardFor<BoardId::kX4Pro> {
 using Selected = BoardFor<kBoardId>::Type;
 inline constexpr Selected kBoard;
 
-static_assert(CheckPins(kBoard) == nullptr, "devices/config.h: the board's pin map is invalid");
+static_assert(CheckPins(kBoard) == nullptr, "devices/config.h: the board is invalid (CheckPins)");
 
 }  // namespace boards

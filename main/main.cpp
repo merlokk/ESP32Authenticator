@@ -50,7 +50,8 @@ void InitFido() {
     const bool have_fs = spiffs_fs::Mounted() && spiffs_fs::FullPath("fido.bin", store, sizeof store);
     const fido_ctap_hooks_t hooks = {ble_fido::Keepalive, ble_fido::Cancelled,
                                      [] { return presence.Pressed(); }};
-    if (fido_ctap_init(&hooks, have_fs ? store : nullptr) == ESP_OK) {
+    if (fido_ctap_init(&hooks, have_fs ? store : nullptr, boards::kBoard.fido_max_credentials) ==
+        ESP_OK) {
         ble_fido::SetMessageHandler(fido_ctap_request);
     } else {
         ESP_LOGE(TAG, "fido: CTAP core init failed");

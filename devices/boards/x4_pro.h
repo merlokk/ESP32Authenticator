@@ -18,6 +18,7 @@ public:
         battery = BatteryType::kCw2017;
         has_sd_card = true;
         has_frontlight = true;
+        fido_max_credentials = 10;  // SPIFFS for now; more with the SD store
 
         buttons[static_cast<size_t>(ButtonId::kLeft)] = {0, true};  // also the ROM strap
         buttons[static_cast<size_t>(ButtonId::kRight)] = {7, true};
