@@ -86,7 +86,7 @@ typedef struct {
     uint8_t pin_retries;    // remaining PIN attempts
     uint32_t sign_count;    // global signature counter (NVS, survives reset)
     bool persistent;        // false: RAM only, lost on reboot
-    bool encrypted;         // the file is AES-256-GCM with the vault's data key
+    bool encrypted;         // the file is AES-256-GCM with the vault's PIN key
     uint32_t file_version;  // the store file's version (+1 per write), 0 if none yet
     uint32_t kept_version;  // highest version this device accepted (NVS)
     int64_t modified_utc;   // last change, Unix seconds; 0 unknown
