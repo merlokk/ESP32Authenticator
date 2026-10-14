@@ -266,7 +266,7 @@ esp_err_t fido_ctap_list(fido_ctap_credential_t *out, size_t capacity, size_t *c
         c->discoverable = ctap_credential_is_discoverable(&credential);
         c->cred_protect = (uint8_t)(source->flags & CTAP_CREDENTIAL_SOURCE_CTAP_flags_credProtect);
         c->size = item.size;
-        c->created_by = ctap_file_storage_creator(&storage, source->id);
+        c->origin = ctap_file_storage_origin(&storage, source->id);
     }
     admin_give();
     return ESP_OK;

@@ -27,6 +27,15 @@ typedef struct {
     uint8_t addr[6];    // BLE: most significant byte first, as printed
 } fido_ctap_client_t;
 
+// Where and when a credential was made: for the sync between several
+// authenticators (which one created a record) and for the console.
+typedef struct {
+    fido_ctap_client_t client;  // the host; transport NONE when unknown
+    int64_t created_utc;        // Unix seconds; 0: no believable time then
+    uint8_t device[6];          // this authenticator's base MAC (eFuse)
+    bool has_device;            // false: made before this was recorded
+} fido_ctap_origin_t;
+
 // Called from the task that runs fido_ctap_request().
 typedef struct {
     // Processing status for the host: 1 = processing, 2 = user presence needed.
@@ -85,8 +94,8 @@ typedef struct {
     bool discoverable;
     uint8_t cred_protect;  // 1..3 (credProtect extension), 0 if unset
     size_t size;           // bytes in the store
-    // Who created it; transport NONE for credentials made before this was kept.
-    fido_ctap_client_t created_by;
+    // Who, where and when; all unknown for credentials made before this was kept.
+    fido_ctap_origin_t origin;
 } fido_ctap_credential_t;
 
 esp_err_t fido_ctap_info(fido_ctap_info_t *out);

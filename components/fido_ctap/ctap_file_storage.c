@@ -19,9 +19,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "ctap_credentials_store.h"
 #include "esp_heap_caps.h"
+#include "esp_mac.h"
 #include "esp_log.h"
 #include "nvs.h"
 
@@ -29,6 +31,8 @@ static const char *TAG = "ctap_store";
 
 static const char *kNvsNamespace = "fido";
 static const char *kNvsCounter = "sign_count";
+// 2024-01-01: an earlier clock was never set (rtc::Believable).
+static const time_t kBelievableTime = 1704067200;
 
 static ctap_file_storage_context_t *ctx_of(const ctap_storage_t *storage) {
     return (ctap_file_storage_context_t *)storage->context;
@@ -138,12 +142,9 @@ static size_t count_credentials(const ctap_storage_t *storage) {
     return n;
 }
 
-// --- creator items
+// --- origin items
 
-typedef struct {
-    uint8_t id[32];
-    fido_ctap_client_t client;
-} creator_item_t;
+#define ORIGIN_OLD_SIZE 40u  // id + host only
 
 #define CREDENTIAL_ID_OFFSET offsetof(ctap_credential_source_t, id)
 
@@ -169,11 +170,11 @@ static bool item_at(const ctap_storage_t *storage, uint32_t handle, ctap_storage
     return false;
 }
 
-static bool find_creator(const ctap_storage_t *storage, const uint8_t id[32],
-                         ctap_storage_item_t *out) {
-    ctap_storage_item_t item = {.handle = 0, .key = CTAP_FILE_STORAGE_KEY_CREATOR};
+static bool find_origin(const ctap_storage_t *storage, const uint8_t id[32],
+                        ctap_storage_item_t *out) {
+    ctap_storage_item_t item = {.handle = 0, .key = CTAP_FILE_STORAGE_KEY_ORIGIN};
     while (ctap_memory_storage_find_item(storage, &item) == CTAP_STORAGE_OK) {
-        if (item.size >= sizeof(creator_item_t) && memcmp(item.data, id, 32) == 0) {
+        if (item.size >= ORIGIN_OLD_SIZE && memcmp(item.data, id, 32) == 0) {
             *out = item;
             return true;
         }
@@ -181,40 +182,64 @@ static bool find_creator(const ctap_storage_t *storage, const uint8_t id[32],
     return false;
 }
 
-static void delete_creator(const ctap_storage_t *storage, const uint8_t id[32]) {
+static void delete_origin(const ctap_storage_t *storage, const uint8_t id[32]) {
     ctap_storage_item_t item;
-    if (find_creator(storage, id, &item)) {
+    if (find_origin(storage, id, &item)) {
         ctap_memory_storage_delete_item(storage, item.handle);
     }
 }
 
-// Records the current host as the creator of credential `id`. Best effort: a
-// missing record only shows as "unknown".
-static void add_creator(const ctap_storage_t *storage, const uint8_t id[32]) {
-    creator_item_t record;
-    memset(&record, 0, sizeof record);
-    memcpy(record.id, id, 32);
-    bool (*client)(fido_ctap_client_t *) = ctx_of(storage)->client;
-    if (client == NULL || !client(&record.client)) {
-        return;
+// Records where and when credential `id` is made. Best effort: a missing
+// record only shows as "unknown".
+static void add_origin(const ctap_storage_t *storage, const uint8_t id[32]) {
+    uint8_t record[CTAP_FILE_STORAGE_ORIGIN_SIZE];
+    memset(record, 0, sizeof record);
+    memcpy(record, id, 32);
+    fido_ctap_client_t client;
+    memset(&client, 0, sizeof client);
+    bool (*get_client)(fido_ctap_client_t *) = ctx_of(storage)->client;
+    if (get_client == NULL || !get_client(&client)) {
+        memset(&client, 0, sizeof client);
     }
+    record[32] = client.transport;
+    record[33] = client.addr_type;
+    memcpy(record + 34, client.addr, 6);
+    const time_t now = time(NULL);
+    const int64_t created = now >= kBelievableTime ? (int64_t)now : 0;
+    for (int i = 0; i < 8; ++i) {
+        record[40 + i] = (uint8_t)((uint64_t)created >> (8 * i));
+    }
+    esp_read_mac(record + 48, ESP_MAC_BASE);
     ctap_storage_item_t item = {.handle = 0,
-                                .key = CTAP_FILE_STORAGE_KEY_CREATOR,
+                                .key = CTAP_FILE_STORAGE_KEY_ORIGIN,
                                 .size = sizeof record,
-                                .data = (const uint8_t *)&record};
+                                .data = record};
     if (ctap_memory_storage_create_or_update_item(storage, &item) != CTAP_STORAGE_OK) {
-        ESP_LOGW(TAG, "no room for the creator record");
+        ESP_LOGW(TAG, "no room for the origin record");
     }
 }
 
-fido_ctap_client_t ctap_file_storage_creator(const ctap_storage_t *storage, const uint8_t id[32]) {
-    fido_ctap_client_t client;
-    memset(&client, 0, sizeof client);
+fido_ctap_origin_t ctap_file_storage_origin(const ctap_storage_t *storage, const uint8_t id[32]) {
+    fido_ctap_origin_t origin;
+    memset(&origin, 0, sizeof origin);
     ctap_storage_item_t item;
-    if (find_creator(storage, id, &item)) {
-        memcpy(&client, item.data + 32, sizeof client);
+    if (!find_origin(storage, id, &item)) {
+        return origin;
     }
-    return client;
+    const uint8_t *d = item.data;
+    origin.client.transport = d[32];
+    origin.client.addr_type = d[33];
+    memcpy(origin.client.addr, d + 34, 6);
+    if (item.size >= CTAP_FILE_STORAGE_ORIGIN_SIZE) {
+        uint64_t created = 0;
+        for (int i = 0; i < 8; ++i) {
+            created |= (uint64_t)d[40 + i] << (8 * i);
+        }
+        origin.created_utc = (int64_t)created;
+        memcpy(origin.device, d + 48, 6);
+        origin.has_device = true;
+    }
+    return origin;
 }
 
 // --- items
@@ -239,9 +264,9 @@ ctap_storage_status_t ctap_file_storage_create_or_update_item(const ctap_storage
     }
     if (has_new && !(had_old && memcmp(old_id, new_id, 32) == 0)) {
         if (had_old) {
-            delete_creator(storage, old_id);
+            delete_origin(storage, old_id);
         }
-        add_creator(storage, new_id);
+        add_origin(storage, new_id);
     }
     return save(storage);
 }
@@ -258,7 +283,7 @@ ctap_storage_status_t ctap_file_storage_delete_item(const ctap_storage_t *storag
         return st;
     }
     if (credential) {
-        delete_creator(storage, id);
+        delete_origin(storage, id);
     }
     return save(storage);
 }

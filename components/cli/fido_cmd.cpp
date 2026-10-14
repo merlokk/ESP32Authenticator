@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
 
 #include "fido_ctap.h"
 #include "subcommand.h"
@@ -64,6 +65,41 @@ int Load(size_t *count) {
     return err == ESP_OK ? 0 : Failed(err, "list");
 }
 
+void PrintMac(const uint8_t *mac) {
+    printf("%02x:%02x:%02x:%02x:%02x:%02x", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+}
+
+// "made <local time> on <authenticator> by <host>"; parts not recorded: "?".
+void PrintOrigin(const fido_ctap_origin_t &o) {
+    printf("                   made ");
+    if (o.created_utc > 0) {
+        const time_t when = static_cast<time_t>(o.created_utc);
+        struct tm local = {};
+        localtime_r(&when, &local);
+        char text[20];
+        strftime(text, sizeof text, "%Y-%m-%d %H:%M", &local);
+        printf("%s", text);
+    } else {
+        printf("?");
+    }
+    printf(" on ");
+    if (o.has_device) {
+        PrintMac(o.device);
+    } else {
+        printf("?");
+    }
+    printf(" by ");
+    if (o.client.transport == FIDO_CTAP_TRANSPORT_BLE) {
+        PrintMac(o.client.addr);
+        printf(" (BLE, %s)", o.client.addr_type == 0 ? "public" : "random");
+    } else if (o.client.transport == FIDO_CTAP_TRANSPORT_USB) {
+        printf("USB");
+    } else {
+        printf("?");
+    }
+    printf("\n");
+}
+
 int CmdList(int, char **) {
     size_t count = 0;
     if (Load(&count) != 0) {
@@ -87,16 +123,7 @@ int CmdList(int, char **) {
             }
             printf("\n");
         }
-        const fido_ctap_client_t &by = c.created_by;
-        if (by.transport == FIDO_CTAP_TRANSPORT_BLE) {
-            printf("                   by %02x:%02x:%02x:%02x:%02x:%02x (BLE, %s)\n", by.addr[0],
-                   by.addr[1], by.addr[2], by.addr[3], by.addr[4], by.addr[5],
-                   by.addr_type == 0 ? "public" : "random");
-        } else if (by.transport == FIDO_CTAP_TRANSPORT_USB) {
-            printf("                   by USB\n");
-        } else {
-            printf("                   by unknown host\n");
-        }
+        PrintOrigin(c.origin);
     }
     printf("%u credential(s); 'fido2 delete <#|id>'\n", static_cast<unsigned>(count));
     return 0;

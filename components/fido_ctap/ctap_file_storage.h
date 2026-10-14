@@ -12,13 +12,20 @@ typedef struct {
     bool (*client)(fido_ctap_client_t *out);  // creator of new credentials, may be NULL
 } ctap_file_storage_context_t;
 
-// Our own item next to each credential (lionkey ignores unknown keys): the
-// credential ID and the host that created it. Created, replaced and deleted
-// together with the credential.
-#define CTAP_FILE_STORAGE_KEY_CREATOR 0x100u
+// Our own item next to each credential (lionkey ignores unknown keys), made,
+// replaced and deleted with it. Fixed little-endian layout (it travels with
+// the store between devices):
+//   0  credential ID (32)
+//  32  host: transport (1), address type (1), address (6, MSB first)
+//  40  created, Unix seconds, int64 (0: no believable time)
+//  48  this authenticator's base MAC (6)
+//  54  reserved (2)
+// Records of 40 bytes (first firmware with it) carry the host only.
+#define CTAP_FILE_STORAGE_KEY_ORIGIN 0x100u
+#define CTAP_FILE_STORAGE_ORIGIN_SIZE 56u
 
-// The creator of a credential; transport NONE when not recorded.
-fido_ctap_client_t ctap_file_storage_creator(const ctap_storage_t *storage, const uint8_t id[32]);
+// The origin of a credential; all unknown when not recorded.
+fido_ctap_origin_t ctap_file_storage_origin(const ctap_storage_t *storage, const uint8_t id[32]);
 
 ctap_storage_status_t ctap_file_storage_init(const ctap_storage_t *storage);
 ctap_storage_status_t ctap_file_storage_create_or_update_item(const ctap_storage_t *storage,
