@@ -241,12 +241,19 @@ Our `devices/buttons` is a raw level read. Port from
   alone): with test_info + test_config 21 passed, 1 skipped (2026-10-15).
 - Firmware: nothing beyond the core (storage key 7 is kept in `fido.bin`).
 
-## 10. Attestation formats (2.2)
+## 10. Attestation formats (2.2) (done)
 
-- makeCredential `attestationFormatsPreference`: honour `none` (empty
-  `attStmt`, no signature, fmt `none`) and `packed` (self, as today).
-- getInfo `attestationFormats: ["packed", "none"]`.
-- Default without a preference: `packed` (unchanged).
+- makeCredential `attestationFormatsPreference` (0x0B): the first entry we
+  support wins (`packed`: self attestation as before; `none`: fmt `none`,
+  `attStmt` an empty map, no signature, authData unchanged); nothing we
+  support or an empty list: `packed`; a non-string element:
+  CBOR_UNEXPECTED_TYPE.
+- getInfo `attestationFormats` (0x16) = `["packed"]`: "none" is implied and
+  MUST NOT be listed (the plan said `["packed", "none"]`).
+- Tests: `ctap_attestation_formats_test.cpp` (6);
+  `tests/fido2/test_attestation_formats.py` (getInfo; `none` over BLE, one
+  touch; python-fido2 has no parameter for 0x0B: `send_cbor`): with test_info
+  9 passed (2026-10-15).
 
 ## 11. encIdentifier / encCredStoreState in getInfo (2.2)
 

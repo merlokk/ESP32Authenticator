@@ -348,7 +348,8 @@ submodule) behind `ble_fido`. API: `fido_ctap_init(hooks, store)`,
   EdDSA / Ed25519 (COSE -8, -19; Monocypher), the host's first choice. hmac-secret
   also at makeCredential (`hmac-secret-mc`, PRF at create). Read-only credential
   management with a persistent pinUvAuthToken (`pcmr`, kept in `fido.bin`,
-  dropped by a PIN change or a reset). Details: [lionkey-update-plan.md](lionkey-update-plan.md).
+  dropped by a PIN change or a reset). Attestation: packed (self) or `none` on
+  request (`attestationFormatsPreference`). Details: [lionkey-update-plan.md](lionkey-update-plan.md).
 - Console (`fido2 info|list|delete|reset`): `fido_ctap_info/list/delete/reset`.
   A mutex serialises them with CTAP requests (a request holds it for its whole
   run, button wait included; the console waits 1 s, then "busy"). The console
