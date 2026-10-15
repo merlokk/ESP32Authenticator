@@ -44,6 +44,8 @@ ESP-IDF setup, build/flash, tests, web site access, CLI: [build.md](build.md).
 
 Windows 11 BLE FIDO2 fix (GATT tail service): [windows-ble-fido.md](windows-ble-fido.md).
 
+LionKey fork (CTAP 2.2/2.3 features, EdDSA, U2F): [lionkey-update-plan.md](lionkey-update-plan.md).
+
 Credential store encryption, PSRAM store, SD for hundreds of keys (analysis): [storage-encryption.md](storage-encryption.md).
 
 ## Hardware
