@@ -18,6 +18,7 @@ void RegisterBoardTests(void);
 void RegisterTimesyncTests(void);
 void RegisterTimezoneTests(void);
 void RegisterLedTests(void);
+void RegisterButtonTests(void);
 void RegisterTotpTests(void);
 void RegisterStorefileTests(void);
 void RegisterVaultTests(void);
@@ -62,6 +63,7 @@ int main(int argc, char **argv) {
     if (Wanted("timesync")) RegisterTimesyncTests();
     if (Wanted("timezone")) RegisterTimezoneTests();
     if (Wanted("led")) RegisterLedTests();
+    if (Wanted("buttons")) RegisterButtonTests();
     if (Wanted("totp")) RegisterTotpTests();
     if (Wanted("storefile")) RegisterStorefileTests();
     if (Wanted("vault")) RegisterVaultTests();

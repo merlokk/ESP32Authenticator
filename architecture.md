@@ -41,7 +41,7 @@ Reference ESP-IDF + LVGL project: `../../ai-remote/approver-esp32` ([GitHub](htt
 | `lib/` | third-party git submodules, used unmodified (`lionkey`) |
 | `host_test/` | host tests (Unity, MSVC), no board: see Tests |
 | `utils/` | host-side Python tools over the USB console (`device.py`: console session; `spiffs.py`: ls/info/rm/get/put; `ble.py`: ble commands, `kb` text quoting) |
-| `devices/` | hardware drivers, one component per device (`hardware`: SoC info, eFuse, USB host connected; `spiffs_fs`: SPIFFS on `spiffs` at `/spiffs`, never formatted, it holds stock data on the X4 Pro; `ble`, `ble_kb`, `ble_fido`: see BLE; `wifi`: the radio (`wifi::Radio`), no decisions, stores nothing; `buttons`: GPIO buttons, polled, pins from the board; `crypto`: hardware RNG, SHA-256, AES-256-CBC, AES-256-GCM, HMAC-SHA1 via PSA, HOTP/TOTP (`otp.h`, pure: counter, truncation); `clock`: `rtc::Clock`, see Time; `led`: one WS2812 from UART1, see Boards; `boards`: board classes, see Boards). `devices/config.h`: the board the firmware is built for |
+| `devices/` | hardware drivers, one component per device (`hardware`: SoC info, eFuse, USB host connected; `spiffs_fs`: SPIFFS on `spiffs` at `/spiffs`, never formatted, it holds stock data on the X4 Pro; `ble`, `ble_kb`, `ble_fido`: see BLE; `wifi`: the radio (`wifi::Radio`), no decisions, stores nothing; `buttons`: GPIO buttons, polled, debounced 25 ms (`button_logic.h`, pure: debounce, short/long press, from approver-esp32), pins from the board; `crypto`: hardware RNG, SHA-256, AES-256-CBC, AES-256-GCM, HMAC-SHA1 via PSA, HOTP/TOTP (`otp.h`, pure: counter, truncation); `clock`: `rtc::Clock`, see Time; `led`: one WS2812 from UART1, see Boards; `boards`: board classes, see Boards). `devices/config.h`: the board the firmware is built for |
 
 ## Config
 
@@ -110,7 +110,8 @@ cannot link on Windows), Unity from ESP-IDF, cJSON from `managed_components/`
 (run `idf.py build` once). `fakes/` shadows the few ESP-IDF headers used.
 Pattern from approver-esp32. Suites: `config`, `wifi_policy`, `reachability`,
 `web_auth`, `web_paths` (paths + server policy), `web_settings`, `clock`,
-`boards`, `timesync`, `timezone`, `led`, `totp` (truncation against the RFC 4226
+`boards`, `timesync`, `timezone`, `led`, `buttons` (debounce, short/long
+press), `totp` (truncation against the RFC 4226
 HMAC values; the HMAC itself is checked on the board by `totp test`); only code with
 no hardware (pure headers) is under test.
 
@@ -118,6 +119,10 @@ no hardware (pure headers) is under test.
 host_test\run.cmd            # all suites
 host_test\run.cmd config     # suites whose name contains "config"
 ```
+
+`host_test/lionkey.sh` (`lionkey.cmd` from Windows): LionKey's own GoogleTest
+suite (`lib/lionkey/test`), built by gcc in WSL with ASan/UBSan (MSVC cannot
+build it: C VLAs).
 
 ## Boards
 

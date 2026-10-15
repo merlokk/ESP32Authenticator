@@ -42,7 +42,7 @@ typedef struct {
     void (*keepalive)(uint8_t status);
     // True when the host cancelled the running request.
     bool (*cancelled)(void);
-    // Level of the user presence input (button held down).
+    // Level of the user presence input (button held down, debounced).
     bool (*button_pressed)(void);
     // The current host; false (or NULL hook) when unknown.
     bool (*client)(fido_ctap_client_t *out);

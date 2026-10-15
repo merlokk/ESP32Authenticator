@@ -6,7 +6,7 @@ CTAP 2.3 (Feb 2026, no breaking changes over 2.2). CBOR keys, permission bits
 and error codes are taken from the spec when each step starts, not from
 memory.
 
-## 0. Fork and layout
+## 0. Fork and layout (done)
 
 - Fork: `github.com/merlokk/lionkey` (done; remote `upstream` = pokusew).
   Branch `esp32auth` from the current
@@ -18,7 +18,8 @@ memory.
   binding, storage. The core gets only generic hooks with weak/NULL defaults.
 - Tests: LionKey's gtest suite (`lib/lionkey/test`) gets a test per feature
   (it already covers getInfo, makeCredential, getAssertion, clientPIN); build
-  it on the host next to `host_test\run.cmd` (add `host_test\lionkey.cmd`).
+  it on the host: `host_test\lionkey.cmd` (WSL, gcc, ASan/UBSan; 130 tests
+  pass on `c1518f2`).
   On the board: `tests/fido2` (pytest + python-fido2, `--transport ble`).
 - `components/fido_ctap/CMakeLists.txt`: new core sources; `sources.md`:
   the fork URL.
@@ -29,7 +30,7 @@ Persistent state rule: new data goes into **new storage keys**
 from the current firmware loads unchanged. New credential flags use free bits
 of `ctap_credential_source_t.flags` (bits 8+).
 
-## 1. Buttons: port from approver-esp32
+## 1. Buttons: port from approver-esp32 (done)
 
 Our `devices/buttons` is a raw level read. Port from
 `../../ai-remote/approver-esp32/components/buttons`:
@@ -37,10 +38,11 @@ Our `devices/buttons` is a raw level read. Port from
 - `Debounce` (25 ms) and `PressLength` (long press fires at the threshold,
   while held): pure, into a header with host tests (port `test_buttons.cpp`
   to Unity in `host_test`).
-- `Buttons::HeldFor(index, hold_ms)` (blocking, polled).
-- Keep `buttons::Button` + `boards::Button(ButtonId)` as the board-facing API;
-  the debounced state sits behind it.
-- `fido_ctap` presence: a fresh *debounced* press (today a raw edge).
+- `HeldFor(hold_ms)` (blocking, polled), on `buttons::Button`.
+- Kept `buttons::Button` + `boards::Button(ButtonId)` as the board-facing API;
+  the debounced state sits behind it (`Poll()`, `Pressed()`, `StableMs()`).
+  The multi-button `Buttons` table of approver-esp32 is not ported.
+- `fido_ctap` presence: a fresh *debounced* press (was a raw edge).
 
 ## 2. Long touch for reset (2.3)
 

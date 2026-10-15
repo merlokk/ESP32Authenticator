@@ -58,9 +58,10 @@ const char *StorageDir() {
 }
 
 // FIDO2 over BLE: the LionKey CTAP core behind the ble_fido transport. User
-// presence: the board's Left button (BOOT on the dev board).
+// presence: the board's Left button (BOOT on the dev board), debounced; polled
+// only by the CTAP request task.
 void InitFido(const char *dir) {
-    static const buttons::Button presence = boards::Button(boards::ButtonId::kLeft);
+    static buttons::Button presence = boards::Button(boards::ButtonId::kLeft);
     presence.Init();
     static char store[64];
     const bool have_fs = dir != nullptr && snprintf(store, sizeof store, "%s/fido.bin", dir) <
@@ -68,7 +69,10 @@ void InitFido(const char *dir) {
     // The only transport today is BLE: the creator of a credential is the host
     // on the link.
     const fido_ctap_hooks_t hooks = {
-        ble_fido::Keepalive, ble_fido::Cancelled, [] { return presence.Pressed(); },
+        ble_fido::Keepalive, ble_fido::Cancelled, [] {
+            presence.Poll();
+            return presence.Pressed();
+        },
         [](fido_ctap_client_t *out) {
             out->transport = FIDO_CTAP_TRANSPORT_BLE;
             return ble::PeerIdentity(&out->addr_type, out->addr);
