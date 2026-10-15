@@ -115,3 +115,11 @@ def test_toggle_always_uv_and_back(config_supported, auth):
         protocol, token = config_token(auth)
         Config(auth.ctap2, protocol, token).toggle_always_uv()
     assert auth.ctap2.get_info().options["alwaysUv"] is before, "alwaysUv not restored"
+
+
+def test_min_pin_length_extension(config_supported, info, raw_info):
+    """minPinLength extension: listed, and RP IDs can be set (never set here:
+    only a FIDO reset clears the list)."""
+    if "minPinLength" not in info.extensions:
+        pytest.skip("minPinLength extension not supported")
+    assert raw_info[0x10] >= 1  # maxRPIDsForSetMinPINLength

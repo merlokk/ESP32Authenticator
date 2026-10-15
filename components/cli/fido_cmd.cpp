@@ -81,8 +81,10 @@ int CmdInfo(int, char **) {
     } else {
         printf("file       none: RAM only, lost on reboot\n");
     }
-    printf("pin        %s, %u attempt(s) left, min %u%s\n", info.pin_set ? "set" : "not set",
-           static_cast<unsigned>(info.pin_retries), static_cast<unsigned>(info.min_pin_length),
+    printf("pin        %s, %u attempt(s) left, min %u (shown to %u site(s))%s\n",
+           info.pin_set ? "set" : "not set", static_cast<unsigned>(info.pin_retries),
+           static_cast<unsigned>(info.min_pin_length),
+           static_cast<unsigned>(info.min_pin_length_rps),
            info.force_pin_change ? ", change due" : "");
     printf("always uv  %s\n", info.always_uv ? "on" : "off");
     printf("reset      ");

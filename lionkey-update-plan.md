@@ -109,11 +109,24 @@ Our `devices/buttons` is a raw level read. Port from
 - Console: `fido2 info` shows min PIN length, change due, always uv, reset
   rule; `board` the reset window.
 
-## 4. minPinLength extension
+## 4. minPinLength extension (done)
 
-- makeCredential `extensions.minPinLength: true` -> authData extension with
-  the current minimum, only for RP IDs in `minPinLengthRPIDs`.
-- getInfo `extensions`: add `minPinLength`.
+- makeCredential `extensions.minPinLength: true` -> authData extension
+  `minPinLength: <current minimum>` only for an RP ID in the list; otherwise
+  omitted (and no ED flag when nothing else is output; before, an extensions
+  map with only unsupported entries gave an empty map with ED).
+- The list: setMinPINLength `minPinLengthRPIDs`, kept as SHA-256 of each RP
+  ID (the request's rpId hash is compared) under
+  `CTAP_STORAGE_KEY_MIN_PIN_LENGTH_RP_IDS` (5), up to
+  `CTAP_MAX_MIN_PIN_LENGTH_RP_IDS` = 8 (getInfo 0x10). A non-empty list
+  replaces the previous one; an empty one changes nothing; more than 8 ->
+  KEY_STORE_FULL (spec names no code; nothing changes); a non-string ->
+  CBOR_UNEXPECTED_TYPE. Reset clears it.
+- getInfo `extensions`: + `minPinLength`.
+- Tests: `ctap_config_test.cpp` (+6); `fido2 info` shows how many sites;
+  over BLE `test_info.py` + `test_config.py` 16 passed, 1 skipped (2026-10-15).
+- The list cannot be emptied except by a reset: not set on the device by
+  `tests/fido2`.
 
 ## 5. PIN complexity policy (2.3)
 

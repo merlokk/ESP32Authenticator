@@ -334,7 +334,8 @@ submodule) behind `ble_fido`. API: `fido_ctap_init(hooks, store)`,
 - authenticatorConfig (LionKey fork): toggleAlwaysUv, setMinPINLength
   (only raises; a PIN below it must be changed: forcePINChange),
   enableLongTouchForReset; kept in `fido.bin` (storage key 4), cleared by a
-  reset. Details: [lionkey-update-plan.md](lionkey-update-plan.md).
+  reset. minPinLength extension: the minimum PIN length goes to up to 8 sites
+  set by setMinPINLength (storage key 5, SHA-256 of the RP IDs). Details: [lionkey-update-plan.md](lionkey-update-plan.md).
 - Console (`fido2 info|list|delete|reset`): `fido_ctap_info/list/delete/reset`.
   A mutex serialises them with CTAP requests (a request holds it for its whole
   run, button wait included; the console waits 1 s, then "busy"). The console

@@ -106,6 +106,7 @@ typedef struct {
     uint32_t kept_version;  // highest version this device accepted (NVS)
     int64_t modified_utc;   // last change, Unix seconds; 0 unknown
     uint8_t min_pin_length;     // minimum PIN length, code points (setMinPINLength)
+    size_t min_pin_length_rps;  // sites allowed to read it (minPinLength extension)
     bool force_pin_change;      // a PIN change is due (forcePINChange)
     bool always_uv;             // alwaysUv (toggleAlwaysUv)
     uint32_t long_touch_ms;     // the hold authenticatorReset takes, 0: a press

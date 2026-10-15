@@ -388,6 +388,7 @@ esp_err_t fido_ctap_info(fido_ctap_info_t *out) {
     out->kept_version = ctap_file_storage_nvs_version();
     out->modified_utc = ctx->modified_utc;
     out->min_pin_length = ctap_get_pin_min_code_point_length(&state);
+    out->min_pin_length_rps = ctap_min_pin_length_rp_ids_count(&state);
     out->force_pin_change = ctap_is_force_pin_change(&state);
     out->always_uv = ctap_is_always_uv(&state);
     out->long_touch_ms = ctap_get_long_touch_for_reset_ms(&state);
