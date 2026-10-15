@@ -103,7 +103,9 @@ Our `devices/buttons` is a raw level read. Port from
   entering the map (credentialManagement's parser dereferences it first).
 - Tests: `ctap_config_test.cpp` (27), forcePINChange in
   `ctap_client_pin_test.cpp` (3); `tests/fido2/test_config.py` over BLE
-  (never setMinPINLength on the device: only a reset lowers it again).
+  (never setMinPINLength on the device: only a reset lowers it again):
+  `test_info.py` + `test_config.py` 15 passed, toggleAlwaysUv round trip
+  skipped (`--destructive`), on the dev board 2026-10-15.
 - Console: `fido2 info` shows min PIN length, change due, always uv, reset
   rule; `board` the reset window.
 
