@@ -201,7 +201,8 @@ Our `devices/buttons` is a raw level read. Port from
 - BLE (`devices/ble_fido`): `fidoServiceRevisionBitfield` always reads 0x60
   (U2F 1.2 + FIDO2), also after the client wrote the one it uses (only
   checked: routing is by CLA, not by the pick; before, a read returned the
-  pick until a disconnect, and Windows keeps a bonded link up); MSG frames with CLA 0x00 go to
+  pick until a disconnect, and Windows keeps a bonded link up; webauthn.io
+  works with it); MSG frames with CLA 0x00 go to
   `ctap1_request` (`fido_ctap_request`).
 - `fido2 list` / web: a U2F credential's site is `U2F <app hash prefix>`.
 - Tests: `ctap1_test.cpp` (10: register and its certificate verified with
