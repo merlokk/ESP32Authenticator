@@ -8,7 +8,8 @@ memory.
 
 ## 0. Fork and layout
 
-- Fork to `github.com/merlokk/lionkey`, branch `esp32auth` from the current
+- Fork: `github.com/merlokk/lionkey` (done; remote `upstream` = pokusew).
+  Branch `esp32auth` from the current
   submodule commit (`c1518f2`); `.gitmodules` points to the fork. `main` of the
   fork follows upstream; our branch is rebased on it.
 - Commits in the fork: one feature per commit, upstream style (tabs,
