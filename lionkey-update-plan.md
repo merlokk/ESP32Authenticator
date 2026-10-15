@@ -198,9 +198,10 @@ Our `devices/buttons` is a raw level read. Port from
   U2F_REGISTER, kept under `CTAP_STORAGE_KEY_U2F_ATTESTATION` (6); a reset
   makes a new one. Not batch attestation (sites checking the MDS see an
   unknown key).
-- BLE (`devices/ble_fido`): `fidoServiceRevisionBitfield` reads 0x60 (U2F 1.2
-  + FIDO2) until the client writes one of them (then that one, until it
-  disconnects); routing is by CLA, not by the chosen revision; MSG frames with CLA 0x00 go to
+- BLE (`devices/ble_fido`): `fidoServiceRevisionBitfield` always reads 0x60
+  (U2F 1.2 + FIDO2), also after the client wrote the one it uses (only
+  checked: routing is by CLA, not by the pick; before, a read returned the
+  pick until a disconnect, and Windows keeps a bonded link up); MSG frames with CLA 0x00 go to
   `ctap1_request` (`fido_ctap_request`).
 - `fido2 list` / web: a U2F credential's site is `U2F <app hash prefix>`.
 - Tests: `ctap1_test.cpp` (10: register and its certificate verified with
@@ -348,8 +349,7 @@ Every claim above checked against the code and the tests; the gaps got tests
 - `tests/fido2/test_lionkey_info.py`: our getInfo exactly (versions, algorithms,
   extensions, options, uvModality, attestationFormats, config fields, the BLE
   revision 0x60); the feature tests skip when a feature is missing, this one
-  fails: with test_info 15 passed, 1 skipped (the revision: FIDO2 already
-  picked on the link Windows keeps up) over BLE (2026-10-15).
+  fails: with test_info 16 passed over BLE (2026-10-15).
 - Not automated: firmware glue (long touch loop, LED, debounced presence,
   pin_policy / `pin.complexity` wiring into the core), console and web output,
   the weak default hooks (the test platform replaces them), keepalive during

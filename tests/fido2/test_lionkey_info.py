@@ -76,8 +76,6 @@ def test_ble_revision(ours, device):
 
     if not isinstance(device, BleCtapDevice):
         pytest.skip("BLE only")
-    # Both until a client picks one; the pick holds until the link drops, and
-    # Windows keeps the link of a bonded host up between runs.
-    if device.revision == REVISION_FIDO2:
-        pytest.skip("FIDO2 already picked on this link: 0x60 shows after a disconnect")
+    # Always both (what we support), also after a client picked one: Windows
+    # keeps the link of a bonded host up, so an earlier pick may be in place.
     assert device.revision == REVISION_U2F_1_2 | REVISION_FIDO2

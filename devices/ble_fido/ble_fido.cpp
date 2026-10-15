@@ -35,7 +35,9 @@ constexpr uint32_t kWorkerStack = 12 * 1024;
 constexpr UBaseType_t kWorkerPriority = 5;
 
 // fidoServiceRevisionBitfield: bit 6 = U2F 1.2, bit 5 = FIDO2 (CTAP2) over
-// BLE. Read: both; the client writes the one it uses (one bit).
+// BLE. Read: always both (what we support); the client writes the one it uses
+// (one bit), only checked: requests are routed by their first byte (CLA 0x00 =
+// U2F), not by the pick.
 constexpr uint8_t kRevisionU2f12 = 0x40;
 constexpr uint8_t kRevisionFido2 = 0x20;
 constexpr uint8_t kRevisionsOffered = kRevisionU2f12 | kRevisionFido2;
@@ -60,7 +62,6 @@ const ble_uuid128_t kRevisionBitfieldUuid = FIDO_UUID128(0xf4);
 
 uint16_t status_handle = 0;
 bool subscribed = false;
-uint8_t revision = kRevisionsOffered;
 
 // Request being assembled. Written from the host task only.
 uint8_t request[kMaxMessage];
@@ -241,11 +242,10 @@ int Access(uint16_t, uint16_t, ble_gatt_access_ctxt *ctxt, void *arg) {
                 if (len != 1 || (v != kRevisionFido2 && v != kRevisionU2f12)) {
                     return BLE_ATT_ERR_UNLIKELY;  // one of the offered ones
                 }
-                revision = v;
                 return 0;
             }
             ESP_LOGD(TAG, "revision read");
-            return os_mbuf_append(ctxt->om, &revision, 1) == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
+            return os_mbuf_append(ctxt->om, &kRevisionsOffered, 1) == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
         default:
             return BLE_ATT_ERR_UNLIKELY;
     }
@@ -279,7 +279,6 @@ void OnEvent(const ble_gap_event *event) {
     } else if (event->type == BLE_GAP_EVENT_DISCONNECT) {
         subscribed = false;
         assembling = false;
-        revision = kRevisionsOffered;
         if (busy) {
             cancelled = true;  // nobody waits for the answer any more
         }
