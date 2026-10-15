@@ -6,11 +6,14 @@ LionKey AAGUID. No touch, no PIN.
 """
 
 import pytest
+from fido2 import cbor
+from fido2.ctap2 import Ctap2
 
 LIONKEY_AAGUID = bytes.fromhex("a8a147326b7d120dfb917356bc189803")
 REVISION_U2F_1_2 = 0x40
 REVISION_FIDO2 = 0x20
 UV_MODALITY_PASSCODE_INTERNAL = 0x04
+TRANSPORTS_FOR_RESET = 0x1A
 
 
 @pytest.fixture
@@ -51,11 +54,14 @@ def test_attestation_formats(ours):
     assert ours.attestation_formats == ["packed"]  # "none" is implied
 
 
-def test_config(ours):
+def test_config(ours, device):
     assert ours.authenticator_config_commands == [2, 3, 4]
     assert ours.max_rpids_for_min_pin == 8
     assert ours.long_touch_for_reset is True
-    assert ours.transports_for_reset is None  # absent: every transport
+    # absent = every transport (python-fido2 shows an absent one as [])
+    resp = device.call(0x10, bytes([Ctap2.CMD.GET_INFO]))  # CTAPHID.CBOR
+    assert resp[0] == 0
+    assert TRANSPORTS_FOR_RESET not in cbor.decode(resp[1:])
     assert ours.pin_complexity_policy is not None
     # listed as an extension exactly while on
     assert ours.pin_complexity_policy == ("pinComplexityPolicy" in ours.extensions)
@@ -70,5 +76,8 @@ def test_ble_revision(ours, device):
 
     if not isinstance(device, BleCtapDevice):
         pytest.skip("BLE only")
-    # Read before the client picks one: U2F 1.2 and FIDO2.
+    # Both until a client picks one; the pick holds until the link drops, and
+    # Windows keeps the link of a bonded host up between runs.
+    if device.revision == REVISION_FIDO2:
+        pytest.skip("FIDO2 already picked on this link: 0x60 shows after a disconnect")
     assert device.revision == REVISION_U2F_1_2 | REVISION_FIDO2

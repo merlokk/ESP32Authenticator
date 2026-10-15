@@ -348,7 +348,8 @@ Every claim above checked against the code and the tests; the gaps got tests
 - `tests/fido2/test_lionkey_info.py`: our getInfo exactly (versions, algorithms,
   extensions, options, uvModality, attestationFormats, config fields, the BLE
   revision 0x60); the feature tests skip when a feature is missing, this one
-  fails.
+  fails: with test_info 15 passed, 1 skipped (the revision: FIDO2 already
+  picked on the link Windows keeps up) over BLE (2026-10-15).
 - Not automated: firmware glue (long touch loop, LED, debounced presence,
   pin_policy / `pin.complexity` wiring into the core), console and web output,
   the weak default hooks (the test platform replaces them), keepalive during
