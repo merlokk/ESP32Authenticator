@@ -204,15 +204,20 @@ Our `devices/buttons` is a raw level read. Port from
   with test_info + test_config 22 passed, 1 skipped (2026-10-15).
 - Excluded: U2F over USB (no FIDO HID).
 
-## 8. hmac-secret-mc (2.2)
+## 8. hmac-secret-mc (2.2) (done)
 
-- makeCredential: `hmac-secret-mc` input (keyAgreement, saltEnc, saltAuth,
-  pinUvAuthProtocol) as in getAssertion; needs `hmac-secret: true` in the
-  same request. Output: encrypted HMAC output(s) in the authData extensions,
-  with the credential's `cred_random_with_uv/without_uv` just created.
-- Reuse the getAssertion hmac-secret code (factor out the decrypt/compute/
-  encrypt part into one function).
-- getInfo `extensions`: add `hmac-secret-mc`.
+- makeCredential `hmac-secret-mc` (keyAgreement, saltEnc, saltAuth,
+  pinUvAuthProtocol), only with `hmac-secret: true` (else MISSING_PARAMETER):
+  the encrypted HMAC output(s) of the new credential's CredRandom (with / without
+  UV as the response's uv flag) in the authData extensions (`hmac-secret-mc`,
+  canonical order after `minPinLength`). WebAuthn PRF at create.
+- getAssertion's hmac-secret code split into `prepare_hmac_secret()` (shared
+  secret, saltAuth, salts) and `compute_hmac_secret_output()`, used by both.
+- getInfo `extensions`: + `hmac-secret-mc`.
+- Tests: `ctap_hmac_secret_mc_test.cpp` (4: the platform side with micro-ecc
+  and tiny-AES; the makeCredential output equals getAssertion's for the same
+  salt); `tests/fido2/test_hmac_secret_mc.py` (PIN/UV protocol 2, two touches):
+  with test_info 8 passed (2026-10-15).
 
 ## 9. Read-only credential management (2.2/2.3)
 
