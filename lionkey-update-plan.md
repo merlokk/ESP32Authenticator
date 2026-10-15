@@ -219,16 +219,27 @@ Our `devices/buttons` is a raw level read. Port from
   salt); `tests/fido2/test_hmac_secret_mc.py` (PIN/UV protocol 2, two touches):
   with test_info 8 passed (2026-10-15).
 
-## 9. Read-only credential management (2.2/2.3)
+## 9. Read-only credential management (2.2/2.3) (done)
 
-- New permission `pcmr` (per-credential management read-only): allows
-  `getCredsMetadata`, `enumerateRPs*`, `enumerateCredentials*` only;
-  `deleteCredential` and `updateUserInformation` need `cm`.
-- Persistent pinUvAuthToken: a token with only `pcmr` survives the usual
-  expiry (UP timeout / usage window) until reset, PIN change or reboot (per
-  spec), so the OS lists keys without asking the PIN each time.
-- getInfo: the read-only option (2.3 `perCredMgmtRO`) and
-  `pinUvAuthToken` permissions as the spec lists them.
+- Permission `pcmr` (0x40), only alone (else UNAUTHORIZED_PERMISSION), via
+  getPinUvAuthTokenUsingPinWithPermissions: assigned to the
+  persistentPinUvAuthToken, which is returned (the regular token is left as
+  it is). getInfo option `perCredMgmtRO: true`.
+- persistentPinUvAuthToken: one per PIN/UV protocol, made at the first pcmr
+  request (lazily: no RNG use or storage write at boot), kept with its
+  permissions under `CTAP_STORAGE_KEY_PERSISTENT_PUAT` (7), so it survives a
+  power cycle and the same token comes back next time. No usage timer, no
+  in-use state. resetPersistentPinUvAuthToken() (dropped; a new one at the
+  next request): changePIN, setMinPINLength with forcePINChange, reset.
+- credentialManagement: getCredsMetadata, enumerateRPsBegin,
+  enumerateCredentialsBegin try verify(persistentPinUvAuthToken, ...) first
+  (pcmr required, else PIN_AUTH_INVALID; no RP ID rules), then the regular
+  token (cm). deleteCredential / updateUserInformation: the regular token only.
+- Tests: `ctap_pcmr_test.cpp` (8: the platform side with micro-ecc /
+  tiny-AES); `tests/fido2/test_pcmr.py` (python-fido2 `CredentialManagement`
+  with the pcmr token: reads, delete refused, the same token again, pcmr only
+  alone): with test_info + test_config 21 passed, 1 skipped (2026-10-15).
+- Firmware: nothing beyond the core (storage key 7 is kept in `fido.bin`).
 
 ## 10. Attestation formats (2.2)
 
