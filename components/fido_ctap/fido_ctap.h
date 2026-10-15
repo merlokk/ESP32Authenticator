@@ -57,6 +57,10 @@ typedef struct {
     // What the core waits for from the user; NONE when the wait ends
     // (confirmed, cancelled, timed out). May be NULL.
     void (*waiting_for_user)(fido_ctap_wait_t what);
+    // True: user presence is confirmed at once, as if the button were pressed
+    // (development: config.json test.autoPresence). Asked at every wait; not
+    // for the reset's long touch. May be NULL.
+    bool (*auto_presence)(void);
 } fido_ctap_hooks_t;
 
 // RAM log for `n` credentials (~635 bytes each at most, rounded up), plus the

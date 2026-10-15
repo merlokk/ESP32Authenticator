@@ -61,8 +61,11 @@ Reference ESP-IDF + LVGL project: `../../ai-remote/approver-esp32` ([GitHub](htt
   `complexity` (default true): a new PIN, vault and FIDO2, must pass
   `pin_policy.h` (no repeats, runs or common PINs).
 - `test`: development aids. `test.pin` (empty or 6 digits) unlocks the vault
-  at boot; masked by `config show`, never on the site. Never on a device
-  with real secrets.
+  at boot; masked by `config show`, never on the site. `test.autoPresence`
+  (default false): FIDO2 / U2F user presence is confirmed without the button
+  (a log warning each time; `fido2 info` says so; not the reset's 5 s hold);
+  read at every request, so `config set` takes effect at once. Never on a
+  device with real secrets.
 - `Data` is over a kilobyte: parsing stages it on the heap, never on a task
   stack (main 3.5 KB, console and httpd 4 KB; a stack copy overflowed main
   and boot-looped the board).
@@ -313,7 +316,7 @@ submodule) behind `ble_fido`. API: `fido_ctap_init(hooks, store)`,
   too (an old copy would otherwise follow an empty one); `fido2 reset`
   starts an empty store above the kept version. A save is .tmp, remove, rename: at boot a .tmp with no
   file is taken, a .tmp next to the file dropped. `Newer()` holds the sync rule. Max credentials: the board's
-  `fido_max_credentials` (10 on both boards, 1..50); lionkey stores
+  `fido_max_credentials` (15 on the dev board, 10 on the X4 Pro, 1..50); lionkey stores
   non-discoverable ones too, one more gets KEY_STORE_FULL. The RAM log
   (`FIDO_CTAP_STORE_BYTES`: 1 KB per credential + 2 KB, 12 KB for 10) and the
   compaction buffer are in PSRAM. Next to each credential the store keeps a

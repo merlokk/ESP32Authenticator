@@ -128,6 +128,10 @@ static ctap_user_presence_result_t wait_for_press(uint32_t hold_ms) {
 }
 
 ctap_user_presence_result_t ctap_wait_for_user_presence(void) {
+    if (hooks.auto_presence != NULL && hooks.auto_presence()) {
+        ESP_LOGW(TAG, "user presence: confirmed without the button (test.autoPresence)");
+        return CTAP_UP_RESULT_ALLOW;
+    }
     waiting_for_user(FIDO_CTAP_WAIT_TOUCH);
     const ctap_user_presence_result_t result = wait_for_press(0);
     waiting_for_user(FIDO_CTAP_WAIT_NONE);

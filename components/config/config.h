@@ -135,6 +135,7 @@ struct Pin {
 // device that holds real secrets.
 struct Test {
     char pin[kPinSize];  // the vault PIN, entered at boot; empty: ask (`pin`)
+    bool auto_presence;  // FIDO2/U2F user presence without the button (as if pressed)
 };
 
 struct Data {

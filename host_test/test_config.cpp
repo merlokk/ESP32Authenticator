@@ -88,6 +88,7 @@ void AssertDefaults(const config::Data &d) {
     TEST_ASSERT_EQUAL_UINT8(15, d.led.percent);
     TEST_ASSERT_EQUAL_UINT8(7, d.led.idle_percent);
     TEST_ASSERT_EQUAL_STRING("", d.test.pin);
+    TEST_ASSERT_FALSE(d.test.auto_presence);
     TEST_ASSERT_EQUAL_UINT16(10, d.pin.lock_minutes);
     TEST_ASSERT_TRUE(d.pin.complexity);
     TEST_ASSERT_EQUAL_STRING("", d.pin.wipe);
@@ -447,6 +448,7 @@ void test_parse_led() {
     TEST_ASSERT_EQUAL_UINT16(30, d.pin.lock_minutes);
     TEST_ASSERT_EQUAL_CHAR(':', d.pin.wipe[32]);
     AssertParseFails(R"({"test": {"pin": "12345"}})", "test.pin");
+    AssertParseFails(R"({"test": {"autoPresence": "yes"}})", "test.autoPresence");
     AssertParseFails(R"({"test": {"pin": "12345a"}})", "test.pin");
     AssertParseFails(R"({"test": {"pin": "1234567"}})", "test.pin");
     TEST_ASSERT_TRUE_MESSAGE(ParseText(R"({"test": {"pin": "012345"}})", &d, error, sizeof error),

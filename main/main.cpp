@@ -79,7 +79,8 @@ void InitFido(const char *dir) {
         },
         [](fido_ctap_wait_t what) {
             boards::LedWaitingForUser(static_cast<boards::UserWait>(what));
-        }};
+        },
+        [] { return config::Get().test.auto_presence; }};
     static_assert(static_cast<int>(boards::UserWait::kLongTouchHeld) ==
                   FIDO_CTAP_WAIT_LONG_TOUCH_HELD);
     fido_ctap_set_reset_window(boards::kBoard.fido_reset_window_s);

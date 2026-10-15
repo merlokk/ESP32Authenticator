@@ -57,7 +57,8 @@ const char kDefaultJson[] = R"json({
     "complexity": true
   },
   "test": {
-    "pin": ""
+    "pin": "",
+    "autoPresence": false
   }
 })json";
 
@@ -265,7 +266,8 @@ bool ParsePin(const cJSON *section, Pin *out, char *error, size_t size) {
 
 bool ParseTest(const cJSON *section, Test *out, char *error, size_t size) {
     return GetString(section, "pin", out->pin, sizeof out->pin, ValidTestPin,
-                     "empty or 6 digits", "test", error, size);
+                     "empty or 6 digits", "test", error, size) &&
+           GetBool(section, "autoPresence", &out->auto_presence, "test", error, size);
 }
 
 bool AlwaysValid(const char *) { return true; }
@@ -656,6 +658,7 @@ size_t Serialize(const Data &d, char *out, size_t size) {
     cJSON_AddBoolToObject(pin, "complexity", d.pin.complexity);
     cJSON *test = cJSON_AddObjectToObject(root, "test");
     cJSON_AddStringToObject(test, "pin", d.test.pin);
+    cJSON_AddBoolToObject(test, "autoPresence", d.test.auto_presence);
 
     // cJSON wants 5 spare bytes to be sure it fits.
     const bool ok = size > 5 && cJSON_PrintPreallocated(root, out, static_cast<int>(size - 5), 1);

@@ -7,6 +7,7 @@
 #include <cstring>
 #include <ctime>
 
+#include "config.h"
 #include "fido_ctap.h"
 #include "subcommand.h"
 
@@ -87,6 +88,9 @@ int CmdInfo(int, char **) {
            static_cast<unsigned>(info.min_pin_length_rps),
            info.force_pin_change ? ", change due" : "");
     printf("always uv  %s\n", info.always_uv ? "on" : "off");
+    if (config::Get().test.auto_presence) {
+        printf("presence   AUTO: no button needed (config.json test.autoPresence)\n");
+    }
     printf("complexity %s (a new PIN: no repeats, runs or common PINs)\n",
            info.pin_complexity ? "on" : "off");
     printf("reset      ");

@@ -13,7 +13,7 @@ public:
     constexpr DevBoard() {
         name = "ESP32-S3 dev board";
         led = LedType::kWs2812;
-        fido_max_credentials = 10;
+        fido_max_credentials = 15;  // fido.bin and its RAM log fit (~17 KB)
         fido_reset_window_s = 10;  // no display
         max_records = 50;  // SPIFFS
         buttons[static_cast<size_t>(ButtonId::kLeft)] = {0, true};  // BOOT, also the ROM strap
