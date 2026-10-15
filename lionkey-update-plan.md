@@ -354,6 +354,7 @@ Every claim above checked against the code and the tests; the gaps got tests
   the weak default hooks (the test platform replaces them), keepalive during
   U2F presence; `Button::HeldFor`, `StableMs`, `PressLength`, `MultiPress`
   have no caller.
+- Firmware with the fix flashed: webauthn.io (Chrome, Windows 11, BLE) works.
 
 ## Order
 
