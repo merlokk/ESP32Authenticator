@@ -70,31 +70,51 @@ void ctap_send_keepalive_if_needed(ctap_keepalive_status_t current_status) {
 
 static bool button(void) { return hooks.button_pressed != NULL && hooks.button_pressed(); }
 
-static void waiting_for_user(bool waiting) {
+static void waiting_for_user(fido_ctap_wait_t what) {
     if (hooks.waiting_for_user != NULL) {
-        hooks.waiting_for_user(waiting);
+        hooks.waiting_for_user(what);
     }
 }
 
-// Waits for a fresh press: a button already held when the request comes in
-// does not count.
-static ctap_user_presence_result_t wait_for_press(void) {
-    ESP_LOGI(TAG, "user presence: press the button");
+// Waits for a fresh press (a button already held when the request comes in
+// does not count), held for `hold_ms` (0: the press itself). A long touch
+// released early is not a refusal: the next press starts over.
+static ctap_user_presence_result_t wait_for_press(uint32_t hold_ms) {
+    if (hold_ms != 0) {
+        ESP_LOGI(TAG, "reset: hold the button for %u s", (unsigned)(hold_ms / 1000));
+    } else {
+        ESP_LOGI(TAG, "user presence: press the button");
+    }
     ctap_send_keepalive_if_needed(CTAP_STATUS_UPNEEDED);
     const uint32_t start = now_ms();
     bool was_pressed = button();
+    bool holding = false;
+    uint32_t pressed_at = 0;
     while (true) {
         if (hooks.cancelled != NULL && hooks.cancelled()) {
             ESP_LOGI(TAG, "user presence: cancelled");
             return CTAP_UP_RESULT_CANCEL;
         }
-        if (now_ms() - start > UP_TIMEOUT_MS) {
+        const uint32_t now = now_ms();
+        if (now - start > UP_TIMEOUT_MS) {
             ESP_LOGI(TAG, "user presence: timeout");
             return CTAP_UP_RESULT_TIMEOUT;
         }
         const bool pressed = button();
         if (pressed && !was_pressed) {
-            ESP_LOGI(TAG, "user presence: confirmed");
+            if (hold_ms == 0) {
+                ESP_LOGI(TAG, "user presence: confirmed");
+                return CTAP_UP_RESULT_ALLOW;
+            }
+            holding = true;
+            pressed_at = now;
+            waiting_for_user(FIDO_CTAP_WAIT_LONG_TOUCH_HELD);
+        } else if (holding && !pressed) {
+            holding = false;
+            ESP_LOGI(TAG, "reset: released after %u ms, hold longer", (unsigned)(now - pressed_at));
+            waiting_for_user(FIDO_CTAP_WAIT_LONG_TOUCH);
+        } else if (holding && now - pressed_at >= hold_ms) {
+            ESP_LOGI(TAG, "reset: confirmed");
             return CTAP_UP_RESULT_ALLOW;
         }
         was_pressed = pressed;
@@ -104,9 +124,16 @@ static ctap_user_presence_result_t wait_for_press(void) {
 }
 
 ctap_user_presence_result_t ctap_wait_for_user_presence(void) {
-    waiting_for_user(true);
-    const ctap_user_presence_result_t result = wait_for_press();
-    waiting_for_user(false);
+    waiting_for_user(FIDO_CTAP_WAIT_TOUCH);
+    const ctap_user_presence_result_t result = wait_for_press(0);
+    waiting_for_user(FIDO_CTAP_WAIT_NONE);
+    return result;
+}
+
+ctap_user_presence_result_t ctap_wait_for_long_touch(uint32_t duration_ms) {
+    waiting_for_user(FIDO_CTAP_WAIT_LONG_TOUCH);
+    const ctap_user_presence_result_t result = wait_for_press(duration_ms);
+    waiting_for_user(FIDO_CTAP_WAIT_NONE);
     return result;
 }
 
@@ -117,6 +144,8 @@ static esp_err_t start(void) {
     if (fido_ctap_crypto.init(&fido_ctap_crypto, 0) != CTAP_CRYPTO_OK) {
         return ESP_FAIL;
     }
+    // authenticatorReset takes a 5 s hold of the button (longTouchForReset).
+    state.long_touch_for_reset_ms = CTAP_LONG_TOUCH_FOR_RESET_MS;
     ctap_init(&state);
     ready = true;
     ESP_LOGI(TAG, "ready, store %u of %u bytes, up to %u credentials",

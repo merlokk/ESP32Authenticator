@@ -36,6 +36,14 @@ typedef struct {
     bool has_device;            // false: made before this was recorded
 } fido_ctap_origin_t;
 
+// What the core waits for from the user (fido_ctap_hooks_t.waiting_for_user).
+typedef enum {
+    FIDO_CTAP_WAIT_NONE,             // nothing (the wait is over)
+    FIDO_CTAP_WAIT_TOUCH,            // a press (user presence)
+    FIDO_CTAP_WAIT_LONG_TOUCH,       // a 5 s hold (reset), button up
+    FIDO_CTAP_WAIT_LONG_TOUCH_HELD,  // a 5 s hold (reset), button down
+} fido_ctap_wait_t;
+
 // Called from the task that runs fido_ctap_request().
 typedef struct {
     // Processing status for the host: 1 = processing, 2 = user presence needed.
@@ -46,9 +54,9 @@ typedef struct {
     bool (*button_pressed)(void);
     // The current host; false (or NULL hook) when unknown.
     bool (*client)(fido_ctap_client_t *out);
-    // True when the wait for the button starts, false when it ends (pressed,
-    // cancelled, timed out). May be NULL.
-    void (*waiting_for_user)(bool waiting);
+    // What the core waits for from the user; NONE when the wait ends
+    // (confirmed, cancelled, timed out). May be NULL.
+    void (*waiting_for_user)(fido_ctap_wait_t what);
 } fido_ctap_hooks_t;
 
 // RAM log for `n` credentials (~635 bytes each at most, rounded up), plus the

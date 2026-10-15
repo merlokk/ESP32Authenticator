@@ -153,7 +153,8 @@ overrides). Ceilings from `config.json` `led` (default 15 % / 7 % idle), set
 right after the config is read. Boot: red solid from the first
 line of `app_main` (dark = hardware fault, red = firmware running), green
 breathing at the idle ceiling when `app_main` is done. Overrides: blue solid
-while the BLE keyboard types (until 1 s after the last key), yellow blinking
+while the BLE keyboard types (until 1 s after the last key), yellow fast
+blinking while FIDO2 reset waits for the 5 s hold (solid while held), yellow blinking
 (500/500 ms) while FIDO2 waits for the button.
 
 ## Time
@@ -323,9 +324,12 @@ submodule) behind `ble_fido`. API: `fido_ctap_init(hooks, store)`,
   is not loaded or touched: FIDO2 stays off.
   The signature counter is in NVS (`fido/sign_count`), kept by reset.
 - User presence: a fresh press of the Left button (GPIO0, BOOT on the dev
-  board) within 30 s; KEEPALIVE every 300 ms; CANCEL aborts the wait.
-- Reset only within 10 s after boot (lionkey; the window restarts after a
-  successful reset). No U2F/CTAP1.
+  board, debounced) within 30 s; KEEPALIVE every 300 ms; CANCEL aborts the wait.
+- Reset (authenticatorReset): only within 10 s after the core starts (boot or
+  PIN unlock; lionkey; the window restarts after a successful reset), then a
+  5 s hold of Left (CTAP 2.3 longTouchForReset, getInfo 0x18 = true; a hold
+  released early is not a refusal, the next press starts over; 30 s, CANCEL as
+  above). No U2F/CTAP1.
 - Console (`fido2 info|list|delete|reset`): `fido_ctap_info/list/delete/reset`.
   A mutex serialises them with CTAP requests (a request holds it for its whole
   run, button wait included; the console waits 1 s, then "busy"). The console

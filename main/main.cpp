@@ -77,7 +77,11 @@ void InitFido(const char *dir) {
             out->transport = FIDO_CTAP_TRANSPORT_BLE;
             return ble::PeerIdentity(&out->addr_type, out->addr);
         },
-        boards::LedWaitingForUser};
+        [](fido_ctap_wait_t what) {
+            boards::LedWaitingForUser(static_cast<boards::UserWait>(what));
+        }};
+    static_assert(static_cast<int>(boards::UserWait::kLongTouchHeld) ==
+                  FIDO_CTAP_WAIT_LONG_TOUCH_HELD);
     if (fido_ctap_init(&hooks, have_fs ? store : nullptr, boards::kBoard.fido_max_credentials) ==
         ESP_OK) {
         ble_fido::SetMessageHandler(fido_ctap_request);

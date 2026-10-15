@@ -73,14 +73,23 @@ void LedTyping() {
     }
 }
 
-void LedWaitingForUser(bool waiting) {
+void LedWaitingForUser(UserWait what) {
     if (!led::Ready()) {
         return;
     }
-    if (waiting) {
-        led::SetFor(led::colour::kYellow, led::Effect::kNormBlink, kUserWaitLedMs);
-    } else {
-        led::EndFor();
+    switch (what) {
+        case UserWait::kNone:
+            led::EndFor();
+            break;
+        case UserWait::kTouch:
+            led::SetFor(led::colour::kYellow, led::Effect::kNormBlink, kUserWaitLedMs);
+            break;
+        case UserWait::kLongTouch:
+            led::SetFor(led::colour::kYellow, led::Effect::kFastBlink, kUserWaitLedMs);
+            break;
+        case UserWait::kLongTouchHeld:
+            led::SetFor(led::colour::kYellow, led::Effect::kSolid, kUserWaitLedMs);
+            break;
     }
 }
 

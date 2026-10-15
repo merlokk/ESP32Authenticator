@@ -44,19 +44,25 @@ Our `devices/buttons` is a raw level read. Port from
   The multi-button `Buttons` table of approver-esp32 is not ported.
 - `fido_ctap` presence: a fresh *debounced* press (was a raw edge).
 
-## 2. Long touch for reset (2.3)
+## 2. Long touch for reset (2.3) (done)
 
-- Core: `ctap_reset()` calls a new platform hook
-  `ctap_wait_for_long_touch()` (weak default = `ctap_wait_for_user_presence()`).
-- getInfo: `longTouchForReset: true` (2.3 field), `transportsForReset: ["ble"]`
-  (2.2 field) if we keep reset on BLE only.
-- `authenticatorConfig` `enableLongTouchForReset` (2.3) turns it on; until
-  then reset works as today.
-- Ours: hold Left >= 5 s (the 2.3 duration); LED yellow fast blink while waiting, solid yellow
-  once held long enough, then reset. Cancel / 30 s timeout as for presence.
-- Open question (read 2.3 first): drop the "within 10 s of power-up" rule when
-  long touch is used. Over BLE the host rarely reconnects within 10 s, so
-  today `fido2 reset` from the console is the only practical reset.
+- Core (fork `608da6e`): `ctap_state_t.long_touch_for_reset_ms` (0 = off, set
+  by the platform, kept by `ctap_init()`); `ctap_reset()` then calls the
+  platform `ctap_wait_for_long_touch(ms)` (weak default = ordinary touch);
+  getInfo `longTouchForReset` (0x18) = true. `CTAP_LONG_TOUCH_FOR_RESET_MS`
+  = 5000 (2.3; 2.2 said 10 s). getInfo key defines 0x16..0x1F added.
+  Tests: `ctap_reset_test.cpp` (9).
+- Ours: always on (no way to turn it off, so `enableLongTouchForReset`,
+  config subcommand 4, is a no-op in step 3). Hold Left 5 s; LED yellow fast
+  blink while waiting, solid while held; released early = start over; 30 s
+  timeout / CANCEL as for presence.
+- `transportsForReset` (0x1A) not sent: absent = every transport (BLE only).
+- Kept the spec's "within 10 s of power-up" rule (no display); it counts from
+  the core start (boot, or the PIN unlock with an encrypted store). Over BLE
+  the host rarely makes it; `fido2 reset` on the console stays the practical
+  way. Revisit with the e-ink UI (a display lifts the rule).
+- Not checked on the board: a reset would wipe the real credentials; getInfo
+  over BLE needs `tests/fido2` from an administrator terminal.
 - Reset still wipes only the FIDO2 store (not the vault); the vault keeps its
   own wipe PIN.
 

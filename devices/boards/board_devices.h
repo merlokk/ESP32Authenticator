@@ -21,8 +21,11 @@ void BootDone();
 // Keys going to the host: the LED glows blue until 1 s after the last call.
 void LedTyping();
 
-// FIDO2 waits for the button: the LED blinks yellow until called with false.
-void LedWaitingForUser(bool waiting);
+// What FIDO2 waits for from the user, shown on the LED until kNone: a press
+// (yellow blink), a long hold (yellow fast blink), the hold in progress
+// (yellow solid).
+enum class UserWait : uint8_t { kNone, kTouch, kLongTouch, kLongTouchHeld };
+void LedWaitingForUser(UserWait what);
 
 // LED brightness ceilings in percent (config.json `led`); no-op without an LED.
 void SetLedBrightness(uint8_t percent, uint8_t idle_percent);
