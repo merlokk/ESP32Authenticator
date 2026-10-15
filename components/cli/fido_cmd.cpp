@@ -88,6 +88,7 @@ int CmdInfo(int, char **) {
            static_cast<unsigned>(info.min_pin_length_rps),
            info.force_pin_change ? ", change due" : "");
     printf("always uv  %s\n", info.always_uv ? "on" : "off");
+    printf("built-in uv not configured (PIN on the device: later); hosts use the client PIN\n");
     if (config::Get().test.auto_presence) {
         printf("presence   AUTO: no button needed (config.json test.autoPresence)\n");
     }

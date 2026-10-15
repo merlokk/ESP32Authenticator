@@ -282,17 +282,37 @@ Our `devices/buttons` is a raw level read. Port from
 - Later: the Wi-Fi sync between our devices can use the identifier and the
   store state.
 
-## 12. Built-in UV (PIN on the device): plumbing only
+## 12. Built-in UV (PIN on the device): plumbing only (done)
 
-- Core: `clientPIN` subcommand `getPinUvAuthTokenUsingUvWithPermissions`,
-  `getUVRetries`, the platform hook `ctap_perform_built_in_uv()`; UV retries
-  in `CTAP_STORAGE_KEY_CONFIG`.
-- Now: the hook **only logs** (`fido_ctap: built-in UV requested (rp ...)`)
-  and returns "not verified"; getInfo `uv: false` (supported, not
-  configured), so hosts fall back to clientPIN. Never treat the button as UV.
+- Core: `ctap_state_t.built_in_uv` (NONE / NOT_CONFIGURED / CONFIGURED, set
+  by the platform) and `uv_modality`; getInfo option `uv` (absent / false /
+  true) and `uvModality` (0x12) when not NONE.
+- clientPIN `getPinUvAuthTokenUsingUvWithPermissions` (0x06): parameters,
+  permissions (be / lbw / acfg refused: no uvBioEnroll / largeBlobs / uvAcfg;
+  pcmr only alone), NOT_CONFIGURED -> NOT_ALLOWED, no retries -> UV_BLOCKED,
+  then the platform's `ctap_perform_built_in_uv()` (weak default: DENY):
+  ALLOW resets the failures and issues the token (the same code as the PIN
+  path, userIsPresent true); DENY counts (UV_INVALID, at 0 UV_BLOCKED);
+  TIMEOUT / CANCEL do not count. `getUVRetries` (0x07): uvRetries (max 8,
+  failures kept in the config item, cleared by a reset).
+- Platform event hook `ctap_on_built_in_uv_request()` (weak, no-op): told of
+  every 0x06 request.
+- Ours: NOT_CONFIGURED (`uv: false`), uvModality 0x04 (passcode internal);
+  the hooks only log (`built-in UV requested ... not implemented yet`), so
+  hosts use clientPIN. `fido2 info` says so. Never the button as UV.
 - Later: the X4 Pro enters the vault PIN on the e-ink screen with buttons;
-  `uv: true` once the screen exists. Also `uvModality` (passcode),
-  `preferredPlatformUvAttempts`.
+  CONFIGURED then.
+- Tests: `ctap_built_in_uv_test.cpp` (8, the platform hooks replaced);
+  `tests/fido2/test_built_in_uv.py`: with test_info, test_config, test_pcmr,
+  test_enc_info 27 passed, 1 skipped (2026-10-15).
+
+## 13. getInfo versions (done)
+
+- `versions`: `FIDO_2_0`, `FIDO_2_1`, `FIDO_2_3` (there is no `FIDO_2_2`
+  string; 2.3 adds nothing mandatory), and `U2F_V2` when the platform routes
+  U2F (`ctap_state_t.ctap1_supported`, ours: true).
+- Not run: the FIDO conformance tool (needs the FIDO Alliance's tools and a
+  USB or BLE setup for them).
 
 ## Order
 
@@ -311,7 +331,7 @@ Our `devices/buttons` is a raw level read. Port from
 | 10 | Attestation formats | 0 |
 | 11 | encIdentifier / encCredStoreState | 9 |
 | 12 | Built-in UV plumbing | 3 |
-| 13 | getInfo `versions`: add `FIDO_2_3` (see below) | |
+| 13 | getInfo `versions`: add `FIDO_2_3`, `U2F_V2` (see below) | |
 
 Each step: core change + gtest, firmware glue, `tests/fido2` case, flash and
 check with Chrome on Windows 11 over BLE (webauthn.io), docs

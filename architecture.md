@@ -350,7 +350,10 @@ submodule) behind `ble_fido`. API: `fido_ctap_init(hooks, store)`,
   management with a persistent pinUvAuthToken (`pcmr`, kept in `fido.bin`,
   dropped by a PIN change or a reset). Attestation: packed (self) or `none` on
   request (`attestationFormatsPreference`). getInfo encIdentifier / encCredStoreState
-  (encrypted with the persistent token; a random device id, a hash of the store). Details: [lionkey-update-plan.md](lionkey-update-plan.md).
+  (encrypted with the persistent token; a random device id, a hash of the store).
+  Built-in UV: `uv: false` (supported, not configured; the PIN on the device
+  later), requests only logged. getInfo versions: U2F_V2, FIDO_2_0, FIDO_2_1,
+  FIDO_2_3. Details: [lionkey-update-plan.md](lionkey-update-plan.md).
 - Console (`fido2 info|list|delete|reset`): `fido_ctap_info/list/delete/reset`.
   A mutex serialises them with CTAP requests (a request holds it for its whole
   run, button wait included; the console waits 1 s, then "busy"). The console

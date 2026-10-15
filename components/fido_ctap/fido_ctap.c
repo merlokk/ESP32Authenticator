@@ -156,6 +156,12 @@ static esp_err_t start(void) {
     state.long_touch_for_reset_ms = CTAP_LONG_TOUCH_FOR_RESET_MS;
     state.reset_window_ms = reset_window_s == 0 ? CTAP_RESET_WINDOW_NONE : reset_window_s * 1000u;
     state.pin_complexity_policy_preconfigured = pin_complexity;
+    // Built-in UV: the PIN typed on the device (the e-ink UI, later). Until then "uv": false
+    // (supported, not configured): hosts use clientPIN.
+    state.built_in_uv = CTAP_BUILT_IN_UV_NOT_CONFIGURED;
+    state.uv_modality = 0x00000004;  // FIDO UVM USER_VERIFY_PASSCODE_INTERNAL
+    // U2F raw messages: fido_ctap_request() -> ctap1_request() (getInfo versions U2F_V2)
+    state.ctap1_supported = true;
     ctap_init(&state);
     ready = true;
     ESP_LOGI(TAG, "ready, store %u of %u bytes, up to %u credentials",
@@ -167,6 +173,17 @@ static esp_err_t start(void) {
 void fido_ctap_set_reset_window(uint32_t seconds) { reset_window_s = seconds; }
 
 void fido_ctap_set_pin_complexity(bool on) { pin_complexity = on; }
+
+// Built-in UV (the PIN on the device's own screen) is not there yet: logged and refused.
+void ctap_on_built_in_uv_request(ctap_built_in_uv_t built_in_uv) {
+    ESP_LOGW(TAG, "built-in UV requested (%s): PIN entry on the device is not implemented yet",
+             built_in_uv == CTAP_BUILT_IN_UV_CONFIGURED ? "configured" : "not configured");
+}
+
+ctap_user_presence_result_t ctap_perform_built_in_uv(void) {
+    ESP_LOGW(TAG, "built-in UV: not implemented, not verified");
+    return CTAP_UP_RESULT_DENY;
+}
 
 // The core's PIN complexity policy: the one the vault PIN follows too.
 bool ctap_pin_meets_complexity_policy(const uint8_t *pin, size_t pin_length) {
