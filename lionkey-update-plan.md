@@ -255,16 +255,32 @@ Our `devices/buttons` is a raw level read. Port from
   touch; python-fido2 has no parameter for 0x0B: `send_cbor`): with test_info
   9 passed (2026-10-15).
 
-## 11. encIdentifier / encCredStoreState in getInfo (2.2)
+## 11. encIdentifier / encCredStoreState in getInfo (2.2) (done)
 
-- Both need the persistent pinUvAuthToken from step 9: values are encrypted
-  with a key derived from it (HKDF, per spec), so only a host holding that
-  token can read them.
-- `encIdentifier`: a random 16-byte device identifier, made once and kept in
-  NVS (`fido/dev_id`; not the MAC: privacy). Cleared on reset.
-- `encCredStoreState`: a random value replaced on every credential create,
-  delete or user-info update (the store version we already keep in NVS can
-  drive it). Useful later for our own Wi-Fi sync between devices.
+- Both: `iv || AES-128-CBC(HKDF-SHA-256(salt = 32 zero bytes, IKM =
+  persistentPinUvAuthToken, L = 16, info = "encIdentifier" /
+  "encCredStoreState"), iv, 16 bytes)`, a fresh iv for every getInfo; only
+  while a persistent token exists (after a pcmr request) and the crypto table
+  has `aes_128_cbc_encrypt` (optional).
+- One persistentPinUvAuthToken for both PIN/UV protocols: getInfo cannot know
+  which protocol the platform got it with (the spec gives each protocol its
+  own; the same value is allowed). Stored tokens that differ (made by step 9)
+  are dropped at load: a new pcmr request makes a shared one.
+- encIdentifier: a random 128-bit device identifier, made with the first
+  persistent token, kept under `CTAP_STORAGE_KEY_DEVICE_IDENTIFIER` (8); a PIN
+  change keeps it, a reset makes a new one.
+- encCredStoreState: LEFT(SHA-256 over every stored credential item, 16):
+  changes with every credential create / delete / user update, stable
+  otherwise, nothing extra stored.
+- AES-128: `ctap_aes128_software.c` builds tiny-AES a second time for 128-bit
+  keys under other names (the main build is AES-256).
+- Tests: in `ctap_pcmr_test.cpp` (+5: FIPS-197 vector, absent without a
+  token, one token for both protocols, identifier stable / store state
+  changes, reset makes a new identifier); `tests/fido2/test_enc_info.py`
+  (python-fido2 `Info.get_identifier` / `get_cred_store_state`): with test_info
+  + test_pcmr 14 passed (2026-10-15).
+- Later: the Wi-Fi sync between our devices can use the identifier and the
+  store state.
 
 ## 12. Built-in UV (PIN on the device): plumbing only
 

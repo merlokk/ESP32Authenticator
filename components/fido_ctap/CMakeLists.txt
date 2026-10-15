@@ -12,6 +12,7 @@ set(lionkey_srcs
     ${lk}/core/ctap_credential_store.c
     ${lk}/core/ctap_credentials.c
     ${lk}/core/ctap_crypto_software.c
+    ${lk}/core/ctap_aes128_software.c
     ${lk}/core/ctap_encode.c
     ${lk}/core/ctap_get_info.c
     ${lk}/core/ctap_memory_storage.c

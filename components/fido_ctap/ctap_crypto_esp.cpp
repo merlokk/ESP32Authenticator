@@ -71,6 +71,7 @@ extern "C" const ctap_crypto_t fido_ctap_crypto = {
     .ecc_secp256r1_shared_secret = ctap_software_crypto_ecc_secp256r1_shared_secret,
     .aes_256_cbc_encrypt = AesEncrypt,
     .aes_256_cbc_decrypt = AesDecrypt,
+    .aes_128_cbc_encrypt = ctap_software_crypto_aes_128_cbc_encrypt,
     .sha256_bind_ctx = ctap_software_crypto_sha256_bind_ctx,
     .sha256_compute_digest = Sha256,
     .sha256 = &hash_alg_sha256,
