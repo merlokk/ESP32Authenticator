@@ -47,7 +47,9 @@ Our `devices/buttons` is a raw level read. Port from
   `ctap_wait_for_long_touch()` (weak default = `ctap_wait_for_user_presence()`).
 - getInfo: `longTouchForReset: true` (2.3 field), `transportsForReset: ["ble"]`
   (2.2 field) if we keep reset on BLE only.
-- Ours: hold Left >= 5 s; LED yellow fast blink while waiting, solid yellow
+- `authenticatorConfig` `enableLongTouchForReset` (2.3) turns it on; until
+  then reset works as today.
+- Ours: hold Left >= 5 s (the 2.3 duration); LED yellow fast blink while waiting, solid yellow
   once held long enough, then reset. Cancel / 30 s timeout as for presence.
 - Open question (read 2.3 first): drop the "within 10 s of power-up" rule when
   long touch is used. Over BLE the host rarely reconnects within 10 s, so
@@ -89,7 +91,9 @@ Our `devices/buttons` is a raw level read. Port from
   runs (`123456`, `abcdef`), a short built-in list of the most common PINs.
 - The check is a pure function (`pin_policy.h`, host-tested), shared with the
   vault's 6-digit PIN (console `pin set`, web).
-- getInfo: the 2.3 PIN complexity field, only once the check is on.
+- getInfo: `pinComplexityPolicy` in `extensions` and the
+  `pinComplexityPolicy` / `pinComplexityPolicyURL` fields, only once the check
+  is on.
 - Policy on/off: `config.json` `fido.pinPolicy` (default on).
 
 ## 6. EdDSA (Ed25519, COSE alg -8)
@@ -203,8 +207,46 @@ Our `devices/buttons` is a raw level read. Port from
 | 10 | Attestation formats | 0 |
 | 11 | encIdentifier / encCredStoreState | 9 |
 | 12 | Built-in UV plumbing | 3 |
-| 13 | getInfo `versions`: add `FIDO_2_2` / `FIDO_2_3` once every mandatory part of that version is in (check the spec's conformance list) | all |
+| 13 | getInfo `versions`: add `FIDO_2_3` (see below) | |
 
 Each step: core change + gtest, firmware glue, `tests/fido2` case, flash and
 check with Chrome on Windows 11 over BLE (webauthn.io), docs
 (`architecture.md`, `build.md` console commands, CLAUDE.md status).
+
+## What CTAP 2.3 needs
+
+There is no `FIDO_2_2` version string; a 2.2/2.3 authenticator reports
+`FIDO_2_3`, and 2.3 adds no mandatory feature over 2.2. CTAP 2.2 §9
+(Mandatory features) for an authenticator listing that version:
+
+| Requirement | Today |
+|---|---|
+| hmac-secret extension | done |
+| `rk` true -> clientPIN and/or built-in UV | done (clientPIN) |
+| `rk` true -> `credMgmt` true (or a built-in UI) | done |
+| credProtect when UV is supported | done |
+| `pinUvAuthToken` true when `clientPin` or `uv` is true | done |
+| PIN/UV auth protocol 2 in `pinUvAuthProtocols` | done (1 and 2) |
+| Reset: `authenticatorReset` on at least one transport, or another way | done (BLE, console `fido2 reset`) |
+
+So **none of steps 1-12 is required** for `FIDO_2_3`: step 13 can go first,
+after a check that the 2.2 changes to existing commands are followed (new
+getInfo fields only when supported, error codes; the FIDO conformance tool
+over BLE, `tests/fido2`). Each step above is optional; the spec ties some of
+them together:
+
+| Step | Status in 2.2/2.3 |
+|---|---|
+| 2 Long touch for reset | optional; 5 s in 2.3 |
+| 3 authenticatorConfig | optional (`authnrCfg`) |
+| 4 minPinLength extension | optional; required for `minPinLengthRPIDs` in step 3 |
+| 5 PIN complexity policy | optional (any extra PIN constraints are allowed) |
+| 6 EdDSA | optional |
+| 7 U2F | SHOULD (CTAP2 authenticators should also implement CTAP1/U2F) |
+| 8 hmac-secret-mc | optional; needs hmac-secret |
+| 9 Read-only cred management | optional |
+| 10 Attestation formats | optional; if several are supported the host's preference order is a MUST |
+| 11 encIdentifier / encCredStoreState | optional; needs step 9 |
+| 12 Built-in UV | optional |
+
+Detect 2.2 features by their getInfo fields, not by the version string.
