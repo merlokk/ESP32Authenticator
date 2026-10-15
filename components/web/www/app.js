@@ -89,6 +89,8 @@
     "#scan-list .btn.small .sub{display:inline;margin-left:10px}",
     ".who{flex:1;min-width:0;color:var(--text);font-size:15px;overflow-wrap:anywhere}",
     ".tags{display:flex;flex-wrap:wrap;gap:4px 14px;margin:0 0 10px;font-size:13px}",
+    ".badge{margin-right:6px;padding:0 6px;border:1px solid var(--amber);border-radius:6px;",
+    "color:var(--amber);font-size:12px;font-weight:600;letter-spacing:.04em}",
     ".card .row-actions{margin:0}.card .row-actions .btn.small{min-height:42px}",
     ".edit{margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}",
     ".totp:not(:empty){margin-top:10px}",
@@ -857,7 +859,15 @@
           var node = el("div", "card");
           var head = el("div", "card-head");
           var name = el("span", "who");
-          name.appendChild(el("b", "", c.rp + (c.rp_cut ? "…" : "")));
+          if (c.u2f) {
+            // no site name: the start of the AppID's SHA-256 ("U2F 3dec69ac")
+            name.appendChild(el("span", "badge", "U2F"));
+            var app = el("b", "", c.rp.replace(/^U2F /, ""));
+            app.title = "AppID hash (first 4 bytes)";
+            name.appendChild(app);
+          } else {
+            name.appendChild(el("b", "", c.rp + (c.rp_cut ? "…" : "")));
+          }
           var who = c.user || "";
           if (c.display && c.display !== c.user) who += (who ? " " : "") + "(" + c.display + ")";
           if (who) name.appendChild(el("span", "", " / " + who));

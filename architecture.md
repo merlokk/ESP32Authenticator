@@ -262,7 +262,7 @@ and never starts without lwIP (an assert).
 | `GET /api/vault/totp?id=N` | the record's code for the current window and the seconds left |
 | `POST /api/vault/add\|set\|delete` | `{site, user, password, otp}` / `{id, any of them}` (absent keeps, `otp: ""` removes; all checked before any is written) / `{id}`. `otp`: Base32, or `base64:<Base64>` (kept as Base32) |
 | `POST /api/vault/unlock\|lock` | `{pin}` (the wipe PIN answers as a wrong one) / `{}` |
-| `GET /api/fido`, `POST /api/fido/delete` | store info and credentials (site, user, resident, made when / by) / `{credential: 64 hex}` |
+| `GET /api/fido`, `POST /api/fido/delete` | store info and credentials (site, user, resident, U2F, made when / by; the page marks U2F ones with a badge) / `{credential: 64 hex}` |
 
 - Basic auth over every route when `web.user` and `web.password` are both set
   (console only: `web login`); the header is compared to the encoded expected
