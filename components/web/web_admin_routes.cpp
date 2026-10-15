@@ -425,11 +425,11 @@ esp_err_t FidoGet(httpd_req_t *request) {
         Escape(c.display_name, g_text[2], sizeof g_text[2]);
         std::snprintf(json, size,
                       "%s{\"id\":\"%s\",\"rp\":\"%s\",\"rp_cut\":%s,\"user\":\"%s\""
-                      ",\"display\":\"%s\",\"resident\":%s,\"protect\":%u,\"created\":%lld"
+                      ",\"display\":\"%s\",\"resident\":%s,\"protect\":%u,\"alg\":%d,\"created\":%lld"
                       ",\"device\":\"%s\",\"host\":\"%s\"}",
                       i == 0 ? "" : ",", id, g_text[0], c.rp_id_truncated ? "true" : "false",
                       g_text[1], g_text[2], c.discoverable ? "true" : "false",
-                      static_cast<unsigned>(c.cred_protect),
+                      static_cast<unsigned>(c.cred_protect), static_cast<int>(c.alg),
                       static_cast<long long>(c.origin.created_utc), device, host);
         err = Chunk(request, json);
     }

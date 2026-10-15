@@ -150,25 +150,29 @@ Our `devices/buttons` is a raw level read. Port from
 - Tests: core +7 (`ctap_config_test.cpp`, `ctap_client_pin_test.cpp`); over
   BLE `test_info.py` + `test_config.py` 17 passed, 1 skipped (2026-10-15).
 
-## 6. EdDSA (Ed25519, COSE alg -8)
+## 6. EdDSA (Ed25519, COSE -8 and -19) (done)
 
-- Crypto interface (`ctap_crypto.h`): `ed25519_compute_public_key`,
-  `ed25519_sign` (message, not hash). Ours: Monocypher (one .c, CC0/BSD) in
-  `components/fido_ctap`; mbedTLS/PSA in ESP-IDF has no Ed25519. Test vectors
-  from RFC 8032 in the gtest suite.
-- Credential: flag bit `CTAP_CREDENTIAL_SOURCE_CTAP_flags_alg_eddsa`; the
-  32-byte `private_key` holds the Ed25519 seed. Old credentials (bit clear)
-  stay ES256.
-- makeCredential: pick the first host `pubKeyCredParams` entry we support
-  (today: check that ES256 is present).
-- `ctap_credential_compute_signature`: take the message
-  (`authData || clientDataHash`) and hash only for ES256. Signature: 64 raw
-  bytes for EdDSA, DER for ES256.
-- COSE key: OKP (`kty 1, crv 6, x`) for EdDSA, EC2 for ES256
-  (`ctap_encode.c`, `ctap_credentials.c`).
-- Self attestation (`packed`) signs with the credential's own algorithm.
-- getInfo `algorithms`: ES256 first, then EdDSA.
-- `fido2 list`: show the algorithm.
+- Library: Monocypher 4.0.2 (`crypto/monocypher`, CC0 / BSD-2, Cure53
+  audit), only Ed25519. mbedTLS 4.1 / TF-PSA-Crypto 1.1 in ESP-IDF v6.0.2
+  has the PSA EdDSA constants but no implementation; no Ed25519 hardware.
+- Crypto table: `ed25519_compute_public_key`, `ed25519_sign` (the message,
+  not a hash). Optional: NULL (e.g. upstream's stm32 table) -> EdDSA is not
+  offered (`ctap_crypto_supports_eddsa()`). Monocypher wipes the seed it is
+  given: ours works on a copy (test).
+- COSE `-8` EdDSA and `-19` Ed25519 (RFC 9864): the same key and signature;
+  the credential keeps which one (`flags` bits 8..9; 0 = ES256, so old
+  credentials stay ES256). makeCredential takes the first supported entry in
+  the host's pubKeyCredParams (webauthn.io lists -8 first: Ed25519 there).
+  getInfo `algorithms`: -7, -8, -19.
+- COSE key OKP `{1: 1, 3: alg, -1: 6, -2: x}`; signatures (packed self
+  attestation, assertions) over `authData || clientDataHash`, raw 64 bytes;
+  attStmt `alg` = the credential's. Credential management lists the OKP key.
+- `fido2 list` and the web FIDO2 page show the algorithm.
+- Tests: `ctap_ed25519_test.cpp` (RFC 8032 vectors 1..3, end to end with
+  Monocypher's verify), webauthn.io request now picks -8;
+  `tests/fido2/test_eddsa.py` over BLE (one touch each, ctap-test.example):
+  with test_info + test_config 19 passed, 1 skipped (2026-10-15).
+- Flash: the app grew by ~24 KB (steps 3..6).
 
 ## 7. U2F (CTAP1) over BLE
 

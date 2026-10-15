@@ -436,6 +436,7 @@ esp_err_t fido_ctap_list(fido_ctap_credential_t *out, size_t capacity, size_t *c
             (source->flags & CTAP_CREDENTIAL_SOURCE_CTAP_flags_truncated_rp_id) != 0;
         c->discoverable = ctap_credential_is_discoverable(&credential);
         c->cred_protect = (uint8_t)(source->flags & CTAP_CREDENTIAL_SOURCE_CTAP_flags_credProtect);
+        c->alg = ctap_credential_get_alg(&credential);
         c->size = item.size;
         c->origin = ctap_file_storage_origin(&storage, source->id);
     }

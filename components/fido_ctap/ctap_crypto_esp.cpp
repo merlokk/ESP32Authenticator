@@ -1,5 +1,6 @@
 // LionKey crypto table on the crypto driver (hardware RNG, SHA-256, AES).
-// P-256 stays on lionkey's micro-ecc: the ESP32-S3 has no ECC accelerator.
+// P-256 stays on lionkey's micro-ecc, Ed25519 on Monocypher: the ESP32-S3 has
+// no ECC accelerator.
 // Streaming SHA-256 for HMAC/HKDF (sha256_bind_ctx, hash_alg_sha256) stays
 // lionkey's software one.
 
@@ -65,6 +66,8 @@ extern "C" const ctap_crypto_t fido_ctap_crypto = {
     .rng_generate_data = RngGenerate,
     .ecc_secp256r1_compute_public_key = ctap_software_crypto_ecc_secp256r1_compute_public_key,
     .ecc_secp256r1_sign = ctap_software_crypto_ecc_secp256r1_sign,
+    .ed25519_compute_public_key = ctap_software_crypto_ed25519_compute_public_key,
+    .ed25519_sign = ctap_software_crypto_ed25519_sign,
     .ecc_secp256r1_shared_secret = ctap_software_crypto_ecc_secp256r1_shared_secret,
     .aes_256_cbc_encrypt = AesEncrypt,
     .aes_256_cbc_decrypt = AesDecrypt,

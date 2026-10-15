@@ -133,6 +133,18 @@ void PrintOrigin(const fido_ctap_origin_t &o) {
     printf("\n");
 }
 
+const char *AlgName(int32_t alg) {
+    switch (alg) {
+        case -7:
+            return "ES256";
+        case -8:
+            return "EdDSA";
+        case -19:
+            return "Ed25519";
+    }
+    return "?";
+}
+
 int CmdList(int, char **) {
     size_t count = 0;
     if (Load(&count) != 0) {
@@ -142,12 +154,12 @@ int CmdList(int, char **) {
         printf("no credentials\n");
         return 0;
     }
-    printf(" #  id        rk   site / user\n");
+    printf(" #  id        rk   alg      site / user\n");
     for (size_t i = 0; i < count; ++i) {
         const fido_ctap_credential_t &c = g_list[i];
         printf("%2u  ", static_cast<unsigned>(i + 1));
         PrintId(c.id, kShortId);
-        printf("  %-3s  %s%s\n", c.discoverable ? "yes" : "no", c.rp_id,
+        printf("  %-3s  %-7s  %s%s\n", c.discoverable ? "yes" : "no", AlgName(c.alg), c.rp_id,
                c.rp_id_truncated ? "..." : "");
         if (c.user_name[0] != '\0' || c.display_name[0] != '\0') {
             printf("                   %s", c.user_name);

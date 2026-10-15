@@ -26,6 +26,8 @@ set(lionkey_srcs
     ${lk}/crypto/hmac/hmac.c
     ${lk}/crypto/sha256/sha256.c
     ${lk}/crypto/micro-ecc/uECC.c
+    ${lk}/crypto/monocypher/monocypher.c
+    ${lk}/crypto/monocypher/monocypher-ed25519.c
     ${lk}/crypto/tiny-AES-c/aes.c
     ${lk}/crypto/tinymt/tinymt/tinymt32.c
     ${cbor}/cborencoder.c
@@ -43,6 +45,7 @@ idf_component_register(SRCS "fido_ctap.c" "ctap_file_storage.c" "ctap_crypto_esp
                                       ${lk}/crypto/hmac
                                       ${lk}/crypto/sha256
                                       ${lk}/crypto/micro-ecc
+                                      ${lk}/crypto/monocypher
                                       ${lk}/crypto/tiny-AES-c
                                       ${lk}/crypto/tinymt/tinymt
                                       ${cbor}

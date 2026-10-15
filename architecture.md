@@ -339,7 +339,8 @@ submodule) behind `ble_fido`. API: `fido_ctap_init(hooks, store)`,
   reset. minPinLength extension: the minimum PIN length goes to up to 8 sites
   set by setMinPINLength (storage key 5, SHA-256 of the RP IDs). PIN complexity
   policy (`pin.complexity`, or setMinPINLength until a reset): getInfo 0x1B,
-  the `pinComplexityPolicy` extension. Details: [lionkey-update-plan.md](lionkey-update-plan.md).
+  the `pinComplexityPolicy` extension. Algorithms: ES256 (micro-ecc) and
+  EdDSA / Ed25519 (COSE -8, -19; Monocypher), the host's first choice. Details: [lionkey-update-plan.md](lionkey-update-plan.md).
 - Console (`fido2 info|list|delete|reset`): `fido_ctap_info/list/delete/reset`.
   A mutex serialises them with CTAP requests (a request holds it for its whole
   run, button wait included; the console waits 1 s, then "busy"). The console

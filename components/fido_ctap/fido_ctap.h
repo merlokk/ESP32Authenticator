@@ -157,6 +157,7 @@ typedef struct {
     bool rp_id_truncated;
     bool discoverable;
     uint8_t cred_protect;  // 1..3 (credProtect extension), 0 if unset
+    int32_t alg;           // COSE algorithm: -7 ES256, -8 EdDSA, -19 Ed25519
     size_t size;           // bytes in the store
     // Who, where and when; all unknown for credentials made before this was kept.
     fido_ctap_origin_t origin;

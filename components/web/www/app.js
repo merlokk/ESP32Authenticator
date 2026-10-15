@@ -877,6 +877,7 @@
           node.appendChild(head);
           var line = el("div", "tags");
           line.appendChild(el("span", c.resident ? "ok" : "faint", c.resident ? "resident" : "not resident"));
+          line.appendChild(el("span", "faint", { "-7": "ES256", "-8": "EdDSA", "-19": "Ed25519" }[c.alg] || "alg " + c.alg));
           line.appendChild(el("span", "faint", "made " + when(c.created, d.time_offset)));
           if (c.host) line.appendChild(el("span", "faint", "by " + c.host));
           line.appendChild(el("span", "faint", "id " + c.id.slice(0, 8)));
