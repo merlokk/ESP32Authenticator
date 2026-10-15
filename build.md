@@ -73,10 +73,19 @@ python utils/ble.py -p COM6 kb "text"          # or kb --stdin; quoting and spli
 
 ```powershell
 host_test\run.cmd [suite...]   # host tests, no board (MSVC); see architecture.md
+host_test\lionkey.cmd [regex]   # LionKey's GoogleTest suite in WSL (gcc, ASan/UBSan)
 ```
 
 Suites: `config`, `wifi_policy`, `reachability`, `web_auth`, `web_paths`,
-`web_settings`, `clock`, `boards`, `timesync`, `timezone`, `led`, `totp`. Run them after any change to those components.
+`web_settings`, `clock`, `boards`, `timesync`, `timezone`, `led`, `buttons`, `totp`. Run them after any change to those components.
+
+`lionkey.cmd`: run after any change in `lib/lionkey`. Needs WSL Ubuntu with
+gcc/g++ and CMake >= 3.30 + Ninja (on PATH or the release binaries in
+`~/.local/opt`: `cmake-3.31.6-linux-x86_64/`, `ninja/`), and LionKey's
+`lib/tinyusb` submodule (`git submodule update --init --recursive`). GoogleTest
+and {fmt} are fetched on the first run; the build tree is
+`~/.cache/esp32auth-lionkey-build` in WSL. The regex filters test names
+(`CtapGetInfo`).
 
 `tests/fido2/`: CTAP2 authenticator suite (pytest + python-fido2,
 `pip install -r tests/fido2/requirements.txt`). Transport-agnostic, checked

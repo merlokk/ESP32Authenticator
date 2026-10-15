@@ -64,7 +64,8 @@ Reference projects (local paths + git): [sources.md](sources.md).
 - Commits and MRs: append ` +ai` to the subject/title; no `Co-Authored-By` or similar trailers.
 - Reply in the language of the request.
 - Decisions live in pure headers (`<cstdint>`/`<cstddef>` only) with host tests;
-  hardware code only carries them out. Run `host_test\run.cmd` after changes.
+  hardware code only carries them out. Run `host_test\run.cmd` after changes
+  (`host_test\lionkey.cmd` after changes in `lib/lionkey`).
 - Nothing over ~1 KB on a task stack (main 3.5 KB, console/httpd 4 KB): use the
   heap or static storage (a stack copy of the config boot-looped the board).
 - Passwords never in logs, console dumps or HTTP answers; the web write path is

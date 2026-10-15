@@ -1,3 +1,4 @@
 [submodule "lib/lionkey"]
 	path = lib/lionkey
 	url = https://github.com/merlokk/lionkey.git
+	branch = esp32auth
