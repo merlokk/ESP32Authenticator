@@ -1,4 +1,5 @@
-// Button debounce and short/long press (devices/buttons/button_logic.h).
+// Button debounce, short/long and single/double press
+// (devices/buttons/button_logic.h).
 // Ported from approver-esp32 (host_test/test_buttons.cpp).
 
 #include "button_logic.h"
@@ -9,6 +10,7 @@ namespace {
 using buttons::Debounce;
 using buttons::Event;
 using buttons::kDebounceMs;
+using buttons::MultiPress;
 using buttons::Press;
 using buttons::PressLength;
 
@@ -145,6 +147,97 @@ void test_press_hold_survives_the_millisecond_wrap(void) {
     AssertPress(Press::kLong, key.Update(true, 0xFFFFFF00u + 2000));
 }
 
+// --- Single / double press
+
+// A tap from `at` lasting `len` ms; returns what the release reported.
+uint8_t Tap(MultiPress &m, uint32_t at, uint32_t len = 80) {
+    TEST_ASSERT_EQUAL_UINT8(0, m.Update(true, at));
+    TEST_ASSERT_EQUAL_UINT8(0, m.Update(true, at + len / 2));
+    return m.Update(false, at + len);
+}
+
+void test_multi_single_is_reported_after_the_gap(void) {
+    MultiPress m(400, 500);
+    TEST_ASSERT_EQUAL_UINT8(0, Tap(m, 1000));
+    TEST_ASSERT_EQUAL_UINT8(1, m.Pending());
+    TEST_ASSERT_EQUAL_UINT8(0, m.Update(false, 1080 + 399));
+    TEST_ASSERT_EQUAL_UINT8(1, m.Update(false, 1080 + 400));
+    // Once.
+    TEST_ASSERT_EQUAL_UINT8(0, m.Update(false, 1080 + 800));
+    TEST_ASSERT_EQUAL_UINT8(0, m.Pending());
+}
+
+void test_multi_double_inside_the_gap(void) {
+    MultiPress m(400, 500);
+    Tap(m, 1000);
+    TEST_ASSERT_EQUAL_UINT8(0, m.Update(false, 1200));
+    TEST_ASSERT_EQUAL_UINT8(0, Tap(m, 1300));
+    TEST_ASSERT_EQUAL_UINT8(2, m.Pending());
+    TEST_ASSERT_EQUAL_UINT8(2, m.Update(false, 1380 + 400));
+}
+
+void test_multi_triple(void) {
+    MultiPress m(400, 500);
+    Tap(m, 1000);
+    Tap(m, 1200);
+    Tap(m, 1400);
+    TEST_ASSERT_EQUAL_UINT8(3, m.Update(false, 1480 + 400));
+}
+
+void test_multi_presses_further_apart_are_two_singles(void) {
+    MultiPress m(400, 500);
+    Tap(m, 1000);
+    TEST_ASSERT_EQUAL_UINT8(1, m.Update(false, 1080 + 400));
+    Tap(m, 2000);
+    TEST_ASSERT_EQUAL_UINT8(1, m.Update(false, 2080 + 400));
+}
+
+void test_multi_a_long_press_is_not_a_tap(void) {
+    MultiPress m(400, 500);
+    m.Update(true, 1000);
+    m.Update(true, 1600);  // past the longest tap
+    TEST_ASSERT_EQUAL_UINT8(0, m.Pending());
+    TEST_ASSERT_EQUAL_UINT8(0, m.Update(false, 2000));
+    TEST_ASSERT_EQUAL_UINT8(0, m.Update(false, 3000));
+}
+
+void test_multi_a_long_press_cancels_the_series(void) {
+    MultiPress m(400, 500);
+    Tap(m, 1000);
+    // Second press held too long: neither a single nor a double.
+    TEST_ASSERT_EQUAL_UINT8(0, m.Update(true, 1200));
+    TEST_ASSERT_EQUAL_UINT8(0, m.Update(true, 1800));
+    TEST_ASSERT_EQUAL_UINT8(0, m.Update(false, 1900));
+    TEST_ASSERT_EQUAL_UINT8(0, m.Update(false, 3000));
+}
+
+void test_multi_a_long_press_seen_only_at_its_ends_is_not_a_tap(void) {
+    // Polled at press and release only.
+    MultiPress m(400, 500);
+    m.Update(true, 1000);
+    TEST_ASSERT_EQUAL_UINT8(0, m.Update(false, 1700));
+    TEST_ASSERT_EQUAL_UINT8(0, m.Pending());
+    TEST_ASSERT_EQUAL_UINT8(0, m.Update(false, 3000));
+}
+
+void test_multi_the_gap_is_not_counted_while_held(void) {
+    MultiPress m(400, 500);
+    Tap(m, 1000);
+    // Second press starts inside the gap and is held past it (but is a tap).
+    m.Update(true, 1300);
+    TEST_ASSERT_EQUAL_UINT8(0, m.Update(true, 1700));
+    TEST_ASSERT_EQUAL_UINT8(0, m.Update(false, 1750));
+    TEST_ASSERT_EQUAL_UINT8(2, m.Update(false, 1750 + 400));
+}
+
+void test_multi_survives_the_millisecond_wrap(void) {
+    MultiPress m(400, 500);
+    Tap(m, 0xFFFFFF00u);
+    Tap(m, 0xFFFFFF00u + 200);  // released at 0xFFFFFF00 + 280: 0x18 after the wrap
+    TEST_ASSERT_EQUAL_UINT8(0, m.Update(false, 0x18 + 399));
+    TEST_ASSERT_EQUAL_UINT8(2, m.Update(false, 0x18 + 400));
+}
+
 }  // namespace
 
 void RegisterButtonTests(void) {
@@ -163,4 +256,14 @@ void RegisterButtonTests(void) {
     RUN_TEST(test_press_after_a_long_one_starts_over);
     RUN_TEST(test_press_untouched_reports_nothing);
     RUN_TEST(test_press_hold_survives_the_millisecond_wrap);
+
+    RUN_TEST(test_multi_single_is_reported_after_the_gap);
+    RUN_TEST(test_multi_double_inside_the_gap);
+    RUN_TEST(test_multi_triple);
+    RUN_TEST(test_multi_presses_further_apart_are_two_singles);
+    RUN_TEST(test_multi_a_long_press_is_not_a_tap);
+    RUN_TEST(test_multi_a_long_press_cancels_the_series);
+    RUN_TEST(test_multi_a_long_press_seen_only_at_its_ends_is_not_a_tap);
+    RUN_TEST(test_multi_the_gap_is_not_counted_while_held);
+    RUN_TEST(test_multi_survives_the_millisecond_wrap);
 }
