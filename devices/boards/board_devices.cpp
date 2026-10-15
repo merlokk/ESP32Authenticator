@@ -146,7 +146,12 @@ void PrintInfo() {
     printf("led        %s\n", Name(b.led));
     printf("battery    %s\n", Name(b.battery));
     printf("sd card    %s\n", b.has_sd_card ? "yes" : "no");
-    printf("fido2      up to %u credentials\n", static_cast<unsigned>(b.fido_max_credentials));
+    printf("fido2      up to %u credentials, reset ", static_cast<unsigned>(b.fido_max_credentials));
+    if (b.fido_reset_window_s != 0) {
+        printf("within %u s of start\n", static_cast<unsigned>(b.fido_reset_window_s));
+    } else {
+        printf("any time\n");
+    }
     printf("frontlight %s\n", b.has_frontlight ? "yes" : "no");
     printf("buttons   ");
     for (size_t i = 0; i < kButtonCount; ++i) {

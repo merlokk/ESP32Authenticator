@@ -46,6 +46,7 @@ static ctap_file_storage_context_t *ctx = &empty_ctx;
 static ctap_storage_t storage = CTAP_FILE_STORAGE_CONST_INIT(&empty_ctx);
 
 static ctap_state_t state = CTAP_STATE_CONST_INIT(&fido_ctap_crypto, &storage);
+static uint32_t reset_window_s = 10;
 
 // --- platform hooks called by the core
 
@@ -146,6 +147,7 @@ static esp_err_t start(void) {
     }
     // authenticatorReset takes a 5 s hold of the button (longTouchForReset).
     state.long_touch_for_reset_ms = CTAP_LONG_TOUCH_FOR_RESET_MS;
+    state.reset_window_ms = reset_window_s == 0 ? CTAP_RESET_WINDOW_NONE : reset_window_s * 1000u;
     ctap_init(&state);
     ready = true;
     ESP_LOGI(TAG, "ready, store %u of %u bytes, up to %u credentials",
@@ -153,6 +155,8 @@ static esp_err_t start(void) {
              (unsigned)ctx->max_credentials);
     return ESP_OK;
 }
+
+void fido_ctap_set_reset_window(uint32_t seconds) { reset_window_s = seconds; }
 
 esp_err_t fido_ctap_init(const fido_ctap_hooks_t *h, const char *store_path,
                          size_t max_credentials) {
@@ -383,6 +387,11 @@ esp_err_t fido_ctap_info(fido_ctap_info_t *out) {
     out->file_version = ctx->version;
     out->kept_version = ctap_file_storage_nvs_version();
     out->modified_utc = ctx->modified_utc;
+    out->min_pin_length = ctap_get_pin_min_code_point_length(&state);
+    out->force_pin_change = ctap_is_force_pin_change(&state);
+    out->always_uv = ctap_is_always_uv(&state);
+    out->long_touch_ms = ctap_get_long_touch_for_reset_ms(&state);
+    out->reset_window_s = reset_window_s;
     admin_give();
     return ESP_OK;
 }

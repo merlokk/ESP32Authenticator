@@ -19,6 +19,7 @@ public:
         has_sd_card = true;
         has_frontlight = true;
         fido_max_credentials = 10;  // more once the SD card driver exists
+        fido_reset_window_s = 10;   // 0 once the e-ink UI confirms a reset
         max_records = 500;          // SD card
 
         buttons[static_cast<size_t>(ButtonId::kLeft)] = {0, true};  // also the ROM strap

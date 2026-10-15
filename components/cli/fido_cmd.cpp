@@ -81,8 +81,19 @@ int CmdInfo(int, char **) {
     } else {
         printf("file       none: RAM only, lost on reboot\n");
     }
-    printf("pin        %s, %u attempt(s) left\n", info.pin_set ? "set" : "not set",
-           static_cast<unsigned>(info.pin_retries));
+    printf("pin        %s, %u attempt(s) left, min %u%s\n", info.pin_set ? "set" : "not set",
+           static_cast<unsigned>(info.pin_retries), static_cast<unsigned>(info.min_pin_length),
+           info.force_pin_change ? ", change due" : "");
+    printf("always uv  %s\n", info.always_uv ? "on" : "off");
+    printf("reset      ");
+    if (info.reset_window_s != 0) {
+        printf("within %" PRIu32 " s of start, ", info.reset_window_s);
+    }
+    if (info.long_touch_ms != 0) {
+        printf("hold the button %" PRIu32 " s\n", info.long_touch_ms / 1000);
+    } else {
+        printf("press the button\n");
+    }
     printf("counter    %" PRIu32 " (signatures, kept by reset)\n", info.sign_count);
     return 0;
 }

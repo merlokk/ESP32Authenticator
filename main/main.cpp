@@ -82,6 +82,7 @@ void InitFido(const char *dir) {
         }};
     static_assert(static_cast<int>(boards::UserWait::kLongTouchHeld) ==
                   FIDO_CTAP_WAIT_LONG_TOUCH_HELD);
+    fido_ctap_set_reset_window(boards::kBoard.fido_reset_window_s);
     if (fido_ctap_init(&hooks, have_fs ? store : nullptr, boards::kBoard.fido_max_credentials) ==
         ESP_OK) {
         ble_fido::SetMessageHandler(fido_ctap_request);

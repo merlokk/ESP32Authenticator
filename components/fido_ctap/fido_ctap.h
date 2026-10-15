@@ -74,6 +74,10 @@ typedef struct {
 esp_err_t fido_ctap_init(const fido_ctap_hooks_t *hooks, const char *store_path,
                          size_t max_credentials);
 
+// authenticatorReset only within `seconds` after the core starts (0: any
+// time; default 10, the CTAP rule without a display). Before fido_ctap_init().
+void fido_ctap_set_reset_window(uint32_t seconds);
+
 // One CTAP message: `msg` = command byte + CBOR parameters; `out` = status
 // byte + CBOR response. Returns the response length. Blocks while waiting for
 // user presence (up to 30 s): run it outside the BLE host task.
@@ -101,6 +105,11 @@ typedef struct {
     uint32_t file_version;  // the store file's version (+1 per write), 0 if none yet
     uint32_t kept_version;  // highest version this device accepted (NVS)
     int64_t modified_utc;   // last change, Unix seconds; 0 unknown
+    uint8_t min_pin_length;     // minimum PIN length, code points (setMinPINLength)
+    bool force_pin_change;      // a PIN change is due (forcePINChange)
+    bool always_uv;             // alwaysUv (toggleAlwaysUv)
+    uint32_t long_touch_ms;     // the hold authenticatorReset takes, 0: a press
+    uint32_t reset_window_s;    // authenticatorReset only this long after start, 0: any time
 } fido_ctap_info_t;
 
 // The store key from the vault: PBKDF2(PIN, salt), and what goes into the

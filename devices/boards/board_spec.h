@@ -109,6 +109,10 @@ public:
     // Password records in vault.bin; ~1.2 KB of PSRAM each, up to ~400 B in
     // the file (typically ~150).
     uint16_t max_records = 50;
+    // FIDO2 authenticatorReset only within this many seconds after the core
+    // starts (boot or PIN unlock); 0: any time. CTAP: 10 s on an authenticator
+    // without a display.
+    uint16_t fido_reset_window_s = 10;
 
     ButtonPin buttons[kButtonCount] = {};
     I2cPins i2c;
@@ -145,6 +149,7 @@ constexpr bool UsableGpio(int8_t gpio) {
 
 inline constexpr uint16_t kMaxFidoCredentials = 50;
 inline constexpr uint16_t kMaxRecords = 1000;
+inline constexpr uint16_t kMaxFidoResetWindowS = 3600;
 
 // nullptr when the board is consistent, else what is wrong.
 constexpr const char *CheckPins(const Board &b) {
@@ -177,6 +182,9 @@ constexpr const char *CheckPins(const Board &b) {
     }
     if (b.max_records < 1 || b.max_records > kMaxRecords) {
         return "max_records out of 1..1000";
+    }
+    if (b.fido_reset_window_s > kMaxFidoResetWindowS) {
+        return "fido_reset_window_s out of 0..3600";
     }
     if (b.name == nullptr || b.name[0] == '\0') {
         return "no name";

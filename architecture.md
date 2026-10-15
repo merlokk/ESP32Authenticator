@@ -329,7 +329,12 @@ submodule) behind `ble_fido`. API: `fido_ctap_init(hooks, store)`,
   PIN unlock; lionkey; the window restarts after a successful reset), then a
   5 s hold of Left (CTAP 2.3 longTouchForReset, getInfo 0x18 = true; a hold
   released early is not a refusal, the next press starts over; 30 s, CANCEL as
-  above). No U2F/CTAP1.
+  above). The window is the board's `fido_reset_window_s` (0 = any time). No
+  U2F/CTAP1.
+- authenticatorConfig (LionKey fork): toggleAlwaysUv, setMinPINLength
+  (only raises; a PIN below it must be changed: forcePINChange),
+  enableLongTouchForReset; kept in `fido.bin` (storage key 4), cleared by a
+  reset. Details: [lionkey-update-plan.md](lionkey-update-plan.md).
 - Console (`fido2 info|list|delete|reset`): `fido_ctap_info/list/delete/reset`.
   A mutex serialises them with CTAP requests (a request holds it for its whole
   run, button wait included; the console waits 1 s, then "busy"). The console

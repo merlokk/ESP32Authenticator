@@ -66,26 +66,46 @@ Our `devices/buttons` is a raw level read. Port from
 - Reset still wipes only the FIDO2 store (not the vault); the vault keeps its
   own wipe PIN.
 
-## 3. authenticatorConfig (0x0D) and setMinPINLength
+## 3. authenticatorConfig (0x0D) and setMinPINLength (done)
 
-- Dispatch `CTAP_CMD_CONFIG` (enum exists, no handler). New `ctap_config.c`.
-- Auth: pinUvAuthParam over `32 x 0xff || 0x0d || subCommand ||
-  subCommandParams` with the `acfg` permission; without a PIN set, allowed
-  only per spec (UP).
-- Subcommands:
-  - `setMinPINLength`: `newMinPINLength` (only raises), `minPinLengthRPIDs`,
-    `forceChangePin`. Stored under `CTAP_STORAGE_KEY_CONFIG`
-    (min length, force-change flag, RP ID list, alwaysUv).
-  - `toggleAlwaysUv`: stored; enforced in makeCredential / getAssertion
-    (UV or PIN token required, `makeCredUvNotRqd` reported false).
-  - `enableEnterpriseAttestation`: not supported (`ep` absent).
-  - `vendorPrototype`: not supported.
-- getInfo: `authnrCfg`, `setMinPINLength`, `alwaysUv` options;
-  `minPINLength`, `forcePINChange`, `maxRPIDsForSetMinPINLength`.
-- forcePINChange: getPinToken / getPinUvAuthTokenUsingPinWithPermissions
-  return `CTAP2_ERR_PIN_POLICY_VIOLATION` until changePIN; changePIN clears it.
-- `reset` clears the config item.
-- Console: `fido2 info` shows min PIN length, forceChangePin, alwaysUv.
+- Core: `ctap_config.c`, `ctap_parse_config()` (CTAP 2.2 §6.11). Supported:
+  `toggleAlwaysUv` (2, can be turned off again), `setMinPINLength` (3),
+  `enableLongTouchForReset` (4, CTAP 2.3); others (enterprise attestation,
+  vendorPrototype) -> `CTAP1_ERR_INVALID_PARAMETER` (the spec's code for an
+  unsupported subcommand).
+- Auth when a PIN is set or alwaysUv is on: pinUvAuthParam over
+  `32 x 0xff || 0x0d || subCommand || subCommandParams` (raw bytes), token
+  with `acfg`; toggleAlwaysUv skips it without a PIN (initial setup).
+- Persistent: `CTAP_STORAGE_KEY_CONFIG` (4), `ctap_config_persistent_state_t`
+  (flags: alwaysUv, forcePINChange, longTouchForReset); the minimum PIN length
+  stays in the PIN item. Old `fido.bin` loads unchanged (no item = defaults);
+  reset erases it.
+- setMinPINLength: only raises (else PIN_POLICY_VIOLATION; also above 63);
+  `minPinLengthRPIDs` -> INVALID_PARAMETER until step 4; `forceChangePin`
+  without a PIN -> PIN_NOT_SET; a PIN below the new minimum sets forcePINChange;
+  forcePINChange resets all pinUvAuthTokens; `pinComplexityPolicy` ignored
+  until step 5.
+- forcePINChange: getPinToken -> PIN_INVALID, getPinUvAuthTokenUsingPin... ->
+  PIN_POLICY_VIOLATION (also when the PIN is below the minimum), without
+  losing an attempt; changePIN to the same PIN -> PIN_POLICY_VIOLATION;
+  a changePIN clears it.
+- alwaysUv: makeCredential step 6 and getAssertion step 5 (`up` present and
+  true) -> PUAT_REQUIRED without pinUvAuthParam; `makeCredUvNotRqd` reported
+  false.
+- getInfo: options `alwaysUv`, `authnrCfg`, `setMinPINLength` (canonical key
+  order), `forcePINChange` (0x0C), `maxRPIDsForSetMinPINLength` (0x10) = 0,
+  `longTouchForReset` (0x18) always present (true/false),
+  `authenticatorConfigCommands` (0x1F) = [2, 3, 4].
+- Reset window: `ctap_state_t.reset_window_ms` (0 = 10 s default,
+  `CTAP_RESET_WINDOW_NONE`); ours from the board class `fido_reset_window_s`
+  (10 on both boards, 0 = any time) via `fido_ctap_set_reset_window()`.
+- Fixed in passing: `ctap_parse_config()` checks a missing request before
+  entering the map (credentialManagement's parser dereferences it first).
+- Tests: `ctap_config_test.cpp` (27), forcePINChange in
+  `ctap_client_pin_test.cpp` (3); `tests/fido2/test_config.py` over BLE
+  (never setMinPINLength on the device: only a reset lowers it again).
+- Console: `fido2 info` shows min PIN length, change due, always uv, reset
+  rule; `board` the reset window.
 
 ## 4. minPinLength extension
 
