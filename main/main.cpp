@@ -72,7 +72,8 @@ void InitFido(const char *dir) {
         [](fido_ctap_client_t *out) {
             out->transport = FIDO_CTAP_TRANSPORT_BLE;
             return ble::PeerIdentity(&out->addr_type, out->addr);
-        }};
+        },
+        boards::LedWaitingForUser};
     if (fido_ctap_init(&hooks, have_fs ? store : nullptr, boards::kBoard.fido_max_credentials) ==
         ESP_OK) {
         ble_fido::SetMessageHandler(fido_ctap_request);
@@ -140,6 +141,7 @@ extern "C" void app_main() {
     ui::Init();  // LVGL; no display driver yet
 
     ble_kb::Register();  // BLE profiles, before the stack starts
+    ble_kb::SetTypingHook(boards::LedTyping);
     ble_fido::Register();
     const char *dir = StorageDir();
     if (dir != nullptr) {

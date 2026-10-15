@@ -50,6 +50,7 @@ uint16_t input_handle = 0;
 bool subscribed = false;
 uint8_t protocol_mode = 1;  // report protocol
 uint8_t leds = 0;
+void (*typing_hook)() = nullptr;
 
 int Append(os_mbuf *om, const void *data, size_t len) {
     return os_mbuf_append(om, data, len) == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
@@ -225,6 +226,9 @@ esp_err_t Type(const char *text) {
     }
     for (const char *c = text; *c != '\0'; ++c) {
         KeyFor(*c, &usage, &shift);
+        if (typing_hook != nullptr) {
+            typing_hook();
+        }
         esp_err_t err = SendReport(shift ? kShift : 0, usage);
         if (err == ESP_OK) {
             vTaskDelay(pdMS_TO_TICKS(kKeyDelayMs));
@@ -237,5 +241,7 @@ esp_err_t Type(const char *text) {
     }
     return ESP_OK;
 }
+
+void SetTypingHook(void (*hook)()) { typing_hook = hook; }
 
 }  // namespace ble_kb

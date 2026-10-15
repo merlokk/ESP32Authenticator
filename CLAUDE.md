@@ -19,7 +19,8 @@ Firmware: C/C++ on **ESP-IDF**.
   client / AP / AP+client with static IPs and an internet check; configuration
   web site; USB console; `config.json`; time (SNTP, time zones, `rtc::Clock`
   on the CPU timer); board classes chosen in `devices/config.h`; WS2812 LED (red at boot,
-  green breathing when ready); TOTP codes on the console (`totp`); LVGL 9 library (no display driver);
+  green breathing when ready, blue while typing, yellow
+  blinking for the FIDO2 button); TOTP codes on the console (`totp`); LVGL 9 library (no display driver);
   password records (site/user/password/TOTP) in `vault.bin` with
   add/edit/delete on the console (`pass`) and the web site (with FIDO2
   credentials and TOTP codes); `vault.bin` and `fido.bin` are

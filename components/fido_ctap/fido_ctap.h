@@ -46,6 +46,9 @@ typedef struct {
     bool (*button_pressed)(void);
     // The current host; false (or NULL hook) when unknown.
     bool (*client)(fido_ctap_client_t *out);
+    // True when the wait for the button starts, false when it ends (pressed,
+    // cancelled, timed out). May be NULL.
+    void (*waiting_for_user)(bool waiting);
 } fido_ctap_hooks_t;
 
 // RAM log for `n` credentials (~635 bytes each at most, rounded up), plus the

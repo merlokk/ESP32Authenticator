@@ -19,6 +19,10 @@ constexpr const char *TAG = "board";
 // UART1: UART0 is the ROM's and the default console's.
 constexpr uart_port_t kLedUart = UART_NUM_1;
 
+constexpr uint32_t kTypingLedMs = 1000;
+// Longer than the CTAP button wait (30 s): the end of the wait ends it.
+constexpr uint32_t kUserWaitLedMs = 35000;
+
 rtc::TimerClock timer_clock;
 rtc::Clock *active_clock = &timer_clock;
 
@@ -60,6 +64,23 @@ esp_err_t Init() {
 void BootDone() {
     if (led::Ready()) {
         led::SetIdle(led::colour::kGreen, led::Effect::kBreathe);
+    }
+}
+
+void LedTyping() {
+    if (led::Ready()) {
+        led::SetFor(led::colour::kBlue, led::Effect::kSolid, kTypingLedMs);
+    }
+}
+
+void LedWaitingForUser(bool waiting) {
+    if (!led::Ready()) {
+        return;
+    }
+    if (waiting) {
+        led::SetFor(led::colour::kYellow, led::Effect::kNormBlink, kUserWaitLedMs);
+    } else {
+        led::EndFor();
     }
 }
 

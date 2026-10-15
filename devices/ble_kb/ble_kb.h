@@ -19,4 +19,7 @@ bool Ready();
 // ESP_ERR_INVALID_ARG on a character that cannot be typed (nothing is sent).
 esp_err_t Type(const char *text);
 
+// Called before every key sent by Type() (the LED shows typing). nullptr: none.
+void SetTypingHook(void (*hook)());
+
 }  // namespace ble_kb

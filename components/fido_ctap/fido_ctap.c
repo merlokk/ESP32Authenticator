@@ -70,9 +70,15 @@ void ctap_send_keepalive_if_needed(ctap_keepalive_status_t current_status) {
 
 static bool button(void) { return hooks.button_pressed != NULL && hooks.button_pressed(); }
 
+static void waiting_for_user(bool waiting) {
+    if (hooks.waiting_for_user != NULL) {
+        hooks.waiting_for_user(waiting);
+    }
+}
+
 // Waits for a fresh press: a button already held when the request comes in
 // does not count.
-ctap_user_presence_result_t ctap_wait_for_user_presence(void) {
+static ctap_user_presence_result_t wait_for_press(void) {
     ESP_LOGI(TAG, "user presence: press the button");
     ctap_send_keepalive_if_needed(CTAP_STATUS_UPNEEDED);
     const uint32_t start = now_ms();
@@ -95,6 +101,13 @@ ctap_user_presence_result_t ctap_wait_for_user_presence(void) {
         vTaskDelay(pdMS_TO_TICKS(UP_POLL_MS));
         ctap_send_keepalive_if_needed(CTAP_STATUS_UPNEEDED);
     }
+}
+
+ctap_user_presence_result_t ctap_wait_for_user_presence(void) {
+    waiting_for_user(true);
+    const ctap_user_presence_result_t result = wait_for_press();
+    waiting_for_user(false);
+    return result;
 }
 
 // --- API

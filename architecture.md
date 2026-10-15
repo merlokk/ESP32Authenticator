@@ -147,7 +147,9 @@ beacon, blinks, a 9 s breath linear in perceived lightness; temporary
 overrides). Ceilings from `config.json` `led` (default 15 % / 7 % idle), set
 right after the config is read. Boot: red solid from the first
 line of `app_main` (dark = hardware fault, red = firmware running), green
-breathing at the idle ceiling when `app_main` is done.
+breathing at the idle ceiling when `app_main` is done. Overrides: blue solid
+while the BLE keyboard types (until 1 s after the last key), yellow blinking
+(500/500 ms) while FIDO2 waits for the button.
 
 ## Time
 

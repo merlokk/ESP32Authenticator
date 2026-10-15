@@ -18,6 +18,12 @@ esp_err_t Init();
 // app_main is done: the LED goes to "ready" (green, breathing, idle ceiling).
 void BootDone();
 
+// Keys going to the host: the LED glows blue until 1 s after the last call.
+void LedTyping();
+
+// FIDO2 waits for the button: the LED blinks yellow until called with false.
+void LedWaitingForUser(bool waiting);
+
 // LED brightness ceilings in percent (config.json `led`); no-op without an LED.
 void SetLedBrightness(uint8_t percent, uint8_t idle_percent);
 
