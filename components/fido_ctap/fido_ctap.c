@@ -7,6 +7,7 @@
 #include "ctap.h"
 #include "ctap_credentials_store.h"
 #include "ctap_file_storage.h"
+#include "pin_policy.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -47,6 +48,7 @@ static ctap_storage_t storage = CTAP_FILE_STORAGE_CONST_INIT(&empty_ctx);
 
 static ctap_state_t state = CTAP_STATE_CONST_INIT(&fido_ctap_crypto, &storage);
 static uint32_t reset_window_s = 10;
+static bool pin_complexity = true;
 
 // --- platform hooks called by the core
 
@@ -148,6 +150,7 @@ static esp_err_t start(void) {
     // authenticatorReset takes a 5 s hold of the button (longTouchForReset).
     state.long_touch_for_reset_ms = CTAP_LONG_TOUCH_FOR_RESET_MS;
     state.reset_window_ms = reset_window_s == 0 ? CTAP_RESET_WINDOW_NONE : reset_window_s * 1000u;
+    state.pin_complexity_policy_preconfigured = pin_complexity;
     ctap_init(&state);
     ready = true;
     ESP_LOGI(TAG, "ready, store %u of %u bytes, up to %u credentials",
@@ -157,6 +160,13 @@ static esp_err_t start(void) {
 }
 
 void fido_ctap_set_reset_window(uint32_t seconds) { reset_window_s = seconds; }
+
+void fido_ctap_set_pin_complexity(bool on) { pin_complexity = on; }
+
+// The core's PIN complexity policy: the one the vault PIN follows too.
+bool ctap_pin_meets_complexity_policy(const uint8_t *pin, size_t pin_length) {
+    return pin_policy_check(pin, pin_length) == PIN_POLICY_OK;
+}
 
 esp_err_t fido_ctap_init(const fido_ctap_hooks_t *h, const char *store_path,
                          size_t max_credentials) {
@@ -393,6 +403,7 @@ esp_err_t fido_ctap_info(fido_ctap_info_t *out) {
     out->always_uv = ctap_is_always_uv(&state);
     out->long_touch_ms = ctap_get_long_touch_for_reset_ms(&state);
     out->reset_window_s = reset_window_s;
+    out->pin_complexity = ctap_is_pin_complexity_policy(&state);
     admin_give();
     return ESP_OK;
 }

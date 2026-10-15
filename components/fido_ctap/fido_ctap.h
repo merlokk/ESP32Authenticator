@@ -78,6 +78,11 @@ esp_err_t fido_ctap_init(const fido_ctap_hooks_t *hooks, const char *store_path,
 // time; default 10, the CTAP rule without a display). Before fido_ctap_init().
 void fido_ctap_set_reset_window(uint32_t seconds);
 
+// The PIN complexity policy (pin_policy.h) for a new clientPIN: pre-configured
+// on (also after a reset) or off (then only setMinPINLength turns it on).
+// Before fido_ctap_init().
+void fido_ctap_set_pin_complexity(bool on);
+
 // One CTAP message: `msg` = command byte + CBOR parameters; `out` = status
 // byte + CBOR response. Returns the response length. Blocks while waiting for
 // user presence (up to 30 s): run it outside the BLE host task.
@@ -111,6 +116,7 @@ typedef struct {
     bool always_uv;             // alwaysUv (toggleAlwaysUv)
     uint32_t long_touch_ms;     // the hold authenticatorReset takes, 0: a press
     uint32_t reset_window_s;    // authenticatorReset only this long after start, 0: any time
+    bool pin_complexity;        // a new PIN must pass the complexity policy
 } fido_ctap_info_t;
 
 // The store key from the vault: PBKDF2(PIN, salt), and what goes into the

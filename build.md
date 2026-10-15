@@ -77,7 +77,7 @@ host_test\lionkey.cmd [regex]   # LionKey's GoogleTest suite in WSL (gcc, ASan/U
 ```
 
 Suites: `config`, `wifi_policy`, `reachability`, `web_auth`, `web_paths`,
-`web_settings`, `clock`, `boards`, `timesync`, `timezone`, `led`, `buttons`, `totp`. Run them after any change to those components.
+`web_settings`, `clock`, `boards`, `timesync`, `timezone`, `led`, `buttons`, `pin_policy`, `totp`. Run them after any change to those components.
 
 `lionkey.cmd`: run after any change in `lib/lionkey`. Needs WSL Ubuntu with
 gcc/g++ and CMake >= 3.30 + Ninja (on PATH or the release binaries in

@@ -67,6 +67,7 @@ struct Info {
 struct Policy {
     uint32_t lock_seconds;  // after kMaxPinTries wrong PINs
     const char *wipe;       // pin_guard.h text, "" for none (copied)
+    bool complexity;        // a new PIN must pass pin_policy.h (kWeakPin)
 };
 void SetPolicy(const Policy &policy);
 // fido.bin follows the vault's key. key_in / key_gone / wipe run outside the

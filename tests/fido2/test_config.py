@@ -123,3 +123,14 @@ def test_min_pin_length_extension(config_supported, info, raw_info):
     if "minPinLength" not in info.extensions:
         pytest.skip("minPinLength extension not supported")
     assert raw_info[0x10] >= 1  # maxRPIDsForSetMinPINLength
+
+
+def test_pin_complexity_policy(raw_info, info):
+    """pinComplexityPolicy (0x1B): a bool; when true the extension is listed."""
+    if 0x1B not in raw_info:
+        pytest.skip("no pinComplexityPolicy")
+    assert isinstance(raw_info[0x1B], bool)
+    if raw_info[0x1B]:
+        assert "pinComplexityPolicy" in info.extensions
+    if 0x1C in raw_info:
+        assert isinstance(raw_info[0x1C], bytes) and raw_info[0x1C]

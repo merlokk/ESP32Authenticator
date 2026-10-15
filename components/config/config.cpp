@@ -53,7 +53,8 @@ const char kDefaultJson[] = R"json({
   },
   "pin": {
     "lockMinutes": 10,
-    "wipe": ""
+    "wipe": "",
+    "complexity": true
   },
   "test": {
     "pin": ""
@@ -258,7 +259,8 @@ bool ParsePin(const cJSON *section, Pin *out, char *error, size_t size) {
     }
     out->lock_minutes = static_cast<uint16_t>(minutes);
     return GetString(section, "wipe", out->wipe, sizeof out->wipe, ValidWipe,
-                     "empty or a hash from 'pin wipe set'", "pin", error, size);
+                     "empty or a hash from 'pin wipe set'", "pin", error, size) &&
+           GetBool(section, "complexity", &out->complexity, "pin", error, size);
 }
 
 bool ParseTest(const cJSON *section, Test *out, char *error, size_t size) {
@@ -651,6 +653,7 @@ size_t Serialize(const Data &d, char *out, size_t size) {
     cJSON *pin = cJSON_AddObjectToObject(root, "pin");
     cJSON_AddNumberToObject(pin, "lockMinutes", d.pin.lock_minutes);
     cJSON_AddStringToObject(pin, "wipe", d.pin.wipe);
+    cJSON_AddBoolToObject(pin, "complexity", d.pin.complexity);
     cJSON *test = cJSON_AddObjectToObject(root, "test");
     cJSON_AddStringToObject(test, "pin", d.test.pin);
 

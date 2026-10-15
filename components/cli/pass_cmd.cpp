@@ -355,7 +355,7 @@ int CmdPinWipe(int argc, char **argv) {
         printf("usage: pin wipe set <pin> | pin wipe off\n");
         return 1;
     }
-    vault::SetPolicy({static_cast<uint32_t>(cfg.lock_minutes) * 60, cfg.wipe});
+    vault::SetPolicy({static_cast<uint32_t>(cfg.lock_minutes) * 60, cfg.wipe, cfg.complexity});
     const esp_err_t err = config::Save();
     printf("wipe PIN %s%s\n", cfg.wipe[0] ? "set" : "off",
            err == ESP_OK ? ", saved" : ": config.json NOT saved");

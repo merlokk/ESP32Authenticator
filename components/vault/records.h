@@ -55,6 +55,7 @@ enum class Error : uint8_t {
     kPinLocked,  // too many wrong PINs: wait (Info::lock_left_s)
     kPinInUse,   // the PIN and the wipe PIN must differ
     kFidoNotLoaded,  // a PIN change needs fido.bin loaded (or no fido.bin)
+    kWeakPin,        // a new PIN fails the complexity policy (pin_policy.h)
 };
 
 inline constexpr size_t kPinLength = 6;

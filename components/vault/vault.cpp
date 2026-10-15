@@ -13,6 +13,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "nvs.h"
+#include "pin_policy.h"
 #include "store_io.h"
 
 namespace vault {
@@ -47,6 +48,13 @@ Hooks g_hooks = {};
 
 // PIN policy (config.json `pin`) and the lockout (pin_guard.h).
 uint32_t g_lock_seconds = 600;
+bool g_complexity = true;
+
+// A PIN that becomes the key (a new store, a change, a reset with a new key).
+bool StrongEnough(const char *pin) {
+    return !g_complexity ||
+           pin_policy_check(reinterpret_cast<const uint8_t *>(pin), strlen(pin)) == PIN_POLICY_OK;
+}
 bool g_has_wipe = false;
 uint8_t g_wipe_salt[kWipeSaltSize];
 uint8_t g_wipe_hash[kWipeHashSize];
@@ -419,6 +427,9 @@ Error UnlockLocked(const char *pin, bool *wiped, KeyEvent *event) {
             break;
         case Read::kNew:
             // No store yet: this PIN makes the key (a new salt).
+            if (!StrongEnough(pin)) {
+                return Error::kWeakPin;
+            }
             if (DeriveNew(pin, &g_key) != ESP_OK) {
                 ForgetKey();
                 return Error::kStorage;
@@ -500,6 +511,7 @@ void SetPolicy(const Policy &policy) {
         xSemaphoreTake(g_lock, portMAX_DELAY);
     }
     g_lock_seconds = policy.lock_seconds;
+    g_complexity = policy.complexity;
     g_has_wipe = has_wipe;
     memcpy(g_wipe_salt, salt, sizeof salt);
     memcpy(g_wipe_hash, hash, sizeof hash);
@@ -562,6 +574,9 @@ Error ChangePin(const char *old_pin, const char *new_pin) {
     PinRight();
     if (IsWipePin(new_pin)) {
         return Error::kPinInUse;
+    }
+    if (!StrongEnough(new_pin)) {
+        return Error::kWeakPin;
     }
     // A new key (new salt). Both stores are in memory: each is written to
     // .new with it, then the marker, then the renames (store_io.h).
@@ -711,6 +726,9 @@ Error Reset(const char *pin) {
             }
             if (IsWipePin(pin)) {
                 return Error::kPinInUse;
+            }
+            if (!StrongEnough(pin)) {
+                return Error::kWeakPin;
             }
             if (DeriveNew(pin, &g_key) != ESP_OK) {
                 ForgetKey();

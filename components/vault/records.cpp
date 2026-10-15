@@ -155,6 +155,8 @@ const char *Describe(Error error) {
             return "the PIN and the wipe PIN must differ";
         case Error::kFidoNotLoaded:
             return "fido.bin is not loaded, so it cannot get the new key: nothing changed";
+        case Error::kWeakPin:
+            return "the PIN is too simple (a repeat, a run like 123456, or a common PIN)";
 
     }
     return "?";

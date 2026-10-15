@@ -128,6 +128,7 @@ struct Led {
 struct Pin {
     uint16_t lock_minutes;  // 1..1440
     char wipe[kWipeSize];   // empty: no wipe PIN
+    bool complexity;        // a new PIN must pass pin_policy.h (vault and FIDO2)
 };
 
 // Development and testing aids. Plain text in config.json: never on a

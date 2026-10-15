@@ -89,6 +89,7 @@ void AssertDefaults(const config::Data &d) {
     TEST_ASSERT_EQUAL_UINT8(7, d.led.idle_percent);
     TEST_ASSERT_EQUAL_STRING("", d.test.pin);
     TEST_ASSERT_EQUAL_UINT16(10, d.pin.lock_minutes);
+    TEST_ASSERT_TRUE(d.pin.complexity);
     TEST_ASSERT_EQUAL_STRING("", d.pin.wipe);
 }
 
@@ -437,6 +438,7 @@ void test_parse_led() {
     AssertParseFails(R"({"test": 1})", "test: expected an object");
     AssertParseFails(R"({"pin": {"lockMinutes": 0}})", "pin.lockMinutes");
     AssertParseFails(R"({"pin": {"lockMinutes": 1441}})", "pin.lockMinutes");
+    AssertParseFails(R"({"pin": {"complexity": 1}})", "pin.complexity");
     AssertParseFails(R"({"pin": {"wipe": "123456"}})", "pin.wipe");  // never the PIN itself
     const char *wipe_json =
         R"({"pin": {"lockMinutes": 30, "wipe": "00112233445566778899aabbccddeeff:)"

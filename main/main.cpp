@@ -83,6 +83,7 @@ void InitFido(const char *dir) {
     static_assert(static_cast<int>(boards::UserWait::kLongTouchHeld) ==
                   FIDO_CTAP_WAIT_LONG_TOUCH_HELD);
     fido_ctap_set_reset_window(boards::kBoard.fido_reset_window_s);
+    fido_ctap_set_pin_complexity(config::Get().pin.complexity);
     if (fido_ctap_init(&hooks, have_fs ? store : nullptr, boards::kBoard.fido_max_credentials) ==
         ESP_OK) {
         ble_fido::SetMessageHandler(fido_ctap_request);
@@ -107,7 +108,7 @@ fido_ctap_key_t Convert(const vault::Key &k) {
 void InitVault(const char *dir) {
     crypto::Init();
     const config::Pin &cfg = config::Get().pin;
-    vault::SetPolicy({static_cast<uint32_t>(cfg.lock_minutes) * 60, cfg.wipe});
+    vault::SetPolicy({static_cast<uint32_t>(cfg.lock_minutes) * 60, cfg.wipe, cfg.complexity});
     // fido.bin has the vault's key: FIDO2 runs while it is in, a PIN change
     // re-keys it, the wipe PIN erases it (quietly: it looks like a wrong PIN).
     vault::SetHooks({

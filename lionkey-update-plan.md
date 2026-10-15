@@ -128,17 +128,27 @@ Our `devices/buttons` is a raw level read. Port from
 - The list cannot be emptied except by a reset: not set on the device by
   `tests/fido2`.
 
-## 5. PIN complexity policy (2.3)
+## 5. PIN complexity policy (done)
 
-- setPIN / changePIN: besides the length, reject weak PINs with
-  `CTAP2_ERR_PIN_POLICY_VIOLATION`: all one character, ascending/descending
-  runs (`123456`, `abcdef`), a short built-in list of the most common PINs.
-- The check is a pure function (`pin_policy.h`, host-tested), shared with the
-  vault's 6-digit PIN (console `pin set`, web).
-- getInfo: `pinComplexityPolicy` in `extensions` and the
-  `pinComplexityPolicy` / `pinComplexityPolicyURL` fields, only once the check
-  is on.
-- Policy on/off: `config.json` `fido.pinPolicy` (default on).
+- The rules: `components/pin_policy/pin_policy.h` (pure C, host-tested
+  `test_pin_policy.cpp`): no block repeated (1111, 1212, 123123), no run up
+  or down of digits or letters (1234, 9876, 7890, abcd; doubled: 112233), not
+  on a short list of common PINs (2580, 147258, password, qwerty, ...);
+  letters without case. Only a new PIN is checked; an existing one stays.
+- Core (fork): `ctap_pin_meets_complexity_policy()` (weak default: one
+  character repeated, a run of digits; ours: pin_policy.h); setPIN / changePIN
+  -> PIN_POLICY_VIOLATION while the policy is on. On =
+  `ctap_state_t.pin_complexity_policy_preconfigured` (also after a reset) or
+  setMinPINLength `pinComplexityPolicy: true` (config flag, until a reset;
+  false does not turn it off). getInfo `pinComplexityPolicy` (0x1B) always,
+  `pinComplexityPolicyURL` (0x1C) when the platform gives one (we do not),
+  `pinComplexityPolicy` in `extensions` while on. makeCredential extension
+  `pinComplexityPolicy` -> bool for RP IDs in minPinLengthRPIDs (12.6).
+- Ours: config.json `pin.complexity` (default true): the FIDO2 pre-configured
+  value and the vault: a new vault PIN (new store, `pin change`, `pass reset
+  confirm <pin>`) -> `kWeakPin`. `fido2 info` shows it.
+- Tests: core +7 (`ctap_config_test.cpp`, `ctap_client_pin_test.cpp`); over
+  BLE `test_info.py` + `test_config.py` 17 passed, 1 skipped (2026-10-15).
 
 ## 6. EdDSA (Ed25519, COSE alg -8)
 

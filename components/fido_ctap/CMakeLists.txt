@@ -46,7 +46,7 @@ idf_component_register(SRCS "fido_ctap.c" "ctap_file_storage.c" "ctap_crypto_esp
                                       ${lk}/crypto/tiny-AES-c
                                       ${lk}/crypto/tinymt/tinymt
                                       ${cbor}
-                    PRIV_REQUIRES crypto esp_timer nvs_flash heap esp_hw_support storefile)
+                    PRIV_REQUIRES crypto esp_timer nvs_flash heap esp_hw_support storefile pin_policy)
 
 # Same settings as lionkey's own build (test/CMakeLists.txt).
 target_compile_definitions(${COMPONENT_LIB} PRIVATE

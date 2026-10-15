@@ -58,6 +58,8 @@ Reference ESP-IDF + LVGL project: `../../ai-remote/approver-esp32` ([GitHub](htt
 - `pin`: `lockMinutes` (1..1440, default 10) after 10 wrong PINs; `wipe`:
   the wipe PIN as `<salt hex>:<SHA-256(salt || PIN) hex>` (set by
   `pin wipe set`, masked by `config show`), never the PIN itself.
+  `complexity` (default true): a new PIN, vault and FIDO2, must pass
+  `pin_policy.h` (no repeats, runs or common PINs).
 - `test`: development aids. `test.pin` (empty or 6 digits) unlocks the vault
   at boot; masked by `config show`, never on the site. Never on a device
   with real secrets.
@@ -86,7 +88,7 @@ Reference ESP-IDF + LVGL project: `../../ai-remote/approver-esp32` ([GitHub](htt
   "web": {"mode": "auto", "write": true, "user": "", "password": ""},
   "time": {"zone": "UTC", "server": "pool.ntp.org", "syncHours": 6},
   "led": {"brightness": 15, "idleBrightness": 7},
-  "pin": {"lockMinutes": 10, "wipe": ""},
+  "pin": {"lockMinutes": 10, "wipe": "", "complexity": true},
   "test": {"pin": ""}
 }
 ```
@@ -111,7 +113,7 @@ cannot link on Windows), Unity from ESP-IDF, cJSON from `managed_components/`
 Pattern from approver-esp32. Suites: `config`, `wifi_policy`, `reachability`,
 `web_auth`, `web_paths` (paths + server policy), `web_settings`, `clock`,
 `boards`, `timesync`, `timezone`, `led`, `buttons` (debounce, short/long,
-single/double press), `totp` (truncation against the RFC 4226
+single/double press), `pin_policy`, `totp` (truncation against the RFC 4226
 HMAC values; the HMAC itself is checked on the board by `totp test`); only code with
 no hardware (pure headers) is under test.
 
@@ -335,7 +337,9 @@ submodule) behind `ble_fido`. API: `fido_ctap_init(hooks, store)`,
   (only raises; a PIN below it must be changed: forcePINChange),
   enableLongTouchForReset; kept in `fido.bin` (storage key 4), cleared by a
   reset. minPinLength extension: the minimum PIN length goes to up to 8 sites
-  set by setMinPINLength (storage key 5, SHA-256 of the RP IDs). Details: [lionkey-update-plan.md](lionkey-update-plan.md).
+  set by setMinPINLength (storage key 5, SHA-256 of the RP IDs). PIN complexity
+  policy (`pin.complexity`, or setMinPINLength until a reset): getInfo 0x1B,
+  the `pinComplexityPolicy` extension. Details: [lionkey-update-plan.md](lionkey-update-plan.md).
 - Console (`fido2 info|list|delete|reset`): `fido_ctap_info/list/delete/reset`.
   A mutex serialises them with CTAP requests (a request holds it for its whole
   run, button wait included; the console waits 1 s, then "busy"). The console

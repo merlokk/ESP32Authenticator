@@ -87,6 +87,8 @@ int CmdInfo(int, char **) {
            static_cast<unsigned>(info.min_pin_length_rps),
            info.force_pin_change ? ", change due" : "");
     printf("always uv  %s\n", info.always_uv ? "on" : "off");
+    printf("complexity %s (a new PIN: no repeats, runs or common PINs)\n",
+           info.pin_complexity ? "on" : "off");
     printf("reset      ");
     if (info.reset_window_s != 0) {
         printf("within %" PRIu32 " s of start, ", info.reset_window_s);
