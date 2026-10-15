@@ -174,28 +174,35 @@ Our `devices/buttons` is a raw level read. Port from
   with test_info + test_config 19 passed, 1 skipped (2026-10-15).
 - Flash: the app grew by ~24 KB (steps 3..6).
 
-## 7. U2F (CTAP1) over BLE
+## 7. U2F (CTAP1) over BLE (done)
 
-- Core: new `ctap1.c`: `ctap1_request(apdu) -> response + SW`, with
-  `U2F_VERSION` (`U2F_V2`), `U2F_REGISTER`, `U2F_AUTHENTICATE`
-  (P1 `0x03` enforce-UP, `0x07` check-only, `0x08` dont-enforce).
-- Key handle = our 32-byte credential ID; the credential is stored as
-  non-discoverable with `rp_id_hash = appParam` and flag `u2f` (no RP ID
-  string; console shows `(U2F) <hash prefix>`). CTAP2 getAssertion with this
-  ID and the appid extension (rpIdHash = SHA-256(appid)) finds it too.
-- Counter: the global signature counter (NVS), as CTAP2.
-- User presence: U2F returns `SW_CONDITIONS_NOT_SATISFIED` (0x6985) and the
-  host retries. A press within 10 s of the first try is latched for one
-  request (LED yellow blink meanwhile).
-- Attestation certificate for REGISTER: a self-signed X.509 for a per-device
-  key, generated at first use, stored as `CTAP_STORAGE_KEY_U2F_ATTESTATION`
-  (DER built with `ctap_asn1`). Not batch attestation: sites that check the
-  FIDO MDS see an unknown authenticator (same as today for CTAP2).
-- Transport (`devices/ble_fido`): advertise revisions FIDO2 + U2F 1.2 in
-  `fidoServiceRevisionBitfield`; route MSG frames with CLA `0x00` to
-  `ctap1_request` (today `DefaultHandler` answers `0x6D00`).
-- Excluded: U2F over USB (no FIDO HID), `U2F_AUTHENTICATE` with a key handle
-  of another RP (answers `0x6A80`).
+- Core: `ctap1.c` / `ctap1.h`, `ctap1_request()`: U2F_VERSION (`U2F_V2`),
+  U2F_REGISTER, U2F_AUTHENTICATE (P1 `0x07` check-only -> 6985 for our key
+  handle, `0x03` enforce, `0x08` don't enforce); short and extended APDUs;
+  6700 / 6A80 / 6D00 / 6E00 / 6986 as the spec says.
+- A U2F credential: non-discoverable ES256, `rp_id_hash` = the application
+  parameter, no RP ID string, flag `u2f` (bit 10); key handle = the 32-byte
+  credential ID. `ctap_credential_matches_rp()` compares only the hash for
+  it, so CTAP2 getAssertion with rpId = the AppID (appid extension) finds it.
+  CTAP2 ES256 credentials work with U2F_AUTHENTICATE (SHA-256 of the RP ID);
+  EdDSA ones and credProtect 3 -> 6A80. Counter: the global one.
+- User presence: blocks with KEEPALIVE (TUP_NEEDED) like CTAP2 (allowed over
+  BLE; no 6985-and-retry), 6985 on timeout / cancel.
+- Attestation: a per-authenticator P-256 key and a self-signed X.509 v3
+  certificate (CN=LionKey U2F, 2026..2049, random serial), made at the first
+  U2F_REGISTER, kept under `CTAP_STORAGE_KEY_U2F_ATTESTATION` (6); a reset
+  makes a new one. Not batch attestation (sites checking the MDS see an
+  unknown key).
+- BLE (`devices/ble_fido`): `fidoServiceRevisionBitfield` reads 0x60 (U2F 1.2
+  + FIDO2); the client writes one of them; MSG frames with CLA 0x00 go to
+  `ctap1_request` (`fido_ctap_request`).
+- `fido2 list` / web: a U2F credential's site is `U2F <app hash prefix>`.
+- Tests: `ctap1_test.cpp` (10: register and its certificate verified with
+  micro-ecc, the three authenticate modes, CTAP2 <-> U2F, reset);
+  `tests/fido2/test_u2f.py` (python-fido2 `Ctap1`, two touches; the
+  registration and certificate verified by python-fido2 / cryptography):
+  with test_info + test_config 22 passed, 1 skipped (2026-10-15).
+- Excluded: U2F over USB (no FIDO HID).
 
 ## 8. hmac-secret-mc (2.2)
 

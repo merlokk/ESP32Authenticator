@@ -5,6 +5,7 @@
 #include <sys/stat.h>
 
 #include "ctap.h"
+#include "ctap1.h"
 #include "ctap_credentials_store.h"
 #include "ctap_file_storage.h"
 #include "pin_policy.h"
@@ -307,11 +308,19 @@ size_t fido_ctap_request(const uint8_t *msg, size_t len, uint8_t *out, size_t ou
     if (out_size < 2) {
         return 0;
     }
-    if (len >= 4 && msg[0] == 0x00) {
-        // U2F (CTAP1) APDU: not supported by the core.
-        out[0] = 0x6D;  // SW_INS_NOT_SUPPORTED
-        out[1] = 0x00;
-        return 2;
+    if (len >= 1 && msg[0] == 0x00) {
+        // U2F (CTAP1) APDU: CLA 0x00 (CTAP2 command bytes start at 0x01).
+        if (!ready) {
+            out[0] = CTAP1_SW_COMMAND_NOT_ALLOWED >> 8;
+            out[1] = CTAP1_SW_COMMAND_NOT_ALLOWED & 0xFF;
+            return 2;
+        }
+        last_status = CTAP_STATUS_PROCESSING;
+        last_keepalive_ms = now_ms();
+        xSemaphoreTake(lock, portMAX_DELAY);
+        const size_t n = ctap1_request(&state, msg, len, out, out_size);
+        xSemaphoreGive(lock);
+        return n;
     }
     if (!ready) {
         out[0] = CTAP1_ERR_OTHER;
@@ -421,9 +430,16 @@ esp_err_t fido_ctap_list(fido_ctap_credential_t *out, size_t capacity, size_t *c
         memset(c, 0, sizeof *c);
         const ctap_credential_source_t *source = credential.source;
         memcpy(c->id, source->id, sizeof c->id);
-        ctap_string_t rp_id;
-        ctap_credential_get_rp_id(&credential, &rp_id);
-        copy_text(c->rp_id, rp_id.data, rp_id.size);
+        c->u2f = (source->flags & CTAP_CREDENTIAL_SOURCE_CTAP_flags_u2f) != 0;
+        if (c->u2f) {
+            // no RP ID: the application parameter (SHA-256 of the AppID)
+            snprintf(c->rp_id, sizeof c->rp_id, "U2F %02x%02x%02x%02x", source->rp_id_hash[0],
+                     source->rp_id_hash[1], source->rp_id_hash[2], source->rp_id_hash[3]);
+        } else {
+            ctap_string_t rp_id;
+            ctap_credential_get_rp_id(&credential, &rp_id);
+            copy_text(c->rp_id, rp_id.data, rp_id.size);
+        }
         CTAP_userEntity user;
         ctap_credential_get_user(&credential, &user);
         if (ctap_param_is_present(&user, CTAP_userEntity_name)) {

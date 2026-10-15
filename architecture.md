@@ -331,8 +331,10 @@ submodule) behind `ble_fido`. API: `fido_ctap_init(hooks, store)`,
   PIN unlock; lionkey; the window restarts after a successful reset), then a
   5 s hold of Left (CTAP 2.3 longTouchForReset, getInfo 0x18 = true; a hold
   released early is not a refusal, the next press starts over; 30 s, CANCEL as
-  above). The window is the board's `fido_reset_window_s` (0 = any time). No
-  U2F/CTAP1.
+  above). The window is the board's `fido_reset_window_s` (0 = any time).
+- U2F (CTAP1) over BLE: register / authenticate / version (LionKey fork
+  `ctap1.c`); a self-signed per-device attestation certificate; the BLE
+  service offers U2F 1.2 and FIDO2.
 - authenticatorConfig (LionKey fork): toggleAlwaysUv, setMinPINLength
   (only raises; a PIN below it must be changed: forcePINChange),
   enableLongTouchForReset; kept in `fido.bin` (storage key 4), cleared by a

@@ -5,6 +5,7 @@ set(cbor ${lk}/lib/tinycbor/src)
 
 set(lionkey_srcs
     ${lk}/core/ctap.c
+    ${lk}/core/ctap1.c
     ${lk}/core/ctap_asn1.c
     ${lk}/core/ctap_config.c
     ${lk}/core/ctap_credential_management.c

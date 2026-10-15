@@ -84,7 +84,8 @@ void fido_ctap_set_reset_window(uint32_t seconds);
 void fido_ctap_set_pin_complexity(bool on);
 
 // One CTAP message: `msg` = command byte + CBOR parameters; `out` = status
-// byte + CBOR response. Returns the response length. Blocks while waiting for
+// byte + CBOR response. Or a U2F APDU (CLA 0x00): `out` = data + status word.
+// Returns the response length. Blocks while waiting for
 // user presence (up to 30 s): run it outside the BLE host task.
 size_t fido_ctap_request(const uint8_t *msg, size_t len, uint8_t *out, size_t out_size);
 
@@ -158,6 +159,7 @@ typedef struct {
     bool discoverable;
     uint8_t cred_protect;  // 1..3 (credProtect extension), 0 if unset
     int32_t alg;           // COSE algorithm: -7 ES256, -8 EdDSA, -19 Ed25519
+    bool u2f;              // made by U2F_REGISTER: rp_id is "U2F <app hash prefix>"
     size_t size;           // bytes in the store
     // Who, where and when; all unknown for credentials made before this was kept.
     fido_ctap_origin_t origin;

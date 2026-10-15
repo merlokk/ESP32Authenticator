@@ -34,8 +34,11 @@ constexpr uint8_t kErrBusy = 0x06;
 constexpr uint32_t kWorkerStack = 12 * 1024;
 constexpr UBaseType_t kWorkerPriority = 5;
 
-// fidoServiceRevisionBitfield: bit 5 = FIDO2 (CTAP2) over BLE.
+// fidoServiceRevisionBitfield: bit 6 = U2F 1.2, bit 5 = FIDO2 (CTAP2) over
+// BLE. Read: both; the client writes the one it uses (one bit).
+constexpr uint8_t kRevisionU2f12 = 0x40;
 constexpr uint8_t kRevisionFido2 = 0x20;
+constexpr uint8_t kRevisionsOffered = kRevisionU2f12 | kRevisionFido2;
 
 // Max size of one fidoControlPoint write (20..512). Reported as MTU - 3 so a
 // frame fits one ATT write (no long writes); larger frames are still accepted.
@@ -57,7 +60,7 @@ const ble_uuid128_t kRevisionBitfieldUuid = FIDO_UUID128(0xf4);
 
 uint16_t status_handle = 0;
 bool subscribed = false;
-uint8_t revision = kRevisionFido2;
+uint8_t revision = kRevisionsOffered;
 
 // Request being assembled. Written from the host task only.
 uint8_t request[kMaxMessage];
@@ -80,6 +83,7 @@ std::atomic<bool> cancelled{false};
 TaskHandle_t worker = nullptr;
 SemaphoreHandle_t send_lock = nullptr;  // one response's frames go out together
 
+// Until a handler is set (no CTAP core).
 size_t DefaultHandler(const uint8_t *msg, size_t len, uint8_t *out, size_t) {
     // U2F APDUs start with CLA 0x00 (CTAP2 command bytes start at 0x01).
     if (len >= 4 && msg[0] == 0x00) {
@@ -234,8 +238,8 @@ int Access(uint16_t, uint16_t, ble_gatt_access_ctxt *ctxt, void *arg) {
                 uint16_t len = 0;
                 ble_hs_mbuf_to_flat(ctxt->om, &v, 1, &len);
                 ESP_LOGD(TAG, "revision write 0x%02x (len %u)", v, len);
-                if (len != 1 || (v & ~kRevisionFido2) != 0) {
-                    return BLE_ATT_ERR_UNLIKELY;  // only FIDO2 is offered
+                if (len != 1 || (v != kRevisionFido2 && v != kRevisionU2f12)) {
+                    return BLE_ATT_ERR_UNLIKELY;  // one of the offered ones
                 }
                 revision = v;
                 return 0;
@@ -275,7 +279,7 @@ void OnEvent(const ble_gap_event *event) {
     } else if (event->type == BLE_GAP_EVENT_DISCONNECT) {
         subscribed = false;
         assembling = false;
-        revision = kRevisionFido2;
+        revision = kRevisionsOffered;
         if (busy) {
             cancelled = true;  // nobody waits for the answer any more
         }
