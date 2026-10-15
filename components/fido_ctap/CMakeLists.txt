@@ -1,4 +1,4 @@
-# LionKey CTAP 2.1 core (lib/lionkey, git submodule, used as is) with the
+# LionKey CTAP 2.3 core (lib/lionkey, git submodule, our fork) with the
 # sources its own CMake would build: software crypto and TinyCBOR.
 set(lk ${CMAKE_CURRENT_LIST_DIR}/../../lib/lionkey)
 set(cbor ${lk}/lib/tinycbor/src)

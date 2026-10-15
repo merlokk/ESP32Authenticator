@@ -30,7 +30,8 @@ Firmware: C/C++ on **ESP-IDF**.
   PIN lockout (10 tries, `pin.lockMinutes`) and a wipe PIN (`pin wipe set`).
   LionKey fork (`merlokk/lionkey`, branch `esp32auth`): CTAP 2.3 (FIDO_2_3),
   U2F over BLE, EdDSA, authenticatorConfig, minPinLength, PIN complexity,
-  hmac-secret-mc, pcmr, attestation formats, encIdentifier; see
+  hmac-secret-mc, pcmr, attestation formats, encIdentifier, built-in UV
+  plumbing (`uv: false`); see
   lionkey-update-plan.md.
 - Not yet: BM8563 RTC driver, e-ink UI (LVGL), eFuse-bound key, sync over Wi-Fi, SD card driver.
 

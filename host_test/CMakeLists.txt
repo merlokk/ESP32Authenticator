@@ -50,6 +50,7 @@ add_executable(host_test
     test_storefile.cpp
     test_vault.cpp
     fakes/fake_platform.cpp
+    fakes/fake_store.cpp
 
     # Under test.
     ../components/config/config.cpp
@@ -65,8 +66,10 @@ add_executable(host_test
     ../devices/led/led_frames.cpp
     ../components/totp/totp.cpp
     ../components/storefile/store_header.cpp
+    ../components/storefile/store_io.cpp
     ../components/vault/records.cpp
     ../components/vault/pin_guard.cpp
+    ../components/vault/vault.cpp
 
     "${CJSON_DIR}/cJSON.c"
     "${UNITY_DIR}/unity.c"

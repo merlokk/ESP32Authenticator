@@ -13,7 +13,8 @@ memory.
   submodule commit (`c1518f2`); `.gitmodules` points to the fork. `main` of the
   fork follows upstream; our branch is rebased on it.
 - Commits in the fork: one feature per commit, upstream style (tabs,
-  `ctap_*` names, spec step comments), so each can go upstream as a PR.
+  `ctap_*` names, spec step comments), so each can go upstream as a PR
+  (exception: `4d1d3d9` holds steps 12 and 13).
 - Board-specific code stays here (`components/fido_ctap`): hooks, crypto
   binding, storage. The core gets only generic hooks with weak/NULL defaults.
 - Tests: LionKey's gtest suite (`lib/lionkey/test`) gets a test per feature
@@ -81,10 +82,9 @@ Our `devices/buttons` is a raw level read. Port from
   stays in the PIN item. Old `fido.bin` loads unchanged (no item = defaults);
   reset erases it.
 - setMinPINLength: only raises (else PIN_POLICY_VIOLATION; also above 63);
-  `minPinLengthRPIDs` -> INVALID_PARAMETER until step 4; `forceChangePin`
-  without a PIN -> PIN_NOT_SET; a PIN below the new minimum sets forcePINChange;
-  forcePINChange resets all pinUvAuthTokens; `pinComplexityPolicy` ignored
-  until step 5.
+  `minPinLengthRPIDs`: step 4; `forceChangePin` without a PIN -> PIN_NOT_SET;
+  a PIN below the new minimum sets forcePINChange; forcePINChange resets all
+  pinUvAuthTokens; `pinComplexityPolicy`: step 5.
 - forcePINChange: getPinToken -> PIN_INVALID, getPinUvAuthTokenUsingPin... ->
   PIN_POLICY_VIOLATION (also when the PIN is below the minimum), without
   losing an attempt; changePIN to the same PIN -> PIN_POLICY_VIOLATION;
@@ -93,7 +93,7 @@ Our `devices/buttons` is a raw level read. Port from
   true) -> PUAT_REQUIRED without pinUvAuthParam; `makeCredUvNotRqd` reported
   false.
 - getInfo: options `alwaysUv`, `authnrCfg`, `setMinPINLength` (canonical key
-  order), `forcePINChange` (0x0C), `maxRPIDsForSetMinPINLength` (0x10) = 0,
+  order), `forcePINChange` (0x0C), `maxRPIDsForSetMinPINLength` (0x10) = 8 (step 4),
   `longTouchForReset` (0x18) always present (true/false),
   `authenticatorConfigCommands` (0x1F) = [2, 3, 4].
 - Reset window: `ctap_state_t.reset_window_ms` (0 = 10 s default,
@@ -108,6 +108,10 @@ Our `devices/buttons` is a raw level read. Port from
   skipped (`--destructive`), on the dev board 2026-10-15.
 - Console: `fido2 info` shows min PIN length, change due, always uv, reset
   rule; `board` the reset window.
+- Write order (fixed later): the RP ID list first (KEY_STORE_FULL changes
+  nothing), then the minimum (a failed write -> CTAP1_ERR_OTHER, restored),
+  then the flags in one write; `ctap_update_pin_persistent_state()` returns
+  false on a storage error.
 
 ## 4. minPinLength extension (done)
 
@@ -123,7 +127,7 @@ Our `devices/buttons` is a raw level read. Port from
   KEY_STORE_FULL (spec names no code; nothing changes); a non-string ->
   CBOR_UNEXPECTED_TYPE. Reset clears it.
 - getInfo `extensions`: + `minPinLength`.
-- Tests: `ctap_config_test.cpp` (+6); `fido2 info` shows how many sites;
+- Tests: `ctap_config_test.cpp` (+6, one replaced); `fido2 info` shows how many sites;
   over BLE `test_info.py` + `test_config.py` 16 passed, 1 skipped (2026-10-15).
 - The list cannot be emptied except by a reset: not set on the device by
   `tests/fido2`.
@@ -179,7 +183,8 @@ Our `devices/buttons` is a raw level read. Port from
 - Core: `ctap1.c` / `ctap1.h`, `ctap1_request()`: U2F_VERSION (`U2F_V2`),
   U2F_REGISTER, U2F_AUTHENTICATE (P1 `0x07` check-only -> 6985 for our key
   handle, `0x03` enforce, `0x08` don't enforce); short and extended APDUs;
-  6700 / 6A80 / 6D00 / 6E00 / 6986 as the spec says.
+  6700 / 6A80 / 6D00 / 6E00 as the spec says; 6986 (not in the spec) for a
+  storage / crypto failure and a locked store (ours).
 - A U2F credential: non-discoverable ES256, `rp_id_hash` = the application
   parameter, no RP ID string, flag `u2f` (bit 10); key handle = the 32-byte
   credential ID. `ctap_credential_matches_rp()` compares only the hash for
@@ -194,13 +199,15 @@ Our `devices/buttons` is a raw level read. Port from
   makes a new one. Not batch attestation (sites checking the MDS see an
   unknown key).
 - BLE (`devices/ble_fido`): `fidoServiceRevisionBitfield` reads 0x60 (U2F 1.2
-  + FIDO2); the client writes one of them; MSG frames with CLA 0x00 go to
+  + FIDO2) until the client writes one of them (then that one, until it
+  disconnects); routing is by CLA, not by the chosen revision; MSG frames with CLA 0x00 go to
   `ctap1_request` (`fido_ctap_request`).
 - `fido2 list` / web: a U2F credential's site is `U2F <app hash prefix>`.
 - Tests: `ctap1_test.cpp` (10: register and its certificate verified with
   micro-ecc, the three authenticate modes, CTAP2 <-> U2F, reset);
   `tests/fido2/test_u2f.py` (python-fido2 `Ctap1`, two touches; the
-  registration and certificate verified by python-fido2 / cryptography):
+  registration signature verified by python-fido2, not the certificate's
+  self-signature):
   with test_info + test_config 22 passed, 1 skipped (2026-10-15).
 - Excluded: U2F over USB (no FIDO HID).
 
@@ -225,12 +232,14 @@ Our `devices/buttons` is a raw level read. Port from
   getPinUvAuthTokenUsingPinWithPermissions: assigned to the
   persistentPinUvAuthToken, which is returned (the regular token is left as
   it is). getInfo option `perCredMgmtRO: true`.
-- persistentPinUvAuthToken: one per PIN/UV protocol, made at the first pcmr
-  request (lazily: no RNG use or storage write at boot), kept with its
+- persistentPinUvAuthToken: one slot per PIN/UV protocol (one value for both
+  since step 11), made at the first pcmr request (lazily: no RNG use or
+  storage write at boot, except dropping step 9's differing tokens), kept with its
   permissions under `CTAP_STORAGE_KEY_PERSISTENT_PUAT` (7), so it survives a
   power cycle and the same token comes back next time. No usage timer, no
   in-use state. resetPersistentPinUvAuthToken() (dropped; a new one at the
-  next request): changePIN, setMinPINLength with forcePINChange, reset.
+  next request): changePIN, setMinPINLength with forcePINChange or above the
+  current PIN length, reset.
 - credentialManagement: getCredsMetadata, enumerateRPsBegin,
   enumerateCredentialsBegin try verify(persistentPinUvAuthToken, ...) first
   (pcmr required, else PIN_AUTH_INVALID; no RP ID rules), then the regular
@@ -313,6 +322,38 @@ Our `devices/buttons` is a raw level read. Port from
   U2F (`ctap_state_t.ctap1_supported`, ours: true).
 - Not run: the FIDO conformance tool (needs the FIDO Alliance's tools and a
   USB or BLE setup for them).
+
+## Test coverage audit (2026-10-15)
+
+Every claim above checked against the code and the tests; the gaps got tests
+(each made to fail by removing its line in a copy of the tree):
+
+- gtest 231 -> 274 (ASan/UBSan): `ctap_config_test` 41 (authenticatorConfigCommands
+  values, no ED with only unsupported extensions, pinComplexityPolicy false /
+  absent, a store without items 4 and 5, write failures), `ctap_client_pin_test`
+  27 (forcePINChange: getPinUvAuthTokenUsingPin..., changePIN to the same PIN;
+  a weak changePIN), `ctap_pcmr_test` 23 (the real changePIN / setMinPINLength
+  call sites, updateUserInformation refused, reads of stored credentials,
+  step 9 tokens dropped at load, identifier kept by changePIN, store state on
+  delete / update, no AES-128), `ctap1_test` 18 (EdDSA and credProtect 3 ->
+  6A80, short APDUs, cancel, certificate fields, the u2f flag, 6986 on a
+  storage failure), `ctap_ed25519_test` 13 (algorithms order, no Ed25519 in
+  the table, [-19, -8], the OKP key in credential management),
+  `ctap_built_in_uv_test` 13 (CANCEL, be / lbw, pcmr via UV, missing
+  parameters, `uv: true`, uvModality, FIDO_2_0), `ctap_attestation_formats_test`
+  8, `ctap_hmac_secret_mc_test` 8 (hmac-secret false, two salts, with UV,
+  order with minPinLength).
+- host_test 292 -> 295: the real `vault.cpp` on the host (fakes for NVS, timer,
+  crypto): kWeakPin on a new store, `ChangePin`, `Reset`; X4 Pro reset window.
+- `tests/fido2/test_lionkey_info.py`: our getInfo exactly (versions, algorithms,
+  extensions, options, uvModality, attestationFormats, config fields, the BLE
+  revision 0x60); the feature tests skip when a feature is missing, this one
+  fails.
+- Not automated: firmware glue (long touch loop, LED, debounced presence,
+  pin_policy / `pin.complexity` wiring into the core), console and web output,
+  the weak default hooks (the test platform replaces them), keepalive during
+  U2F presence; `Button::HeldFor`, `StableMs`, `PressLength`, `MultiPress`
+  have no caller.
 
 ## Order
 

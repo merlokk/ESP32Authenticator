@@ -1,11 +1,16 @@
 // vault records: what the user typed is what is kept, sorted, unique per
 // (site, user), and survives a serialize / parse round trip byte for byte.
+// vault.cpp itself (fakes/fake_store.cpp: NVS, crypto stand-ins) on a real
+// directory under build/: every path that makes a key refuses a weak PIN.
 
 #include <cstring>
+#include <filesystem>
 
+#include "nvs.h"
 #include "pin_guard.h"
 #include "records.h"
 #include "unity.h"
+#include "vault.h"
 
 namespace {
 
@@ -235,6 +240,67 @@ void test_vault_clear_wipes_secrets(void) {
     }
 }
 
+// --- vault.cpp: a weak new PIN (pin_policy.h) under config `pin.complexity`
+
+constexpr const char *kStoreDir = "build/vaultfs";
+constexpr const char *kStrongPin = "583920";
+constexpr const char *kWeakPin = "123456";  // a run
+
+// An empty store directory and NVS, the key out, the given policy.
+void FreshVault(bool complexity) {
+    static bool inited = false;
+    vault::Lock();
+    std::error_code ec;
+    std::filesystem::remove_all(kStoreDir, ec);
+    std::filesystem::create_directories(kStoreDir, ec);
+    fake::NvsClear();
+    if (!inited) {
+        TEST_ASSERT_EQUAL(ESP_OK, vault::Init(kStoreDir, 8));
+        inited = true;
+    }
+    vault::SetPolicy({600, "", complexity});
+}
+
+void test_vault_new_store_refuses_a_weak_pin(void) {
+    FreshVault(true);
+    TEST_ASSERT_EQUAL(Error::kWeakPin, vault::Unlock(kWeakPin));
+    TEST_ASSERT_FALSE(vault::GetInfo().has_key);
+    TEST_ASSERT_EQUAL(0, vault::GetInfo().file_size);  // no store made
+    TEST_ASSERT_EQUAL(Error::kOk, vault::Unlock(kStrongPin));
+    TEST_ASSERT_TRUE(vault::GetInfo().state == vault::State::kOpen);
+
+    FreshVault(false);
+    TEST_ASSERT_EQUAL(Error::kOk, vault::Unlock(kWeakPin));
+    TEST_ASSERT_TRUE(vault::GetInfo().state == vault::State::kOpen);
+}
+
+void test_vault_change_pin_refuses_a_weak_pin(void) {
+    FreshVault(true);
+    TEST_ASSERT_EQUAL(Error::kOk, vault::Unlock(kStrongPin));
+    TEST_ASSERT_EQUAL(Error::kWeakPin, vault::ChangePin(kStrongPin, kWeakPin));
+    vault::Lock();
+    TEST_ASSERT_EQUAL(Error::kWrongPin, vault::Unlock(kWeakPin));
+    TEST_ASSERT_EQUAL(Error::kOk, vault::Unlock(kStrongPin));  // the key kept
+
+    vault::SetPolicy({600, "", false});
+    TEST_ASSERT_EQUAL(Error::kOk, vault::ChangePin(kStrongPin, kWeakPin));
+    vault::Lock();
+    TEST_ASSERT_EQUAL(Error::kOk, vault::Unlock(kWeakPin));
+}
+
+void test_vault_reset_with_a_new_key_refuses_a_weak_pin(void) {
+    FreshVault(true);
+    TEST_ASSERT_EQUAL(Error::kWeakPin, vault::Reset(kWeakPin));
+    TEST_ASSERT_FALSE(vault::GetInfo().has_key);
+    TEST_ASSERT_EQUAL(0, vault::GetInfo().file_size);
+    TEST_ASSERT_EQUAL(Error::kOk, vault::Reset(kStrongPin));
+    TEST_ASSERT_TRUE(vault::GetInfo().state == vault::State::kOpen);
+
+    FreshVault(false);
+    TEST_ASSERT_EQUAL(Error::kOk, vault::Reset(kWeakPin));
+    TEST_ASSERT_TRUE(vault::GetInfo().state == vault::State::kOpen);
+}
+
 }  // namespace
 
 void RegisterVaultTests(void) {
@@ -255,4 +321,7 @@ void RegisterVaultTests(void) {
     RUN_TEST(test_vault_wipe_text_round_trips);
     RUN_TEST(test_vault_wipe_text_must_be_exact);
     RUN_TEST(test_vault_clear_wipes_secrets);
+    RUN_TEST(test_vault_new_store_refuses_a_weak_pin);
+    RUN_TEST(test_vault_change_pin_refuses_a_weak_pin);
+    RUN_TEST(test_vault_reset_with_a_new_key_refuses_a_weak_pin);
 }

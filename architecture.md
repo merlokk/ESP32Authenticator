@@ -6,7 +6,7 @@ Target and status. Screen design and the open questions: [x4-design.md](x4-desig
 
 | Function | Status |
 |---|---|
-| FIDO2 key (CTAP 2.1) over BLE | done |
+| FIDO2 key (CTAP 2.3, U2F) over BLE | done |
 | FIDO2 over USB | not yet |
 | BLE keyboard: types login / password / TOTP | keyboard done; typing records not yet |
 | TOTP codes | done (`crypto::Totp`, console `totp`) |
@@ -37,8 +37,8 @@ Reference ESP-IDF + LVGL project: `../../ai-remote/approver-esp32` ([GitHub](htt
 | Path | Contents |
 |---|---|
 | `main/` | `app_main`: OTA self-confirm, NVS, SPIFFS, config, console, Wi-Fi manager + web server, BLE autostart |
-| `components/` | app components (`cli`: USB command line; `config`: config.json; `wifimgr`: Wi-Fi policy + manager; `web`: configuration site, see Wi-Fi and web; `fido_ctap`: CTAP 2.1 core, see FIDO2; `timesync`, `timezone`: see Time; `totp`: Base32 / Base64 secrets and the previous/current/next windows, codes from `crypto::Totp`; `ui`: LVGL, see UI; `storefile`: store file header, load/save with the rollback check; `vault`: passwords, see Passwords) |
-| `lib/` | third-party git submodules, used unmodified (`lionkey`) |
+| `components/` | app components (`cli`: USB command line; `config`: config.json; `wifimgr`: Wi-Fi policy + manager; `web`: configuration site, see Wi-Fi and web; `fido_ctap`: CTAP 2.3 core, see FIDO2; `timesync`, `timezone`: see Time; `totp`: Base32 / Base64 secrets and the previous/current/next windows, codes from `crypto::Totp`; `ui`: LVGL, see UI; `storefile`: store file header, load/save with the rollback check; `vault`: passwords, see Passwords) |
+| `lib/` | third-party git submodules (`lionkey`: our fork, see FIDO2) |
 | `host_test/` | host tests (Unity, MSVC), no board: see Tests |
 | `utils/` | host-side Python tools over the USB console (`device.py`: console session; `spiffs.py`: ls/info/rm/get/put; `ble.py`: ble commands, `kb` text quoting) |
 | `devices/` | hardware drivers, one component per device (`hardware`: SoC info, eFuse, USB host connected; `spiffs_fs`: SPIFFS on `spiffs` at `/spiffs`, never formatted, it holds stock data on the X4 Pro; `ble`, `ble_kb`, `ble_fido`: see BLE; `wifi`: the radio (`wifi::Radio`), no decisions, stores nothing; `buttons`: GPIO buttons, polled, debounced 25 ms (`button_logic.h`, pure: debounce, short/long press from approver-esp32; single/double/... press: `MultiPress`, 400 ms gap), pins from the board; `crypto`: hardware RNG, SHA-256, AES-256-CBC, AES-256-GCM, HMAC-SHA1 via PSA, HOTP/TOTP (`otp.h`, pure: counter, truncation); `clock`: `rtc::Clock`, see Time; `led`: one WS2812 from UART1, see Boards; `boards`: board classes, see Boards). `devices/config.h`: the board the firmware is built for |
@@ -288,9 +288,10 @@ and never starts without lwIP (an assert).
 
 ## FIDO2
 
-`components/fido_ctap`: [LionKey](https://github.com/pokusew/lionkey) CTAP 2.1
-core (`lib/lionkey`, git submodule, not modified: update by moving the
-submodule) behind `ble_fido`. API: `fido_ctap_init(hooks, store)`,
+`components/fido_ctap`: LionKey CTAP 2.3 core (`lib/lionkey`, git submodule:
+our fork [merlokk/lionkey](https://github.com/merlokk/lionkey), branch
+`esp32auth`, of [pokusew/lionkey](https://github.com/pokusew/lionkey)) behind
+`ble_fido`. API: `fido_ctap_init(hooks, store)`,
 `fido_ctap_request(msg) -> response`.
 
 - Crypto: lionkey's table with RNG, SHA-256, AES from the `crypto` driver;
@@ -347,8 +348,9 @@ submodule) behind `ble_fido`. API: `fido_ctap_init(hooks, store)`,
   the `pinComplexityPolicy` extension. Algorithms: ES256 (micro-ecc) and
   EdDSA / Ed25519 (COSE -8, -19; Monocypher), the host's first choice. hmac-secret
   also at makeCredential (`hmac-secret-mc`, PRF at create). Read-only credential
-  management with a persistent pinUvAuthToken (`pcmr`, kept in `fido.bin`,
-  dropped by a PIN change or a reset). Attestation: packed (self) or `none` on
+  management with a persistent pinUvAuthToken (`pcmr`, storage key 7,
+  dropped by a PIN change or a reset). U2F attestation key and certificate:
+  storage key 6; the encIdentifier device id: key 8. Attestation: packed (self) or `none` on
   request (`attestationFormatsPreference`). getInfo encIdentifier / encCredStoreState
   (encrypted with the persistent token; a random device id, a hash of the store).
   Built-in UV: `uv: false` (supported, not configured; the PIN on the device
@@ -359,8 +361,7 @@ submodule) behind `ble_fido`. API: `fido_ctap_init(hooks, store)`,
   run, button wait included; the console waits 1 s, then "busy"). The console
   reset is authenticatorReset without the 10 s / button rule. A delete only
   flags the item: the file shrinks at the next boot (compaction).
-- The store is plain text today (private keys, PIN hash): encryption and an SD
-  store for hundreds of keys are planned, see [storage-encryption.md](storage-encryption.md).
+- An SD store for hundreds of keys: [storage-encryption.md](storage-encryption.md).
 - Tests: `tests/fido2` over BLE, all 67 pass on the dev board (see build.md).
 
 ## Passwords

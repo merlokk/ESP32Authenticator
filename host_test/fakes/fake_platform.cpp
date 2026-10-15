@@ -33,6 +33,7 @@ const char *esp_err_to_name(esp_err_t code) {
         case ESP_ERR_NOT_FOUND: return "ESP_ERR_NOT_FOUND";
         case ESP_ERR_NOT_SUPPORTED: return "ESP_ERR_NOT_SUPPORTED";
         case ESP_ERR_TIMEOUT: return "ESP_ERR_TIMEOUT";
+        case ESP_ERR_INVALID_CRC: return "ESP_ERR_INVALID_CRC";
         default: return "UNKNOWN";
     }
 }
