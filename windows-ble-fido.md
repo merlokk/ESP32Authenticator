@@ -81,7 +81,9 @@ at boot while an indication is still pending.
 
 Symptom: same `_GetFidoGattService` 0x800710DF loop although the firmware has the
 tail service. Cause: Windows uses its cached GATT table of the bonded device
-(firmware without Service Changed, or the host never subscribed to it).
+(firmware without Service Changed, or the host never subscribed to it: `ble conns`
+shows `svc chg not subscribed`; seen 2026-10-22 after adding DIS 0x2A25, HID
+CCCDs left on the old handles, keyboard not subscribed).
 
 1. Windows: Settings → Bluetooth & devices → ESP32 Auth → Remove device.
 2. `python utils/ble.py -p COM6 pair 90` (prints the passkey).

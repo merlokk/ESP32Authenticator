@@ -7,6 +7,7 @@
 
 #include "esp_app_desc.h"
 #include "esp_log.h"
+#include "esp_mac.h"
 #include "esp_random.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -115,6 +116,7 @@ void PostPairing(PairingEvent::Type type, uint32_t passkey, const char *peer,
 constexpr uint16_t kUuidDis = 0x180A;
 constexpr uint16_t kUuidManufacturer = 0x2A29;
 constexpr uint16_t kUuidModel = 0x2A24;
+constexpr uint16_t kUuidSerial = 0x2A25;
 constexpr uint16_t kUuidFirmware = 0x2A26;
 constexpr uint16_t kUuidPnpId = 0x2A50;
 constexpr uint16_t kUuidBattery = 0x180F;
@@ -127,11 +129,26 @@ int AppendString(os_mbuf *om, const char *s) {
     return os_mbuf_append(om, s, strlen(s)) == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
 }
 
+// Serial number: the base MAC in hex (`hwinfo` "base mac"). The public BLE
+// address (base MAC + 2) already identifies the device, so this tells an unbonded
+// host nothing new; Windows reads it without admin rights (unlike FIDO HID).
+int AppendSerial(os_mbuf *om) {
+    uint8_t mac[6] = {};
+    if (esp_read_mac(mac, ESP_MAC_BASE) != ESP_OK) {
+        return BLE_ATT_ERR_UNLIKELY;
+    }
+    char serial[13];
+    snprintf(serial, sizeof serial, "%02X%02X%02X%02X%02X%02X", mac[0], mac[1], mac[2], mac[3],
+             mac[4], mac[5]);
+    return AppendString(om, serial);
+}
+
 int AccessDis(uint16_t, uint16_t, ble_gatt_access_ctxt *ctxt, void *) {
     const uint16_t uuid = ble_uuid_u16(ctxt->chr->uuid);
     switch (uuid) {
         case kUuidManufacturer: return AppendString(ctxt->om, "ESP32Authenticator");
         case kUuidModel: return AppendString(ctxt->om, "XTEINK X4 Pro");
+        case kUuidSerial: return AppendSerial(ctxt->om);
         case kUuidFirmware: return AppendString(ctxt->om, esp_app_get_description()->version);
         case kUuidPnpId:
             return os_mbuf_append(ctxt->om, kPnpId, sizeof kPnpId) == 0
@@ -151,6 +168,7 @@ int AccessBattery(uint16_t, uint16_t, ble_gatt_access_ctxt *ctxt, void *) {
 const ble_uuid16_t kDisUuid = BLE_UUID16_INIT(kUuidDis);
 const ble_uuid16_t kManufacturerUuid = BLE_UUID16_INIT(kUuidManufacturer);
 const ble_uuid16_t kModelUuid = BLE_UUID16_INIT(kUuidModel);
+const ble_uuid16_t kSerialUuid = BLE_UUID16_INIT(kUuidSerial);
 const ble_uuid16_t kFirmwareUuid = BLE_UUID16_INIT(kUuidFirmware);
 const ble_uuid16_t kPnpIdUuid = BLE_UUID16_INIT(kUuidPnpId);
 const ble_uuid16_t kBatteryUuid = BLE_UUID16_INIT(kUuidBattery);
@@ -159,6 +177,7 @@ const ble_uuid16_t kBatteryLevelUuid = BLE_UUID16_INIT(kUuidBatteryLevel);
 const ble_gatt_chr_def kDisChrs[] = {
     {.uuid = &kManufacturerUuid.u, .access_cb = AccessDis, .flags = BLE_GATT_CHR_F_READ},
     {.uuid = &kModelUuid.u, .access_cb = AccessDis, .flags = BLE_GATT_CHR_F_READ},
+    {.uuid = &kSerialUuid.u, .access_cb = AccessDis, .flags = BLE_GATT_CHR_F_READ},
     {.uuid = &kFirmwareUuid.u, .access_cb = AccessDis, .flags = BLE_GATT_CHR_F_READ},
     {.uuid = &kPnpIdUuid.u, .access_cb = AccessDis, .flags = BLE_GATT_CHR_F_READ},
     {},
@@ -257,12 +276,17 @@ uint32_t GattLayoutHash() {
     return h;
 }
 
-// True if some bonded host has not received a Service Changed indication yet.
-bool ServiceChangedPending() {
+uint16_t ServiceChangedHandle() {
     const ble_uuid16_t gatt = BLE_UUID16_INIT(0x1801);
     const ble_uuid16_t changed = BLE_UUID16_INIT(0x2A05);
     uint16_t handle = 0;
-    if (ble_gatts_find_chr(&gatt.u, &changed.u, nullptr, &handle) != 0) {
+    return ble_gatts_find_chr(&gatt.u, &changed.u, nullptr, &handle) == 0 ? handle : 0;
+}
+
+// True if some bonded host has not received a Service Changed indication yet.
+bool ServiceChangedPending() {
+    const uint16_t handle = ServiceChangedHandle();
+    if (handle == 0) {
         return false;
     }
     ble_store_key_cccd key = {};  // peer_addr all zero: BLE_ADDR_ANY, every host
@@ -899,6 +923,26 @@ void PrintConnection() {
     if (ble_gap_conn_rssi(desc.conn_handle, &rssi) == 0) {
         printf("rssi       %d dBm\n", rssi);
     }
+    // Stored Service Changed CCCD: a host that never subscribed misses GATT
+    // layout changes and keeps its cached table.
+    ble_store_key_cccd key = {};
+    key.peer_addr = desc.peer_id_addr;
+    key.chr_val_handle = ServiceChangedHandle();
+    ble_store_value_cccd value = {};
+    if (key.chr_val_handle == 0 || ble_store_read_cccd(&key, &value) != 0 ||
+        (value.flags & 0x0002) == 0) {  // CCCD bit 1: indications
+        printf("svc chg    not subscribed\n");
+    } else {
+        printf("svc chg    subscribed%s\n", value.value_changed ? ", indication pending" : "");
+    }
+    // Every stored CCCD of the host: handle and CCCD bits (1 notify, 2 indicate).
+    printf("cccds     ");
+    ble_store_key_cccd all = {};
+    all.peer_addr = desc.peer_id_addr;
+    for (all.idx = 0; ble_store_read_cccd(&all, &value) == 0; ++all.idx) {
+        printf(" 0x%04x:%x%s", value.chr_val_handle, value.flags, value.value_changed ? "*" : "");
+    }
+    printf("\n");
 }
 
 }  // namespace ble
