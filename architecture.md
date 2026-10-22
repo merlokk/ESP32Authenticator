@@ -317,9 +317,9 @@ our fork [merlokk/lionkey](https://github.com/merlokk/lionkey), branch
   too (an old copy would otherwise follow an empty one); `fido2 reset`
   starts an empty store above the kept version. A save is .tmp, remove, rename: at boot a .tmp with no
   file is taken, a .tmp next to the file dropped. `Newer()` holds the sync rule. Max credentials: the board's
-  `fido_max_credentials` (15 on the dev board, 10 on the X4 Pro, 1..50); lionkey stores
+  `fido_max_credentials` (20 on both boards, 1..50); lionkey stores
   non-discoverable ones too, one more gets KEY_STORE_FULL. The RAM log
-  (`FIDO_CTAP_STORE_BYTES`: 1 KB per credential + 2 KB, 12 KB for 10) and the
+  (`FIDO_CTAP_STORE_BYTES`: 1 KB per credential + 2 KB, 22 KB for 20) and the
   compaction buffer are in PSRAM. Next to each credential the store keeps a
   origin item of its own (key 0x100, ignored by lionkey; fixed little-endian
   layout in `ctap_file_storage.h`, it travels with the store when devices

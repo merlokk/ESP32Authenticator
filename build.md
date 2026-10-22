@@ -112,8 +112,8 @@ python -m pytest [-k name] [--transport ble] [--device YubiKey|<address>] [--con
 - Never changes the PIN; sets one only with `--set-pin`, resets only with `--reset`.
 - Non-resident credentials of the test RPs (`ctap-test*.example`) can stay on
   our firmware after a run (U2F ones show as `U2F 3dec69ac`): check with `fido2 list`, remove with
-  `fido2 delete <id>` (the store holds 15; a run leaves ~6, the next one but one
-  fails with KEY_STORE_FULL / U2F 0x6986).
+  `fido2 delete <id>` (the store holds 20; a run leaves ~6, a full store fails with
+  KEY_STORE_FULL / U2F 0x6986).
 - PIN: asked at start when the key has one (or `--pin` / `FIDO_PIN`); empty
   skips the PIN, UV and discoverable-credential tests. These use only the test
   RPs `ctap-test*.example` and delete their credentials.

@@ -34,7 +34,7 @@ void test_boards_dev_board(void) {
     TEST_ASSERT_FALSE(kDev.HasButton(ButtonId::kRight));
     TEST_ASSERT_FALSE(kDev.has_sd_card);
     TEST_ASSERT_FALSE(kDev.NeedsI2c());
-    TEST_ASSERT_EQUAL_UINT16(15, kDev.fido_max_credentials);
+    TEST_ASSERT_EQUAL_UINT16(20, kDev.fido_max_credentials);
     TEST_ASSERT_EQUAL_UINT16(10, kDev.fido_reset_window_s);
 }
 
