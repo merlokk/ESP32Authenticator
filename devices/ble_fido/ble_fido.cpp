@@ -98,10 +98,37 @@ size_t DefaultHandler(const uint8_t *msg, size_t len, uint8_t *out, size_t) {
 
 MessageHandler handler = DefaultHandler;
 
+// Queues one notification. At MTU 23 a response is ~20 notifications and
+// NimBLE runs out of mbufs (12 in MSYS_1): the worker waits for the host task
+// to free them; the host task itself cannot wait (it frees them).
+bool Notify(uint16_t conn, const uint8_t *frame, size_t len) {
+    const bool can_wait = xTaskGetCurrentTaskHandle() == worker;
+    for (int tries = 0; tries < 200; ++tries) {  // 2 s
+        os_mbuf *om = ble_hs_mbuf_from_flat(frame, len);
+        // notify_custom frees om on failure too.
+        const int rc = om == nullptr ? BLE_HS_ENOMEM : ble_gatts_notify_custom(conn, status_handle, om);
+        if (rc == 0) {
+            return true;
+        }
+        if (rc != BLE_HS_ENOMEM || !can_wait || ble::ConnHandle() != conn) {
+            ESP_LOGE(TAG, "notify failed: %d", rc);
+            return false;
+        }
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+    ESP_LOGE(TAG, "notify failed: no mbufs for 2 s");
+    return false;
+}
+
 // Sends one response as fidoStatus notifications, fragmented by MTU.
 // Called from the host task and the worker.
 void Send(uint8_t cmd, const uint8_t *data, size_t len) {
-    xSemaphoreTake(send_lock, portMAX_DELAY);
+    // The host task must not block while the worker waits for it to free mbufs.
+    const bool in_worker = xTaskGetCurrentTaskHandle() == worker;
+    if (xSemaphoreTake(send_lock, in_worker ? portMAX_DELAY : 0) != pdTRUE) {
+        ESP_LOGW(TAG, "response 0x%02x dropped: a send is in progress", cmd);
+        return;
+    }
     struct Unlock {
         ~Unlock() { xSemaphoreGive(send_lock); }
     } unlock;
@@ -120,9 +147,7 @@ void Send(uint8_t cmd, const uint8_t *data, size_t len) {
     size_t sent = take;
     uint8_t seq = 0;
     while (true) {
-        os_mbuf *om = ble_hs_mbuf_from_flat(frame, frame_len);
-        if (om == nullptr || ble_gatts_notify_custom(conn, status_handle, om) != 0) {
-            ESP_LOGE(TAG, "notify failed");
+        if (!Notify(conn, frame, frame_len)) {
             return;
         }
         if (sent >= len) {

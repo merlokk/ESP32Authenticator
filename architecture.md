@@ -197,7 +197,7 @@ NimBLE, peripheral, one connection. Stack is off at boot (`ble on`).
 |---|---|
 | `ble` | stack on/off, advertising (HID + FIDO UUIDs), bonding (NVS), DIS (serial number = base MAC) + Battery services; profile drivers register GATT services and GAP listeners before `ble on` |
 | `ble_kb` | HID over GATT keyboard; types ASCII with a US layout |
-| `ble_fido` | FIDO BLE transport (service 0xFFFD, CTAP 2.1 BLE framing, MTU fragmentation); CTAP is a pluggable handler run in a worker task (MSG meanwhile: ERR_BUSY; CANCEL and KEEPALIVE frames), default answers "not supported" |
+| `ble_fido` | FIDO BLE transport (service 0xFFFD, CTAP 2.1 BLE framing, MTU fragmentation; at MTU 23 the worker waits for free NimBLE mbufs instead of dropping frames); CTAP is a pluggable handler run in a worker task (MSG meanwhile: ERR_BUSY; CANCEL and KEEPALIVE frames), default answers "not supported" |
 
 Security:
 - IO capability DisplayOnly: the device shows a 6-digit passkey, the host types it (MITM-protected, LE Secure Connections).
