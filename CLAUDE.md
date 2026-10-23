@@ -28,7 +28,8 @@ Firmware: C/C++ on **ESP-IDF**.
   (SDMMC, FAT at `/sdcard`, `sd` read-only but wallpapers), the store files in
   `/sdcard/.authenticator` on the X4 Pro (no card: no stores); LVGL 9 on the e-ink panel (480x800 portrait, boot screen, GT911 touch
 as the pointer, `ui`); power-off
-  (Power held / `off`): a random PNG from `/sdcard/wallpapers` (dithered), deep
+  (Power held / `off`): a random PNG from `/sdcard/wallpapers` (dithered to 4 grey levels on
+  the UC8179 or B/W, `display.wallpaper`), deep
   sleep, Power wakes;
   password records (site/user/password/TOTP) in `vault.bin` with
   add/edit/delete on the console (`pass`) and the web site (with FIDO2

@@ -27,6 +27,12 @@ Controller Detected();
 // settled.
 esp_err_t Refresh(const uint8_t *frame, Mode mode);
 
+// 4 grey levels (HasGrey: UC8179 only, else ESP_ERR_NOT_SUPPORTED), one full
+// refresh; for still pictures. Two frames in the Refresh format: `low` the
+// low bit of each pixel's level, `high` the high bit (0 black .. 3 white).
+// The next Refresh is a full one, after a pass that clears the grey.
+esp_err_t RefreshGrey(const uint8_t *low, const uint8_t *high);
+
 // Deep sleep: the panel keeps its picture without power; Refresh wakes it
 // (reset and init again).
 esp_err_t Sleep();

@@ -143,6 +143,43 @@ inline constexpr Cmd kUc8179Fast[] = {
 };
 inline constexpr Cmd kUc8179Idle = {0x50, 2, {0xA9, 0x07}};  // CDI after a refresh
 
+// --- 4 grey levels (UC8179 only) ----------------------------------------------------
+// FreeInk's Direct mode (Uc8179Driver configureDirectGrayscale / beginGrayscale,
+// UltraChipDirectGrayLuts.h; CrossPoint's sleep images): the stock gray_full
+// waveform from a fresh init, no B/W base pass. Two planes select a level per
+// pixel, level 0 black .. 3 white: old (0x10) its low bit, new (0x13) its
+// high bit (black 0/0, dark 1/0, light 0/1, white 1/1). One full refresh.
+// After it the B/W path wants a reset and init (these power registers stay),
+// and its first refresh drives every pixel (old = the frame inverted, fast)
+// before the full one: the grey charge would show through otherwise.
+
+constexpr bool HasGrey(Controller c) { return c == Controller::kUc8179; }
+inline constexpr uint8_t kGreyLevels = 4;
+
+// The gray_full packet header {0x67, 0xBF, 0x3F, 0x0D, 0x00, 0x26} unpacked
+// as the stock loader does (FUN_4214d79c): PLL, power, VDCS; CDI as a refresh.
+inline constexpr Cmd kUc8179GreyPower[] = {
+    {0x52, 1, {0x02}},
+    {0x30, 1, {0x06}},
+    {0x01, 5, {0x17, 0x07, 0x3F, 0x3F, 0x0D}},
+    {0x2A, 2, {0x00, 0x00}},
+    {0x82, 1, {0x26}},
+    {0x50, 2, {0x29, 0x07}},
+};
+
+// LUT registers 0x20..0x24: VCOM, then old/new 1/1 (white), 0/1 (light),
+// 1/0 (dark), 0/0 (black); 42 bytes each, zero after these.
+inline constexpr uint8_t kGreyLutFirst = 0x20;
+inline constexpr size_t kGreyLutBytes = 42;
+inline constexpr size_t kGreyLutUsed = 18;
+inline constexpr uint8_t kUc8179GreyLuts[5][kGreyLutUsed] = {
+    {0x00, 0x08, 0x0B, 0x02, 0x03, 0x01, 0x00, 0x0C, 0x02, 0x07, 0x02, 0x01, 0x00, 0x01, 0x00, 0x02, 0x00, 0x01},  // VCOM
+    {0x00, 0x08, 0x0B, 0x02, 0x03, 0x01, 0x4A, 0x0C, 0x02, 0x07, 0x02, 0x01, 0x88, 0x01, 0x00, 0x02, 0x00, 0x01},  // white
+    {0x80, 0x08, 0x0B, 0x02, 0x03, 0x01, 0x62, 0x0C, 0x02, 0x07, 0x02, 0x01, 0x00, 0x01, 0x00, 0x02, 0x00, 0x01},  // light
+    {0x88, 0x08, 0x0B, 0x02, 0x03, 0x01, 0x60, 0x0C, 0x02, 0x07, 0x02, 0x01, 0x00, 0x01, 0x00, 0x02, 0x00, 0x01},  // dark
+    {0xA8, 0x08, 0x0B, 0x02, 0x03, 0x01, 0x44, 0x0C, 0x02, 0x07, 0x02, 0x01, 0x04, 0x01, 0x00, 0x02, 0x00, 0x01},  // black
+};
+
 // UC8279, the X4 Pro variant (Uc8279X4Driver.cpp). The PSR with REG cleared
 // is written after power on, or it does not latch.
 inline constexpr Cmd kUc8279Init[] = {

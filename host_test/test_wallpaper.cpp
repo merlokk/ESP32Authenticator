@@ -84,6 +84,67 @@ void test_wallpaper_centred(void) {
     TEST_ASSERT_EQUAL_INT(ui::kWidth * ui::kHeight - 1, CountWhite(screen));
 }
 
+int Level(const std::vector<uint8_t> &low, const std::vector<uint8_t> &high, int x, int y) {
+    return (White(low, x, y) ? 1 : 0) | (White(high, x, y) ? 2 : 0);
+}
+
+void test_wallpaper_grey_levels(void) {
+    std::vector<uint8_t> low(ui::kScreenBytes);
+    std::vector<uint8_t> high(ui::kScreenBytes);
+    // The four tones exactly: four bands, no dither noise; the margin white.
+    std::vector<uint8_t> grey(4 * 100, 0);
+    for (int x = 0; x < 4; ++x) {
+        for (int y = 0; y < 100; ++y) {
+            grey[y * 4 + x] = static_cast<uint8_t>(x * 85);
+        }
+    }
+    dither.Run(grey.data(), 4, 100, epd::kGreyLevels, low.data(), high.data());
+    for (int x = 0; x < 4; ++x) {
+        for (int y = 350; y < 450; ++y) {
+            TEST_ASSERT_EQUAL_INT(x, Level(low, high, 238 + x, y));
+        }
+    }
+    TEST_ASSERT_EQUAL_INT(3, Level(low, high, 0, 0));
+    // Between two tones: a mix of those two only, about half each.
+    grey.assign(ui::kWidth * ui::kHeight, 128);  // between dark 85 and light 170
+    dither.Run(grey.data(), ui::kWidth, ui::kHeight, epd::kGreyLevels, low.data(), high.data());
+    int counts[4] = {};
+    for (int y = 0; y < ui::kHeight; ++y) {
+        for (int x = 0; x < ui::kWidth; ++x) {
+            ++counts[Level(low, high, x, y)];
+        }
+    }
+    TEST_ASSERT_EQUAL_INT(0, counts[0]);
+    TEST_ASSERT_EQUAL_INT(0, counts[3]);
+    TEST_ASSERT_TRUE(counts[1] > ui::kWidth * ui::kHeight * 4 / 10);
+    TEST_ASSERT_TRUE(counts[2] > ui::kWidth * ui::kHeight * 4 / 10);
+    // Two levels: the one-plane Run, the high plane untouched.
+    high.assign(high.size(), 0x5A);
+    std::vector<uint8_t> screen(ui::kScreenBytes);
+    dither.Run(grey.data(), ui::kWidth, ui::kHeight, screen.data());
+    dither.Run(grey.data(), ui::kWidth, ui::kHeight, 2, low.data(), high.data());
+    TEST_ASSERT_TRUE(screen == low);
+    TEST_ASSERT_EQUAL_HEX8(0x5A, high[1234]);
+}
+
+void test_epd_grey_tables(void) {
+    TEST_ASSERT_TRUE(epd::HasGrey(epd::Controller::kUc8179));
+    TEST_ASSERT_FALSE(epd::HasGrey(epd::Controller::kUc8279));
+    TEST_ASSERT_FALSE(epd::HasGrey(epd::Controller::kSsd1677));
+    // FreeInk's gray_full header unpacked (configureDirectGrayscale).
+    TEST_ASSERT_EQUAL_HEX8(0x52, epd::kUc8179GreyPower[0].cmd);
+    TEST_ASSERT_EQUAL_HEX8(0x02, epd::kUc8179GreyPower[0].data[0]);  // (0x67 & 8) | (0xBF >> 6)
+    TEST_ASSERT_EQUAL_HEX8(0x06, epd::kUc8179GreyPower[1].data[0]);  // 0x67 >> 4
+    TEST_ASSERT_EQUAL_HEX8(0x07, epd::kUc8179GreyPower[2].data[1]);  // 0x67 & 7
+    TEST_ASSERT_EQUAL_HEX8(0x3F, epd::kUc8179GreyPower[2].data[2]);  // 0xBF & 0x3F
+    TEST_ASSERT_EQUAL_HEX8(0x26, epd::kUc8179GreyPower[4].data[0]);
+    // Registers 0x21..0x24: white, light, dark, black (FreeInk rows 4, 2, 3, 1).
+    TEST_ASSERT_EQUAL_HEX8(0x4A, epd::kUc8179GreyLuts[1][6]);
+    TEST_ASSERT_EQUAL_HEX8(0x62, epd::kUc8179GreyLuts[2][6]);
+    TEST_ASSERT_EQUAL_HEX8(0x60, epd::kUc8179GreyLuts[3][6]);
+    TEST_ASSERT_EQUAL_HEX8(0x44, epd::kUc8179GreyLuts[4][6]);
+}
+
 void test_power_sleep_holds(void) {
     constexpr boards::X4Pro b;
     constexpr power::Holds h = power::SleepHolds(b);
@@ -105,5 +166,7 @@ void RegisterWallpaperTests(void) {
     RUN_TEST(test_wallpaper_luma);
     RUN_TEST(test_wallpaper_flat_tones);
     RUN_TEST(test_wallpaper_centred);
+    RUN_TEST(test_wallpaper_grey_levels);
+    RUN_TEST(test_epd_grey_tables);
     RUN_TEST(test_power_sleep_holds);
 }

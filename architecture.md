@@ -94,6 +94,7 @@ Reference ESP-IDF + LVGL project: `../../ai-remote/approver-esp32` ([GitHub](htt
   "time": {"zone": "UTC", "server": "pool.ntp.org", "syncHours": 6},
   "led": {"brightness": 15, "idleBrightness": 7},
   "frontlight": {"brightness": 20, "warmth": 50},
+  "display": {"wallpaper": "grey"},
   "pin": {"lockMinutes": 10, "wipe": "", "complexity": true},
   "test": {"pin": ""}
 }
@@ -285,7 +286,14 @@ reboot: the boot screen, the PIN again. Wallpaper (`wallpaper.cpp`,
 LVGL's lodepng (`LV_USE_LODEPNG`; it returns an `lv_draw_buf_t`, RGBA),
 grey (BT.601, alpha on white), centred (480x800 fills; larger is cropped),
 Atkinson dither (cleaner whites than Floyd-Steinberg on engravings), turned
-onto the panel. No folder or no PNG: the screen stays as it was. Console
+onto the panel. `display.wallpaper` (config.json, `config wallpaper`): `grey`
+(default) dithers to 4 evenly spaced levels and draws them with
+`epd::RefreshGrey` where the panel has grey (UC8179; else B/W), `bw` to 1 bit.
+Grey (`epd_logic.h`, FreeInk's Direct mode as CrossPoint's sleep images): the
+stock gray_full power registers and LUTs after a fresh init, the level's low
+bit in the old plane, the high bit in the new one, one refresh (1.6 s on our
+unit). The next B/W refresh re-inits, drives every pixel once (old = the frame
+inverted, fast) and then runs full (2.6 s together): no grey shows through. No folder or no PNG: the screen stays as it was. Console
 `ui wallpaper` draws one without sleeping; `sd put` / `sd rm`
 (`utils/wallpaper.py`) write only plain `*.png` names into the folder: the
 rest of the card stays read-only to the console.

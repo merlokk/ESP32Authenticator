@@ -131,6 +131,17 @@ struct Frontlight {
     uint8_t warmth;      // 0..100: 0 all cool, 100 all warm
 };
 
+// The power-off wallpaper: 4 grey levels (on a panel that has them, epd
+// HasGrey; else B/W anyway) or B/W.
+enum class WallpaperMode : uint8_t {
+    kGrey,
+    kBw,
+};
+
+struct Display {
+    WallpaperMode wallpaper;
+};
+
 // The vault PIN (x4-design.md): the lock after 10 wrong PINs, and the wipe
 // PIN, kept only as a salted hash (set by `pin wipe set`).
 struct Pin {
@@ -154,6 +165,7 @@ struct Data {
     Time time;
     Led led;
     Frontlight frontlight;
+    Display display;
     Pin pin;
     Test test;
 };
@@ -212,6 +224,8 @@ const char *Name(WifiMode mode);
 bool ParseWifiMode(const char *text, WifiMode *out);
 const char *Name(WebMode mode);
 bool ParseWebMode(const char *text, WebMode *out);
+const char *Name(WallpaperMode mode);
+bool ParseWallpaperMode(const char *text, WallpaperMode *out);
 
 // --- File -------------------------------------------------------------------
 

@@ -485,6 +485,24 @@ void test_parse_frontlight() {
     AssertParseFails(R"({"frontlight": {"warmth": -1}})", "frontlight.warmth");
 }
 
+void test_parse_display() {
+    config::Data d;
+    config::FillDefaults(&d);
+    TEST_ASSERT_TRUE(d.display.wallpaper == config::WallpaperMode::kGrey);
+    char error[config::kErrorSize] = {};
+    TEST_ASSERT_TRUE_MESSAGE(ParseText(R"({"display": {"wallpaper": "bw"}})", &d, error, sizeof error),
+                             error);
+    TEST_ASSERT_TRUE(d.display.wallpaper == config::WallpaperMode::kBw);
+    char json[config::kMaxFileSize];
+    TEST_ASSERT_GREATER_THAN(0, config::Serialize(d, json, sizeof json));
+    config::Data out;
+    config::FillDefaults(&out);
+    TEST_ASSERT_TRUE_MESSAGE(ParseText(json, &out, error, sizeof error), error);
+    TEST_ASSERT_TRUE(out.display.wallpaper == config::WallpaperMode::kBw);
+    AssertParseFails(R"({"display": 1})", "display: expected an object");
+    AssertParseFails(R"({"display": {"wallpaper": "gray"}})", "display.wallpaper");
+}
+
 void test_valid_host() {
     TEST_ASSERT_TRUE(config::ValidHost(""));
     TEST_ASSERT_TRUE(config::ValidHost("pool.ntp.org"));
@@ -784,6 +802,7 @@ void RegisterConfigTests(void) {
     RUN_TEST(test_valid_host);
     RUN_TEST(test_parse_led);
     RUN_TEST(test_parse_frontlight);
+    RUN_TEST(test_parse_display);
     RUN_TEST(test_parse_ipv4);
     RUN_TEST(test_parse_static_ip);
     RUN_TEST(test_parse_rejects_bad_static_ip);

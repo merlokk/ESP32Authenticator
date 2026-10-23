@@ -10,7 +10,7 @@ Not the ESP32-C3 XTEINK X4: the X4 Pro is a different board.
 | Flash | 16 MB Puya (JEDEC 0x85/0x2018), quad; stock image header DIO 80 MHz |
 | PSRAM | 8 MB embedded octal, AP 3.3 V |
 | Radio | 2.4 GHz Wi-Fi, BLE |
-| Display | 4.3" e-ink, 800×480 B/W, 219 PPI |
+| Display | 4.3" e-ink, 800×480 B/W (4 grey levels on the UC8179: `epd::RefreshGrey`), 219 PPI |
 | Touch | GT911 capacitive + capacitive Home key |
 | Frontlight | dual warm/cool PWM |
 | Input | Left, Right, Power buttons + Home (touch) |

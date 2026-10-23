@@ -31,10 +31,11 @@ char path[300];
 constexpr uint32_t kPreviewStackBytes = 6144;
 SemaphoreHandle_t preview_done = nullptr;
 esp_err_t preview_err = ESP_OK;
+bool preview_grey = true;
 
 void PreviewTask(void *) {
     Lock();
-    preview_err = ShowWallpaper();
+    preview_err = ShowWallpaper(preview_grey);
     Unlock();
     xSemaphoreGive(preview_done);
     vTaskDelete(nullptr);
@@ -92,7 +93,7 @@ uint8_t *ReadFile(size_t *size) {
 
 }  // namespace
 
-esp_err_t ShowWallpaper() {
+esp_err_t ShowWallpaper(bool grey) {
     if (!epd::Ready()) {
         return ESP_ERR_NOT_SUPPORTED;
     }
@@ -123,22 +124,37 @@ esp_err_t ShowWallpaper() {
         const unsigned char *p = rgba + 4 * i;
         rgba[i] = wallpaper::Luma(p[0], p[1], p[2], p[3]);
     }
-    auto *screen = static_cast<uint8_t *>(heap_caps_malloc(kScreenBytes, MALLOC_CAP_SPIRAM));
-    auto *frame = static_cast<uint8_t *>(heap_caps_malloc(epd::kFrameBytes, MALLOC_CAP_SPIRAM));
+    // Two planes for grey (the level's low and high bit), one for B/W.
+    grey = grey && epd::HasGrey(epd::Detected());
+    const int planes = grey ? 2 : 1;
+    uint8_t *screen[2] = {};
+    uint8_t *frame[2] = {};
+    bool have = true;
+    for (int i = 0; i < planes; ++i) {
+        screen[i] = static_cast<uint8_t *>(heap_caps_malloc(kScreenBytes, MALLOC_CAP_SPIRAM));
+        frame[i] = static_cast<uint8_t *>(heap_caps_malloc(epd::kFrameBytes, MALLOC_CAP_SPIRAM));
+        have = have && screen[i] != nullptr && frame[i] != nullptr;
+    }
     esp_err_t err = ESP_ERR_NO_MEM;
-    if (screen != nullptr && frame != nullptr) {
-        dither.Run(rgba, w, h, screen);
-        ToPanel(screen, frame);
-        err = epd::Refresh(frame, epd::Mode::kFull);
-        ESP_LOGI(TAG, "%s (%ux%u): %s", path, w, h, esp_err_to_name(err));
+    if (have) {
+        dither.Run(rgba, w, h, grey ? epd::kGreyLevels : 2, screen[0], screen[1]);
+        for (int i = 0; i < planes; ++i) {
+            ToPanel(screen[i], frame[i]);
+        }
+        err = grey ? epd::RefreshGrey(frame[0], frame[1]) : epd::Refresh(frame[0], epd::Mode::kFull);
+        ESP_LOGI(TAG, "%s (%ux%u, %s): %s", path, w, h, grey ? "4 levels" : "B/W",
+                 esp_err_to_name(err));
     }
     lv_draw_buf_destroy(decoded);
-    heap_caps_free(screen);
-    heap_caps_free(frame);
+    for (int i = 0; i < planes; ++i) {
+        heap_caps_free(screen[i]);
+        heap_caps_free(frame[i]);
+    }
     return err;
 }
 
-esp_err_t PreviewWallpaper(const char **shown) {
+esp_err_t PreviewWallpaper(bool grey, const char **shown) {
+    preview_grey = grey;
     if (preview_done == nullptr) {
         preview_done = xSemaphoreCreateBinary();
     }

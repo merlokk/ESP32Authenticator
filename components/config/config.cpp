@@ -56,6 +56,9 @@ const char kDefaultJson[] = R"json({
     "brightness": 20,
     "warmth": 50
   },
+  "display": {
+    "wallpaper": "grey"
+  },
   "pin": {
     "lockMinutes": 10,
     "wipe": "",
@@ -244,6 +247,11 @@ bool ParseTime(const cJSON *section, Time *out, char *error, size_t size) {
     }
     out->sync_hours = static_cast<uint8_t>(hours);
     return true;
+}
+
+bool ParseDisplay(const cJSON *section, Display *out, char *error, size_t size) {
+    return GetMode(section, "wallpaper", ParseWallpaperMode, &out->wallpaper, "grey, bw", "display",
+                   error, size);
 }
 
 bool ParseFrontlight(const cJSON *section, Frontlight *out, char *error, size_t size) {
@@ -527,6 +535,16 @@ bool ParseSections(const cJSON *root, Data *staged, char *error, size_t size) {
             return false;
         }
     }
+    const cJSON *display = cJSON_GetObjectItemCaseSensitive(root, "display");
+    if (display != nullptr) {
+        if (!cJSON_IsObject(display)) {
+            SetError(error, size, "display: expected an object");
+            return false;
+        }
+        if (!ParseDisplay(display, &parsed.display, error, size)) {
+            return false;
+        }
+    }
     const cJSON *pin = cJSON_GetObjectItemCaseSensitive(root, "pin");
     if (pin != nullptr) {
         if (!cJSON_IsObject(pin)) {
@@ -686,6 +704,8 @@ size_t Serialize(const Data &d, char *out, size_t size) {
     cJSON *light = cJSON_AddObjectToObject(root, "frontlight");
     cJSON_AddNumberToObject(light, "brightness", d.frontlight.brightness);
     cJSON_AddNumberToObject(light, "warmth", d.frontlight.warmth);
+    cJSON *display = cJSON_AddObjectToObject(root, "display");
+    cJSON_AddStringToObject(display, "wallpaper", Name(d.display.wallpaper));
     cJSON *pin = cJSON_AddObjectToObject(root, "pin");
     cJSON_AddNumberToObject(pin, "lockMinutes", d.pin.lock_minutes);
     cJSON_AddStringToObject(pin, "wipe", d.pin.wipe);
@@ -946,6 +966,20 @@ const char *Name(WebMode mode) {
 
 bool ParseWebMode(const char *text, WebMode *out) {
     for (WebMode mode : {WebMode::kOff, WebMode::kOn, WebMode::kAuto}) {
+        if (strcmp(text, Name(mode)) == 0) {
+            *out = mode;
+            return true;
+        }
+    }
+    return false;
+}
+
+const char *Name(WallpaperMode mode) {
+    return mode == WallpaperMode::kBw ? "bw" : "grey";
+}
+
+bool ParseWallpaperMode(const char *text, WallpaperMode *out) {
+    for (WallpaperMode mode : {WallpaperMode::kGrey, WallpaperMode::kBw}) {
         if (strcmp(text, Name(mode)) == 0) {
             *out = mode;
             return true;

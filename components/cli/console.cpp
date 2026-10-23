@@ -14,6 +14,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "battery.h"
+#include "config.h"
 #include "ble.h"
 #include "ble_cmd.h"
 #include "board_devices.h"
@@ -51,9 +52,12 @@ int CmdOff(int, char **) {
 }
 
 int CmdUi(int argc, char **argv) {
-    if (argc == 2 && strcmp(argv[1], "wallpaper") == 0) {
+    config::WallpaperMode mode = config::Get().display.wallpaper;
+    if ((argc == 2 || (argc == 3 && config::ParseWallpaperMode(argv[2], &mode))) &&
+        strcmp(argv[1], "wallpaper") == 0) {
         const char *shown = "";
-        const esp_err_t err = ui::PreviewWallpaper(&shown);
+        const esp_err_t err =
+            ui::PreviewWallpaper(mode == config::WallpaperMode::kGrey, &shown);
         printf("%s: %s\n", shown[0] != '\0' ? shown : "wallpaper", esp_err_to_name(err));
         return err == ESP_OK ? 0 : 1;
     }
@@ -355,7 +359,7 @@ const esp_console_cmd_t kCommands[] = {
     },
     {
         .command = "epd",
-        .help = "E-ink panel: [info] controller, probe, refreshes | test [orient|corners|edges|checker|black|white] "
+        .help = "E-ink panel: [info] controller, probe, refreshes | test [orient|corners|edges|checker|black|white|grey] "
                 "[full|fast] | sleep",
         .hint = "[info | test [pattern] [full|fast] | sleep]",
         .func = &CmdEpd,
@@ -376,8 +380,9 @@ const esp_console_cmd_t kCommands[] = {
     {
         .command = "ui",
         .help = "LVGL display: [info] size, refreshes, the last one, the ui task's free stack | "
-                "wallpaper: draw a random power-off wallpaper now (stays on)",
-        .hint = "[wallpaper]",
+                "wallpaper [grey|bw]: draw a random power-off wallpaper now, as display.wallpaper in "
+                "config.json or as given (stays on)",
+        .hint = "[wallpaper [grey|bw]]",
         .func = &CmdUi,
         .argtable = nullptr,
         .func_w_context = nullptr,
@@ -437,8 +442,9 @@ const esp_console_cmd_t kCommands[] = {
     {
         .command = "config",
         .help = "config.json: show (passwords masked) | info | reload | save | "
-                "test [pin <6 digits>|off | presence on|off] (development, saved)",
-        .hint = "<show|info|reload|save|test>",
+                "test [pin <6 digits>|off | presence on|off] (development, saved) | "
+                "wallpaper [grey|bw] (power-off wallpaper tones, saved)",
+        .hint = "<show|info|reload|save|test|wallpaper>",
         .func = &CmdConfig,
         .argtable = nullptr,
         .func_w_context = nullptr,

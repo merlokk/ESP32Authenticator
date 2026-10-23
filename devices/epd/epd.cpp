@@ -34,12 +34,14 @@ Controller controller = Controller::kUnknown;
 bool ready = false;
 bool asleep = false;
 bool have_old = false;  // the controller's old plane / RAM holds the shown frame
+bool grey_shown = false;  // a RefreshGrey picture is on the glass (its registers set)
 uint8_t probe_flg[2] = {};
 uint8_t probe_ver[2][kVersionSize] = {};
 int screen_type = -1;  // stock NVS hw_calib/screenType, -1 unknown
 uint32_t refreshes = 0;
 uint32_t last_ms = 0;
 Mode last_mode = Mode::kFull;
+bool last_grey = false;
 
 spi_device_handle_t spi = nullptr;
 uint8_t *bounce = nullptr;        // DMA-capable, kChunkRows rows
@@ -175,9 +177,20 @@ esp_err_t SendAll(const Cmd (&list)[N]) {
     return ESP_OK;
 }
 
+esp_err_t SendBytes(uint8_t cmd, const uint8_t *data, size_t len) {
+    esp_err_t err = Command(cmd);
+    if (err == ESP_OK) {
+        memcpy(bounce, data, len);
+        Level(pins.cs, 0);
+        err = Transmit(bounce, len);
+        Level(pins.cs, 1);
+    }
+    return err;
+}
+
 // A plane after `cmd`: RamRows rows mapped by FrameRowFor, padding white;
-// `frame` nullptr: every row `fill`.
-esp_err_t Plane(uint8_t cmd, const uint8_t *frame, uint8_t fill = 0xFF) {
+// `frame` nullptr: every row `fill`; `invert`: the frame's rows inverted.
+esp_err_t Plane(uint8_t cmd, const uint8_t *frame, uint8_t fill = 0xFF, bool invert = false) {
     esp_err_t err = Command(cmd);
     const uint16_t rows = RamRows(controller);
     Level(pins.cs, 0);
@@ -188,6 +201,9 @@ esp_err_t Plane(uint8_t cmd, const uint8_t *frame, uint8_t fill = 0xFF) {
             const int src = FrameRowFor(controller, static_cast<uint16_t>(first + r));
             if (frame != nullptr && src != kPadRow) {
                 memcpy(dst, frame + static_cast<size_t>(src) * kRowBytes, kRowBytes);
+                for (size_t i = 0; invert && i < kRowBytes; ++i) {
+                    dst[i] = static_cast<uint8_t>(~dst[i]);
+                }
             } else {
                 memset(dst, frame != nullptr ? 0xFF : fill, kRowBytes);
             }
@@ -292,6 +308,40 @@ esp_err_t RefreshUc(const uint8_t *frame, Mode mode) {
     return err;
 }
 
+// After a grey picture: every pixel driven to the frame (old = its inverse),
+// fast, before the full refresh. FreeInk's displayStart after Direct.
+esp_err_t ClearGreyUc(const uint8_t *frame) {
+    esp_err_t err = Plane(kUcOld, frame, 0xFF, true);
+    if (err == ESP_OK) err = Plane(kUcNew, frame);
+    if (err == ESP_OK) err = SendAll(kUc8179Fast);
+    if (err == ESP_OK) err = Command(kUcPowerOn);
+    if (err == ESP_OK) err = WaitIdle();
+    if (err == ESP_OK) err = Command(kUcPartialIn);
+    if (err == ESP_OK) err = Command(kUcRefresh);
+    if (err == ESP_OK) err = WaitRefresh();
+    if (err == ESP_OK) err = Command(kUcPartialOut);
+    return err;
+}
+
+esp_err_t RefreshGreyUc(const uint8_t *low, const uint8_t *high) {
+    esp_err_t err = InitController();  // from the B/W registers' defaults
+    if (err == ESP_OK) err = SendAll(kUc8179GreyPower);
+    for (uint8_t t = 0; t < 5 && err == ESP_OK; ++t) {
+        uint8_t lut[kGreyLutBytes] = {};
+        memcpy(lut, kUc8179GreyLuts[t], kGreyLutUsed);
+        err = SendBytes(static_cast<uint8_t>(kGreyLutFirst + t), lut, sizeof lut);
+    }
+    if (err == ESP_OK) err = Plane(kUcOld, low);
+    if (err == ESP_OK) err = Plane(kUcNew, high);
+    if (err == ESP_OK) err = Command(kUcPowerOn);
+    if (err == ESP_OK) err = WaitIdle();
+    if (err == ESP_OK) err = Command(kUcRefresh);
+    if (err == ESP_OK) err = WaitRefresh();
+    if (err == ESP_OK) err = Command(kUcPowerOff);
+    if (err == ESP_OK) err = WaitIdle();
+    return err;
+}
+
 }  // namespace
 
 esp_err_t Init() {
@@ -355,16 +405,22 @@ esp_err_t Refresh(const uint8_t *frame, Mode mode) {
         return ESP_ERR_INVALID_STATE;
     }
     xSemaphoreTake(mutex, portMAX_DELAY);
-    esp_err_t err = asleep ? InitController() : ESP_OK;
+    // A grey picture left its registers set: B/W wants them back to defaults.
+    esp_err_t err = asleep || grey_shown ? InitController() : ESP_OK;
     if (!have_old) {
         mode = Mode::kFull;  // nothing known on the glass to diff against
     }
     const int64_t start = esp_timer_get_time();
+    if (err == ESP_OK && grey_shown) {
+        err = ClearGreyUc(frame);
+        grey_shown = false;
+    }
     if (err == ESP_OK) {
         err = controller == Controller::kSsd1677 ? RefreshSsd(frame, mode) : RefreshUc(frame, mode);
     }
     last_ms = static_cast<uint32_t>((esp_timer_get_time() - start) / 1000);
     last_mode = mode;
+    last_grey = false;
     if (err == ESP_OK) {
         memcpy(shown, frame, kFrameBytes);
         have_old = true;
@@ -372,6 +428,29 @@ esp_err_t Refresh(const uint8_t *frame, Mode mode) {
     } else {
         have_old = false;
         ESP_LOGE(TAG, "refresh: %s", esp_err_to_name(err));
+    }
+    xSemaphoreGive(mutex);
+    return err;
+}
+
+esp_err_t RefreshGrey(const uint8_t *low, const uint8_t *high) {
+    if (!ready || low == nullptr || high == nullptr) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (!HasGrey(controller)) {
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+    xSemaphoreTake(mutex, portMAX_DELAY);
+    const int64_t start = esp_timer_get_time();
+    const esp_err_t err = RefreshGreyUc(low, high);
+    last_ms = static_cast<uint32_t>((esp_timer_get_time() - start) / 1000);
+    last_grey = true;
+    have_old = false;
+    grey_shown = true;  // even after a failure: the registers may be grey ones
+    if (err == ESP_OK) {
+        ++refreshes;
+    } else {
+        ESP_LOGE(TAG, "grey refresh: %s", esp_err_to_name(err));
     }
     xSemaphoreGive(mutex);
     return err;
@@ -415,7 +494,7 @@ void PrintInfo() {
                Name(FromScreenType(static_cast<uint8_t>(screen_type))));
     }
     printf("refreshes  %" PRIu32 ", last %s in %" PRIu32 " ms\n", refreshes,
-           last_mode == Mode::kFull ? "full" : "fast", last_ms);
+           last_grey ? "grey" : last_mode == Mode::kFull ? "full" : "fast", last_ms);
 }
 
 }  // namespace epd

@@ -578,12 +578,26 @@ int CmdTest(int argc, char **argv) {
     return changed ? CmdSave(0, nullptr) : 0;
 }
 
+//   config wallpaper [grey | bw]  the power-off wallpaper's tones (saved)
+int CmdWallpaper(int argc, char **argv) {
+    config::WallpaperMode &mode = config::Get().display.wallpaper;
+    if (argc > 2 || (argc == 2 && !config::ParseWallpaperMode(argv[1], &mode))) {
+        printf("usage: config wallpaper [grey|bw]\n");
+        return 1;
+    }
+    printf("wallpaper  %s\n", mode == config::WallpaperMode::kGrey
+                                       ? "grey: 4 levels where the panel has them"
+                                       : "bw: black and white");
+    return argc == 2 ? CmdSave(0, nullptr) : 0;
+}
+
 constexpr Subcommand kConfigSubcommands[] = {
     {"show", &CmdShow},
     {"info", &CmdConfigInfo},
     {"reload", &CmdReload},
     {"save", &CmdSave},
     {"test", &CmdTest},
+    {"wallpaper", &CmdWallpaper},
 };
 
 }  // namespace
@@ -605,7 +619,7 @@ int CmdWeb(int argc, char **argv) {
 int CmdConfig(int argc, char **argv) {
     return Dispatch(kConfigSubcommands, argc, argv,
                     "config show | info | reload | save | "
-                    "test [pin <6 digits>|off | presence on|off]");
+                    "test [pin <6 digits>|off | presence on|off] | wallpaper [grey|bw]");
 }
 
 void PrintWifiInfo() { CmdInfo(0, nullptr); }

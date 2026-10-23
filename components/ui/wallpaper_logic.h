@@ -1,7 +1,8 @@
 #pragma once
 
 // The pure half of the power-off wallpaper (host-tested): which files count,
-// grey from RGBA, and the 1-bit dither. Wallpapers are PNGs in
+// grey from RGBA, and the dither to 2 or 4 levels (4 where the panel has
+// grey, epd::HasGrey). Wallpapers are PNGs in
 // /sdcard/wallpapers (the stock firmware's folder), drawn portrait, centred on
 // white (480x800 fills the screen; larger ones are cropped). Atkinson
 // dithering: it spreads 6/8 of the error, so light areas stay clean white and
@@ -47,6 +48,15 @@ class Dither {
     // `grey` (w x h, a byte a pixel) centred onto a portrait screen
     // (kScreenBytes, I1: bit 1 white).
     void Run(const uint8_t *grey, uint32_t w, uint32_t h, uint8_t *screen) {
+        Run(grey, w, h, 2, screen, nullptr);
+    }
+
+    // To `levels` (2 or 4) evenly spaced tones, level 0 black: its low bit
+    // into `low`, its high bit into `high` (two portrait screens, for
+    // epd::RefreshGrey once turned; unused at 2 levels).
+    void Run(const uint8_t *grey, uint32_t w, uint32_t h, uint8_t levels, uint8_t *low,
+             uint8_t *high) {
+        const int32_t top = levels > 2 ? 3 : 1;
         const int32_t ox = (static_cast<int32_t>(kWidth) - static_cast<int32_t>(w)) / 2;
         const int32_t oy = (static_cast<int32_t>(kHeight) - static_cast<int32_t>(h)) / 2;
         for (auto &row : err_) {
@@ -58,7 +68,8 @@ class Dither {
             int16_t *cur = err_[y % 3];
             int16_t *next = err_[(y + 1) % 3];
             int16_t *next2 = err_[(y + 2) % 3];
-            uint8_t *out = screen + y * kRowBytes;
+            uint8_t *out_low = low + y * kRowBytes;
+            uint8_t *out_high = top > 1 ? high + y * kRowBytes : nullptr;
             const int32_t sy = y - oy;
             for (int32_t x = 0; x < kWidth; ++x) {
                 const int32_t sx = x - ox;
@@ -67,10 +78,14 @@ class Dither {
                                         ? grey[static_cast<size_t>(sy) * w + sx]
                                         : 255;
                 const int32_t v = src + cur[x + 1];
-                const bool white = v >= 128;
+                const int32_t q = (v * top + 127) / 255;
+                const int32_t level = q < 0 ? 0 : q > top ? top : q;
                 const auto bit = static_cast<uint8_t>(0x80 >> (x % 8));
-                out[x / 8] = static_cast<uint8_t>(white ? out[x / 8] | bit : out[x / 8] & ~bit);
-                const auto e = static_cast<int16_t>((v - (white ? 255 : 0)) / 8);
+                Put(out_low + x / 8, bit, (level & 1) != 0);
+                if (out_high != nullptr) {
+                    Put(out_high + x / 8, bit, (level & 2) != 0);
+                }
+                const auto e = static_cast<int16_t>((v - level * 255 / top) / 8);
                 cur[x + 2] = static_cast<int16_t>(cur[x + 2] + e);
                 cur[x + 3] = static_cast<int16_t>(cur[x + 3] + e);
                 next[x] = static_cast<int16_t>(next[x] + e);
@@ -85,6 +100,10 @@ class Dither {
     }
 
    private:
+    static void Put(uint8_t *byte, uint8_t bit, bool on) {
+        *byte = static_cast<uint8_t>(on ? *byte | bit : *byte & ~bit);
+    }
+
     // Three rows of carried error; index x + 1 (one pad left, two right).
     int16_t err_[3][kWidth + 3] = {};
 };

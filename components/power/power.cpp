@@ -1,6 +1,7 @@
 #include "power.h"
 
 #include "board.h"
+#include "config.h"
 #include "driver/gpio.h"
 #include "driver/rtc_io.h"
 #include "epd.h"
@@ -61,7 +62,8 @@ void Off() {
     ESP_LOGI(TAG, "powering off");
     ui::Lock();  // never given back: the ui task draws nothing more
     frontlight::Off();
-    const esp_err_t err = ui::ShowWallpaper();
+    const esp_err_t err =
+        ui::ShowWallpaper(config::Get().display.wallpaper == config::WallpaperMode::kGrey);
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "wallpaper: %s", esp_err_to_name(err));
     }

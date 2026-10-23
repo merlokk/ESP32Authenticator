@@ -11,8 +11,10 @@ namespace console {
 
 namespace {
 
-// The test frame, in PSRAM: 48 KB is no stack's business.
+// The test frame, in PSRAM: 48 KB is no stack's business. `high`: the
+// second plane of `grey`.
 uint8_t *frame = nullptr;
+uint8_t *high = nullptr;
 
 void Black(int x, int y) {
     frame[y * epd::kRowBytes + x / 8] &= static_cast<uint8_t>(~(0x80 >> (x % 8)));
@@ -90,6 +92,32 @@ bool Draw(const char *pattern) {
     return true;
 }
 
+// Four bands across the frame, black to white (epd::RefreshGrey).
+int GreyTest() {
+    if (high == nullptr) {
+        high = static_cast<uint8_t *>(heap_caps_malloc(epd::kFrameBytes, MALLOC_CAP_SPIRAM));
+        if (high == nullptr) {
+            printf("no memory for a frame\n");
+            return 1;
+        }
+    }
+    const size_t band = epd::kRowBytes / epd::kGreyLevels;  // 25 bytes, 200 px
+    for (size_t y = 0; y < epd::kHeight; ++y) {
+        for (size_t b = 0; b < epd::kRowBytes; ++b) {
+            const size_t level = b / band;
+            frame[y * epd::kRowBytes + b] = (level & 1) != 0 ? 0xFF : 0x00;
+            high[y * epd::kRowBytes + b] = (level & 2) != 0 ? 0xFF : 0x00;
+        }
+    }
+    const esp_err_t err = epd::RefreshGrey(frame, high);
+    if (err != ESP_OK) {
+        printf("grey refresh: %s\n", esp_err_to_name(err));
+        return 1;
+    }
+    epd::PrintInfo();
+    return 0;
+}
+
 }  // namespace
 
 int CmdEpd(int argc, char **argv) {
@@ -107,7 +135,7 @@ int CmdEpd(int argc, char **argv) {
         return err == ESP_OK ? 0 : 1;
     }
     if (strcmp(argv[1], "test") != 0 || argc > 4) {
-        printf("usage: epd [info] | epd test [orient|corners|edges|checker|black|white] [full|fast] | epd sleep\n");
+        printf("usage: epd [info] | epd test [orient|corners|edges|checker|black|white|grey] [full|fast] | epd sleep\n");
         return 1;
     }
     const char *pattern = argc >= 3 ? argv[2] : "orient";
@@ -127,8 +155,11 @@ int CmdEpd(int argc, char **argv) {
             return 1;
         }
     }
+    if (strcmp(pattern, "grey") == 0) {
+        return GreyTest();
+    }
     if (!Draw(pattern)) {
-        printf("pattern: orient, corners, edges, checker, black or white\n");
+        printf("pattern: orient, corners, edges, checker, black, white or grey\n");
         return 1;
     }
     const esp_err_t err = epd::Refresh(frame, mode);
