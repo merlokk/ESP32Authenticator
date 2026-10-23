@@ -106,14 +106,14 @@ administrator terminal (FIDO HID and the GATT FIDO service are hidden otherwise)
 
 ```powershell
 cd tests/fido2
-python -m pytest [-k name] [--transport ble] [--device YubiKey|<address>] [--console COM6] [--pin 1234] [--set-pin] [--destructive] [--reset]
+python -m pytest [-k name] [--transport ble] [--device YubiKey|<address>] [--console COM6] [--pin 1234] [--set-pin] [--destructive] [--fill] [--reset]
 ```
 
 - Never changes the PIN; sets one only with `--set-pin`, resets only with `--reset`.
 - Non-resident credentials of the test RPs (`ctap-test*.example`) can stay on
   our firmware after a run (U2F ones show as `U2F 3dec69ac`): check with `fido2 list`, remove with
-  `fido2 delete <id>` (the store holds 20; a run leaves ~6, a full store fails with
-  KEY_STORE_FULL / U2F 0x6986).
+  `fido2 delete <id>` (the store holds the board's `fido_max_credentials`; a run
+  leaves ~6, a full store fails with KEY_STORE_FULL / U2F 0x6986).
 - PIN: asked at start when the key has one (or `--pin` / `FIDO_PIN`); empty
   skips the PIN, UV and discoverable-credential tests. These use only the test
   RPs `ctap-test*.example` and delete their credentials.
@@ -125,11 +125,21 @@ python -m pytest [-k name] [--transport ble] [--device YubiKey|<address>] [--con
   cycle fails, enter the right PIN in the next run to restore them).
   Also the empty CBOR request (runs late): YubiKey 5.8 never answers and stays
   CHANNEL_BUSY, the test power-cycles it and fails (expected on YubiKey).
+- `--fill` (`test_fill.py`, runs late): discoverable credentials for
+  `ctap-test-fill.example` until KEY_STORE_FULL; the count must match
+  getCredsMetadata's remaining, then all are deleted. One touch each: on our
+  firmware `config test presence on` first (and `off` after). With reboots
+  (`--console`) on a PIN-locked store also `config test pin <PIN>` (and `off`).
 - `--reset` (asks to type RESET): authenticatorReset tests, run last. Make
   credentials, power cycle, reset at once with a touch (within 10 s of
   power-up: YubiKey, our firmware), check PIN and credentials are gone; then
   a reset 12 s after the first one must be refused (cancelled if the key asks
   for a touch instead). LionKey restarts its 10 s window after a reset.
+- Elevated from a normal shell (the elevated window cannot run a script
+  from Claude's temp folder): `Start-Process pwsh -Verb RunAs -ArgumentList
+  '-NoProfile','-Command','& <script in the repo>'`.
+- X4 Pro over BLE (2026-10-23, `--console COM7 --destructive --fill`): 103
+  passed, 5 skipped (`--reset`); the store filled at 125 credentials.
 - Hang guards: 5 s per HID report, 40 s per request (then CANCEL), 180 s per
   test (stack dump and exit). Run Python with `-u` when piping the output.
 - Touches: one for the shared credential, one each for `exclude_list` and
@@ -236,5 +246,6 @@ entry for `pin.lockMinutes` (config.json), also across a reboot.
 | `devstatus` | `version`, `info`, `board`, `date`, `battery`, `sd`, `led info`, `wifi info`, `web`, `ble info`, `fido2 info` in one dump (also the site's Device status page; its "Full hardware info" button shows `hwinfo`) |
 | `config show` | current config as JSON, passwords masked (networks, AP, web) |
 | `config info` | file path, source (file / built-in defaults), why the file was not used |
+| `config test [pin <6 digits>\|off \| presence on\|off]` | development: `test.pin` (the vault unlocks at boot) and `test.autoPresence` (FIDO2 without the button), saved; the PIN is never shown. For test runs (`tests/fido2` with reboots, the fill test); turn both off after |
 | `config reload` / `config save` | re-read config.json (keeps values on error) and apply Wi-Fi (incl. internet check), web, time and LED settings / write current values |
 | `efuse` | every eFuse field (list generated at build time from IDF `esp_efuse_table.csv`) and raw blocks BLK0..BLK10 |

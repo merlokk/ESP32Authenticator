@@ -39,6 +39,9 @@ def pytest_addoption(parser):
     g.addoption("--set-pin", action="store_true",
                 help="set a PIN on an authenticator that has none (asked twice); "
                      "only a FIDO reset removes it")
+    g.addoption("--fill", action="store_true",
+                help="fill the credential store up to KEY_STORE_FULL, then delete the "
+                     "fill credentials (one touch each: turn on auto presence)")
     g.addoption("--reset", action="store_true",
                 help="run the authenticatorReset tests (last): erase ALL FIDO "
                      "credentials and the PIN; asks to type RESET")
@@ -48,6 +51,7 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "touch: needs a touch on the authenticator")
     config.addinivalue_line("markers", "pin: needs a PIN")
     config.addinivalue_line("markers", "destructive: needs --destructive")
+    config.addinivalue_line("markers", "fill: needs --fill, runs late")
     config.addinivalue_line("markers", "reset: needs --reset, runs last")
     config.addinivalue_line("markers", "replug: asks to replug the authenticator, runs late")
     config.addinivalue_line("markers", "late: runs after the other tests (before reset)")
@@ -105,12 +109,15 @@ def pytest_collection_modifyitems(config, items):
     auth = getattr(config, "fido_auth", None)
     # stable sort: late and replug tests, then reset tests, run last
     items.sort(key=lambda item: 2 * ("reset" in item.keywords)
-               + ("replug" in item.keywords or "late" in item.keywords))
+               + ("replug" in item.keywords or "late" in item.keywords
+                  or "fill" in item.keywords))
     for item in items:
         if "reset" in item.keywords and not config.getoption("--reset"):
             item.add_marker(pytest.mark.skip(reason="needs --reset"))
         if "destructive" in item.keywords and not config.getoption("--destructive"):
             item.add_marker(pytest.mark.skip(reason="needs --destructive"))
+        if "fill" in item.keywords and not config.getoption("--fill"):
+            item.add_marker(pytest.mark.skip(reason="needs --fill"))
         if "pin" in item.keywords and auth and not auth.pin:
             item.add_marker(pytest.mark.skip(reason="needs a PIN"))
         if (("replug" in item.keywords or "reset" in item.keywords)

@@ -349,8 +349,9 @@ const esp_console_cmd_t kCommands[] = {
     },
     {
         .command = "config",
-        .help = "config.json: show (passwords masked) | info | reload | save",
-        .hint = "<show|info|reload|save>",
+        .help = "config.json: show (passwords masked) | info | reload | save | "
+                "test [pin <6 digits>|off | presence on|off] (development, saved)",
+        .hint = "<show|info|reload|save|test>",
         .func = &CmdConfig,
         .argtable = nullptr,
         .func_w_context = nullptr,

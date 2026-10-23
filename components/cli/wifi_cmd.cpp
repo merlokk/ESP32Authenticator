@@ -550,11 +550,40 @@ int CmdSave(int, char **) {
     return rc;
 }
 
+// Development only, for test runs (tests/fido2): config.json `test`, saved.
+//   config test                       what is set (the PIN never shown)
+//   config test pin <6 digits> | off  unlock the vault at boot with it
+//   config test presence on | off     FIDO2 user presence without the button
+int CmdTest(int argc, char **argv) {
+    config::Test &t = config::Get().test;
+    bool changed = false;
+    if (argc == 3 && strcmp(argv[1], "pin") == 0) {
+        const bool off = strcmp(argv[2], "off") == 0;
+        if (!off && (argv[2][0] == '\0' || !config::ValidTestPin(argv[2]))) {
+            printf("test pin: 6 digits or off\n");
+            return 1;
+        }
+        snprintf(t.pin, sizeof t.pin, "%s", off ? "" : argv[2]);
+        changed = true;
+    } else if (argc == 3 && strcmp(argv[1], "presence") == 0 &&
+               (strcmp(argv[2], "on") == 0 || strcmp(argv[2], "off") == 0)) {
+        t.auto_presence = strcmp(argv[2], "on") == 0;
+        changed = true;
+    } else if (argc != 1) {
+        printf("usage: config test [pin <6 digits>|off | presence on|off]\n");
+        return 1;
+    }
+    printf("test pin   %s\n", t.pin[0] != '\0' ? "set: the vault unlocks at boot" : "off");
+    printf("presence   %s\n", t.auto_presence ? "on: FIDO2 needs no button press" : "off");
+    return changed ? CmdSave(0, nullptr) : 0;
+}
+
 constexpr Subcommand kConfigSubcommands[] = {
     {"show", &CmdShow},
     {"info", &CmdConfigInfo},
     {"reload", &CmdReload},
     {"save", &CmdSave},
+    {"test", &CmdTest},
 };
 
 }  // namespace
@@ -574,7 +603,9 @@ int CmdWeb(int argc, char **argv) {
 }
 
 int CmdConfig(int argc, char **argv) {
-    return Dispatch(kConfigSubcommands, argc, argv, "config show | info | reload | save");
+    return Dispatch(kConfigSubcommands, argc, argv,
+                    "config show | info | reload | save | "
+                    "test [pin <6 digits>|off | presence on|off]");
 }
 
 void PrintWifiInfo() { CmdInfo(0, nullptr); }
