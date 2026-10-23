@@ -8,6 +8,7 @@
 #include <cstring>
 #include <ctime>
 
+#include "battery.h"
 #include "board_devices.h"
 #include "clock_math.h"
 #include "config.h"
@@ -359,6 +360,24 @@ int PrintLedInfo() {
     printf("wire       %" PRIu32 " writes, %" PRIu32 " failed\n", s.writes, s.write_failures);
     printf("stack      %" PRIu32 " B free\n", s.stack_low_water);
     return 0;
+}
+
+int CmdBattery(int argc, char **argv) {
+    if (argc == 1 || strcmp(argv[1], "info") == 0) {
+        battery::PrintInfo();
+        return battery::GaugeReady() ? 0 : 1;
+    }
+    if (argc == 2 && strcmp(argv[1], "regs") == 0) {
+        battery::PrintRegs();
+        return 0;
+    }
+    if (argc == 2 && strcmp(argv[1], "init") == 0) {
+        const esp_err_t err = battery::Reinit();
+        battery::PrintInfo();
+        return err == ESP_OK ? 0 : 1;
+    }
+    printf("usage: battery [info | regs | init]\n");
+    return 1;
 }
 
 int CmdLed(int argc, char **argv) {

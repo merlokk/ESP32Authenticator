@@ -18,6 +18,7 @@ Target and status. Screen design and the open questions: [x4-design.md](x4-desig
 | X4 Pro screen: status bar, credential list, pages, settings | not yet (LVGL up, no display driver) |
 | Settings: frontlight, Wi-Fi | Wi-Fi on the console and the site; frontlight not yet |
 | Time: SNTP, zones, clock | done |
+| Battery: voltage, level, charging | done (CW2017 + charger STAT, console `battery`, BLE Battery Level); screen not yet |
 | Wi-Fi, configuration site, console | done |
 
 ## Stack
@@ -41,7 +42,7 @@ Reference ESP-IDF + LVGL project: `../../ai-remote/approver-esp32` ([GitHub](htt
 | `lib/` | third-party git submodules (`lionkey`: our fork, see FIDO2) |
 | `host_test/` | host tests (Unity, MSVC), no board: see Tests |
 | `utils/` | host-side Python tools over the USB console (`device.py`: console session; `spiffs.py`: ls/info/rm/get/put; `ble.py`: ble commands, `kb` text quoting) |
-| `devices/` | hardware drivers, one component per device (`hardware`: SoC info, eFuse, USB host connected; `spiffs_fs`: SPIFFS on `spiffs` at `/spiffs`, never formatted, it holds stock data on the X4 Pro; `ble`, `ble_kb`, `ble_fido`: see BLE; `wifi`: the radio (`wifi::Radio`), no decisions, stores nothing; `buttons`: GPIO buttons, polled, debounced 25 ms (`button_logic.h`, pure: debounce, short/long press from approver-esp32; single/double/... press: `MultiPress`, 400 ms gap), pins from the board; `crypto`: hardware RNG, SHA-256, AES-256-CBC, AES-256-GCM, HMAC-SHA1 via PSA, HOTP/TOTP (`otp.h`, pure: counter, truncation); `clock`: `rtc::Clock`, see Time; `led`: one WS2812 from UART1, see Boards; `boards`: board classes, see Boards). `devices/config.h`: the board the firmware is built for |
+| `devices/` | hardware drivers, one component per device (`hardware`: SoC info, eFuse, USB host connected; `spiffs_fs`: SPIFFS on `spiffs` at `/spiffs`, never formatted, it holds stock data on the X4 Pro; `ble`, `ble_kb`, `ble_fido`: see BLE; `wifi`: the radio (`wifi::Radio`), no decisions, stores nothing; `buttons`: GPIO buttons, polled, debounced 25 ms (`button_logic.h`, pure: debounce, short/long press from approver-esp32; single/double/... press: `MultiPress`, 400 ms gap), pins from the board; `crypto`: hardware RNG, SHA-256, AES-256-CBC, AES-256-GCM, HMAC-SHA1 via PSA, HOTP/TOTP (`otp.h`, pure: counter, truncation); `clock`: `rtc::Clock`, see Time; `led`: one WS2812 from UART1, see Boards; `i2c_bus`: the board's I2C bus, leased (from approver-esp32), see Boards; `battery`: CW2017 fuel gauge and charger STAT, see Boards; `boards`: board classes, see Boards). `devices/config.h`: the board the firmware is built for |
 
 ## Config
 
@@ -116,7 +117,7 @@ cannot link on Windows), Unity from ESP-IDF, cJSON from `managed_components/`
 Pattern from approver-esp32. Suites: `config`, `wifi_policy`, `reachability`,
 `web_auth`, `web_paths` (paths + server policy), `web_settings`, `clock`,
 `boards`, `timesync`, `timezone`, `led`, `buttons` (debounce, short/long,
-single/double press), `pin_policy`, `totp` (truncation against the RFC 4226
+single/double press), `battery` (CW2017 VCELL, profile check, init decision), `pin_policy`, `totp` (truncation against the RFC 4226
 HMAC values; the HMAC itself is checked on the board by `totp test`); only code with
 no hardware (pure headers) is under test.
 
@@ -146,9 +147,23 @@ has its pins) is a `static_assert` and a host test.
 | `DevBoard` (`dev_board.h`) | bare ESP32-S3 dev board (YD-ESP32-S3 type): BOOT = Left on GPIO0, WS2812 on GPIO48, no RTC |
 | `X4Pro` (`x4_pro.h`) | XTEINK X4 Pro, pins from [hardware.md](hardware.md) |
 
-`board_devices.h` carries it out: `boards::Init()` (the clock), `Clock()`,
-`Button(id)`, `PrintInfo()` (`board`), `BootDone()`. No display, touch or SD
-driver yet.
+`board_devices.h` carries it out: `boards::Init()` (LED, peripheral rail
+high, I2C bus, the clock), `I2c()`, `Clock()`, `Button(id)`, `PrintInfo()`
+(`board`), `BootDone()`. No display, touch or SD driver yet.
+
+I2C (`devices/i2c_bus`, from approver-esp32): one `i2cbus::Bus` owned by the
+board (`boards::I2c()`), 400 kHz; a task borrows it with `Acquire()` (a
+`Lease`, released by scope; a sequence under one lease is atomic). A busy bus
+is a skip after 50 ms, never a block; `Recover()` clocks a stuck SDA free.
+
+Battery (`devices/battery`): CW2017 at 0x63 and the charger STAT line
+(GPIO21, high = charging). `cw2017_logic.h` (pure): registers, the 80-byte
+BATINFO profile from the stock firmware, VCELL (14 bits x 312.5 uV), the init
+decision: none / soft reset / profile upload. `battery::Init()` after
+`boards::Init()`: the gauge keeps the profile while the cell is connected
+(stock loads the same one), so it is only written when it differs. Readouts:
+`battery` (console), `[battery]` in `hwinfo`, the BLE Battery Level
+(`battery::Level()`, 100 without a reading).
 
 LED (`devices/led`, from approver-esp32-yubikey): WS2812 driven by UART1 at
 3.33 Mbaud, 6 data bits, TX inverted (two bit cells per character, no RMT);

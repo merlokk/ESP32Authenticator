@@ -20,7 +20,8 @@ Firmware: C/C++ on **ESP-IDF**.
   web site; USB console; `config.json`; time (SNTP, time zones, `rtc::Clock`
   on the CPU timer); board classes chosen in `devices/config.h`; WS2812 LED (red at boot,
   green breathing when ready, blue while typing, yellow
-  blinking for the FIDO2 button); TOTP codes on the console (`totp`); LVGL 9 library (no display driver);
+  blinking for the FIDO2 button); TOTP codes on the console (`totp`); battery: CW2017 gauge (voltage, level) and
+  charger STAT on a leased I2C bus (`battery`, BLE Battery Level); LVGL 9 library (no display driver);
   password records (site/user/password/TOTP) in `vault.bin` with
   add/edit/delete on the console (`pass`) and the web site (with FIDO2
   credentials and TOTP codes); `vault.bin` and `fido.bin` are

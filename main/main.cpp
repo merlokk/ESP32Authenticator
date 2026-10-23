@@ -1,6 +1,7 @@
 #include <cstdio>
 #include <cstring>
 
+#include "battery.h"
 #include "ble_fido.h"
 #include "ble_kb.h"
 #include "ble.h"
@@ -140,6 +141,7 @@ void InitVault(const char *dir) {
 
 extern "C" void app_main() {
     boards::Init();  // LED red; the board's clock seeds the system clock (UTC)
+    battery::Init();  // not fatal: `battery` reports a missing gauge
     ConfirmRunningApp();
     InitNvs();
     spiffs_fs::Init();  // not fatal: the console reports an unmounted fs

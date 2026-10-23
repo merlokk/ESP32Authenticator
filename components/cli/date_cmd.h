@@ -13,6 +13,11 @@
 // `board` command: the board this firmware is built for (devices/config.h),
 // its devices and pins.
 //
+// `battery` command (boards with a fuel gauge / charger STAT line):
+//   battery [info]   voltage, level, charging
+//   battery regs     gauge registers 0x00..0x0F and the resident profile, raw
+//   battery init     check the profile again (loads it if needed), reset the gauge
+//
 // `led` command (boards with a WS2812):
 //   led [info]                           pin, UART, colour, effect, ceilings, wire counters
 //   led <colour> [effect] [seconds]      show it for a while (default 5 s), then back
@@ -23,6 +28,7 @@ namespace console {
 int CmdDate(int argc, char **argv);
 int CmdBoard(int argc, char **argv);
 int CmdLed(int argc, char **argv);
+int CmdBattery(int argc, char **argv);
 
 // Readouts reused by `devstatus` and `hwinfo`.
 void PrintDateInfo();

@@ -5,8 +5,10 @@
 #include <cinttypes>
 
 #include "clock_math.h"
+#include "driver/gpio.h"
 #include "esp_log.h"
 #include "esp_rtc_time.h"
+#include "i2c_bus.h"
 #include "led.h"
 #include "timer_clock.h"
 
@@ -23,6 +25,7 @@ constexpr uint32_t kTypingLedMs = 1000;
 // Longer than the CTAP button wait (30 s): the end of the wait ends it.
 constexpr uint32_t kUserWaitLedMs = 35000;
 
+i2cbus::Bus i2c_bus;
 rtc::TimerClock timer_clock;
 rtc::Clock *active_clock = &timer_clock;
 
@@ -47,6 +50,18 @@ esp_err_t Init() {
         // Red solid while booting: a dark board is a hardware fault, a red one
         // is running firmware, and it shows a reset from across the room.
         led::Set(led::colour::kRed, led::Effect::kSolid);
+    }
+    if (kBoard.power_pins.peripheral_rail != kNoPin) {
+        // First: touch and SD sit behind it (hardware.md, power-up order).
+        const auto rail = static_cast<gpio_num_t>(kBoard.power_pins.peripheral_rail);
+        gpio_reset_pin(rail);
+        gpio_set_direction(rail, GPIO_MODE_OUTPUT);
+        gpio_set_level(rail, 1);
+    }
+    if (kBoard.NeedsI2c()) {
+        // Not fatal: its devices report it.
+        i2c_bus.Init(static_cast<gpio_num_t>(kBoard.i2c.scl),
+                     static_cast<gpio_num_t>(kBoard.i2c.sda));
     }
     if (kBoard.hw_clock != HwClockType::kNone) {
         // TODO: BM8563 driver; until then the time is lost at power-off.
@@ -98,6 +113,8 @@ void SetLedBrightness(uint8_t percent, uint8_t idle_percent) {
         led::SetBrightness(percent, idle_percent);
     }
 }
+
+i2cbus::Bus &I2c() { return i2c_bus; }
 
 rtc::Clock &Clock() { return *active_clock; }
 

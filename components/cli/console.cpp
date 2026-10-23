@@ -13,6 +13,7 @@
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "battery.h"
 #include "ble.h"
 #include "ble_cmd.h"
 #include "board_devices.h"
@@ -63,6 +64,8 @@ int CmdVersion(int, char **) {
 int CmdHwInfo(int, char **) {
     hardware::PrintInfo();
     boards::PrintClock();
+    printf("[battery]\n");
+    battery::PrintInfo();
     printf("[led]\n");
     PrintLedInfo();
     return 0;
@@ -92,6 +95,8 @@ void PrintDevStatus() {
     CmdBoard(0, nullptr);
     Section("date");
     PrintDateInfo();
+    Section("battery");
+    battery::PrintInfo();
     Section("led info");
     PrintLedInfo();
     Section("wifi info");
@@ -297,6 +302,16 @@ const esp_console_cmd_t kCommands[] = {
         .context = nullptr,
     },
     {
+        .command = "battery",
+        .help = "Battery: [info] voltage, level, charging | regs: gauge registers and profile | "
+                "init: check the profile again, reset the gauge",
+        .hint = "[info|regs|init]",
+        .func = &CmdBattery,
+        .argtable = nullptr,
+        .func_w_context = nullptr,
+        .context = nullptr,
+    },
+    {
         .command = "led",
         .help = "The board's LED: [info] | <colour> [effect] [seconds] to show it for a while | "
                 "brightness [<n> [idle]] (saved)",
@@ -308,7 +323,7 @@ const esp_console_cmd_t kCommands[] = {
     },
     {
         .command = "devstatus",
-        .help = "Everything at once: version, info, board, date, led info, wifi info, web, ble info, fido2 info, "
+        .help = "Everything at once: version, info, board, date, battery, led info, wifi info, web, ble info, fido2 info, "
                 "pass info "
                 "(also the site's Device status page)",
         .hint = nullptr,
@@ -346,7 +361,7 @@ const esp_console_cmd_t kCommands[] = {
     },
     {
         .command = "hwinfo",
-        .help = "Print chip and IDs, flash, PSRAM, eFuse, NVS, partitions, temperature, clock, LED",
+        .help = "Print chip and IDs, flash, PSRAM, eFuse, NVS, partitions, temperature, clock, battery, LED",
         .hint = nullptr,
         .func = &CmdHwInfo,
         .argtable = nullptr,

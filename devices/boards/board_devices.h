@@ -7,12 +7,14 @@
 #include "buttons.h"
 #include "clock.h"
 #include "esp_err.h"
+#include "i2c_bus.h"
 
 namespace boards {
 
-// The LED first (red: the firmware is booting), then the clock (a hardware RTC
-// when the board has one and a driver exists, else the timer clock), which
-// seeds the system clock. First thing in app_main.
+// The LED first (red: the firmware is booting), the peripheral rail and the
+// I2C bus, then the clock (a hardware RTC when the board has one and a driver
+// exists, else the timer clock), which seeds the system clock. First thing in
+// app_main.
 esp_err_t Init();
 
 // app_main is done: the LED goes to "ready" (green, breathing, idle ceiling).
@@ -29,6 +31,10 @@ void LedWaitingForUser(UserWait what);
 
 // LED brightness ceilings in percent (config.json `led`); no-op without an LED.
 void SetLedBrightness(uint8_t percent, uint8_t idle_percent);
+
+// The board's I2C bus (RTC, touch, fuel gauge); not Ready() on a board
+// without I2C devices.
+i2cbus::Bus &I2c();
 
 // The clock that carries UTC across reboots. Valid before Init() too (timer).
 rtc::Clock &Clock();

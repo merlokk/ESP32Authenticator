@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <cstring>
 
+#include "battery.h"
 #include "esp_app_desc.h"
 #include "esp_log.h"
 #include "esp_mac.h"
@@ -159,8 +160,9 @@ int AccessDis(uint16_t, uint16_t, ble_gatt_access_ctxt *ctxt, void *) {
 }
 
 int AccessBattery(uint16_t, uint16_t, ble_gatt_access_ctxt *ctxt, void *) {
-    // TODO: real level from the CW2017 fuel gauge.
-    const uint8_t level = 100;
+    // 100 without a gauge reading: the host shows no low-battery warning.
+    const int reading = battery::Level();
+    const uint8_t level = reading < 0 ? 100 : static_cast<uint8_t>(reading);
     return os_mbuf_append(ctxt->om, &level, 1) == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
 }
 

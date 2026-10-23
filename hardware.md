@@ -76,7 +76,7 @@ Power-up order: GPIO1 HIGH → GPIO2 LOW (touch) → GPIO5 pulse (SD).
 | Addr | Device | Notes |
 |---|---|---|
 | 0x5D (alt 0x14) | GT911 touch | Self-loads its config, no upload needed. Portrait-mounted (X 0..480, Y 0..800), so swap XY. Home key is status `0x814E` bit `0x10`. |
-| 0x63 | CW2017 fuel gauge | Reports 0% until the 80-byte BATINFO profile is loaded (regs `0x10`–`0x5F`). SoC is reg `0x04`, VCELL is regs `0x02`/`0x03`. |
+| 0x63 | CW2017 fuel gauge | Reports 0% until the 80-byte BATINFO profile is loaded (regs `0x10`–`0x5F`, flag `0x0B` bit 7); it keeps it while the cell is connected (stock loads the same table). SoC is reg `0x04` (+ `0x05`/256), VCELL is regs `0x02`/`0x03` (14 bits, 312.5 uV). VERSION `0x0F` on our unit. No current register: charging only from GPIO21. |
 | 0x51 | BM8563 RTC | PCF8563-compatible. |
 
 ## eFuse: flashing switches

@@ -167,7 +167,7 @@ Opening the port with RTS asserted resets the chip.
 | `version` | firmware version, build date, IDF version, ELF SHA256, chip, running slot |
 | `info` | short: model, MACs, unique ID, flash size, CPU temperature, USB host (connected = host sends SOF, port open or not), reset reason, uptime |
 | `reboot` | software reset (the USB console reconnects) |
-| `hwinfo` | chip, MACs, eFuse unique ID, flash JEDEC/size, PSRAM, heap, eFuse security/download/USB bits, key blocks, NVS stats, flash layout (bootloader version, partitions, image sizes, gaps), OTA state (running/boot/next slot, rollback, raw otadata), CPU temperature, USB host, reset reason, uptime, clock (hardware RTC, source, RTC timer, clock and system time, drift), LED (as `led info`) |
+| `hwinfo` | chip, MACs, eFuse unique ID, flash JEDEC/size, PSRAM, heap, eFuse security/download/USB bits, key blocks, NVS stats, flash layout (bootloader version, partitions, image sizes, gaps), OTA state (running/boot/next slot, rollback, raw otadata), CPU temperature, USB host, reset reason, uptime, clock (hardware RTC, source, RTC timer, clock and system time, drift), battery (as `battery`), LED (as `led info`) |
 | `spiffs info` | partition address/size, mount point, total/used/free (esp_spiffs_info), file count |
 | `spiffs ls` | SPIFFS files: size, modification time, file/fs totals |
 | `spiffs cat <file>` | print a SPIFFS file as text |
@@ -204,6 +204,8 @@ Opening the port with RTS asserted resets the chip.
 | `fido2 list` | credentials: #, id (first 8 hex digits), resident, algorithm (ES256, EdDSA, Ed25519), site (RP ID, `...` if truncated), user name (display name), its origin: `made <local time> on <authenticator base MAC> by <host BLE identity address>` (`?` for what was not recorded, e.g. credentials made before) |
 | `fido2 delete <#\|id>` | delete one: number from `fido2 list` (1-2 digits) or a unique id prefix (4+ hex digits; numbers shift after a delete) |
 | `fido2 reset` / `fido2 reset confirm` | say what would go / delete every credential and the PIN (counter kept; the file becomes an empty store with the next version). Waits up to 1 s for a running FIDO request, else "busy". Also the way out of a refused store file |
+| `battery [info]` | gauge (CW2017 at 0x63, profile, last init action), voltage (mV), level (%), charging (STAT pin) |
+| `battery regs` / `battery init` | gauge registers 0x00..0x0F and the resident profile, raw / check the profile again (loads it if it differs), reset the gauge |
 | `board` | the board built for (`devices/config.h`): clock, display, touch, LED, battery, SD, frontlight, button and device pins |
 | `led [info]` / `led <colour> [effect] [seconds]` | the board's WS2812: pin, UART, what it shows, ceilings, writes, task stack / show a colour (off white red green blue amber yellow cyan magenta) and effect (solid beacon slow blink fast breathe) for 1..600 s (default 5), then back |
 | `led brightness [<n> [idle]]` | show / set the brightness ceilings in percent, normal and idle (saved) |
@@ -228,7 +230,7 @@ entry for `pin.lockMinutes` (config.json), also across a reboot.
 | `date set [utc] <YYYY-MM-DD> <HH:MM:SS>` | set the clock: local time, or UTC with `utc`; written to the board clock too |
 | `date zone [<name\|rule>]` / `date zones [filter]` | show / set the time zone, a table name or a POSIX TZ rule (saved) / the zone table |
 | `date server <host\|off>` / `date hours <0..168>` | SNTP server / sync interval, `off` or 0: no sync (saved) |
-| `devstatus` | `version`, `info`, `board`, `date`, `led info`, `wifi info`, `web`, `ble info`, `fido2 info` in one dump (also the site's Device status page; its "Full hardware info" button shows `hwinfo`) |
+| `devstatus` | `version`, `info`, `board`, `date`, `battery`, `led info`, `wifi info`, `web`, `ble info`, `fido2 info` in one dump (also the site's Device status page; its "Full hardware info" button shows `hwinfo`) |
 | `config show` | current config as JSON, passwords masked (networks, AP, web) |
 | `config info` | file path, source (file / built-in defaults), why the file was not used |
 | `config reload` / `config save` | re-read config.json (keeps values on error) and apply Wi-Fi (incl. internet check), web, time and LED settings / write current values |

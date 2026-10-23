@@ -45,6 +45,7 @@ add_executable(host_test
     test_timezone.cpp
     test_led.cpp
     test_buttons.cpp
+    test_battery.cpp
     test_pin_policy.cpp
     test_totp.cpp
     test_storefile.cpp
@@ -87,6 +88,7 @@ target_include_directories(host_test PRIVATE
     ../devices/boards
     ../devices/led
     ../devices/buttons
+    ../devices/battery
     ../components/pin_policy
     ../devices/crypto
     ../components/totp
