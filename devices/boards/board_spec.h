@@ -151,7 +151,9 @@ constexpr bool UsableGpio(int8_t gpio) {
     return gpio != 19 && gpio != 20 && !(gpio >= 26 && gpio <= 37);
 }
 
-inline constexpr uint16_t kMaxFidoCredentials = 50;
+// LionKey lists at most 128 credentials of a site and 128 sites
+// (ctap.h: getAssertion, credential management): more could not all be listed.
+inline constexpr uint16_t kMaxFidoCredentials = 128;
 inline constexpr uint16_t kMaxRecords = 1000;
 inline constexpr uint16_t kMaxFidoResetWindowS = 3600;
 
@@ -185,7 +187,7 @@ constexpr const char *CheckPins(const Board &b) {
         }
     }
     if (b.fido_max_credentials < 1 || b.fido_max_credentials > kMaxFidoCredentials) {
-        return "fido_max_credentials out of 1..50";
+        return "fido_max_credentials out of 1..128";
     }
     if (b.max_records < 1 || b.max_records > kMaxRecords) {
         return "max_records out of 1..1000";

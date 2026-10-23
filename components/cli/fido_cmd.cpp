@@ -8,6 +8,7 @@
 #include <ctime>
 
 #include "config.h"
+#include "esp_heap_caps.h"
 #include "fido_ctap.h"
 #include "subcommand.h"
 
@@ -15,12 +16,14 @@ namespace console {
 
 namespace {
 
-constexpr size_t kMaxListed = 16;  // more than the store holds (10)
 constexpr size_t kShortId = 4;     // bytes shown: 8 hex digits
-constexpr size_t kMinPrefix = 4;   // hex digits accepted by delete
+constexpr size_t kMinPrefix = 4;   // hex digits accepted by delete (numbers have 1..3)
 
-// Static: 16 records of ~240 bytes do not belong on the console's stack.
-fido_ctap_credential_t g_list[kMaxListed];
+// As many records (~360 bytes) as the store holds, in PSRAM: up to 125 on the
+// X4 Pro, ~45 KB, not for the console's stack or internal RAM. Kept between
+// commands.
+fido_ctap_credential_t *g_list = nullptr;
+size_t g_capacity = 0;
 
 int Failed(esp_err_t err, const char *what) {
     if (err == ESP_ERR_TIMEOUT) {
@@ -108,7 +111,27 @@ int CmdInfo(int, char **) {
 }
 
 int Load(size_t *count) {
-    const esp_err_t err = fido_ctap_list(g_list, kMaxListed, count);
+    fido_ctap_info_t info;
+    esp_err_t err = fido_ctap_info(&info);
+    if (err != ESP_OK) {
+        return Failed(err, "list");
+    }
+    if (g_capacity < info.max_credentials) {
+        free(g_list);
+        const size_t bytes = info.max_credentials * sizeof(fido_ctap_credential_t);
+        g_list = static_cast<fido_ctap_credential_t *>(
+            heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+        if (g_list == nullptr) {
+            g_list = static_cast<fido_ctap_credential_t *>(malloc(bytes));
+        }
+        g_capacity = g_list != nullptr ? info.max_credentials : 0;
+        if (g_list == nullptr) {
+            printf("list: no memory for %u credentials\n",
+                   static_cast<unsigned>(info.max_credentials));
+            return 1;
+        }
+    }
+    err = fido_ctap_list(g_list, g_capacity, count);
     return err == ESP_OK ? 0 : Failed(err, "list");
 }
 
@@ -214,8 +237,8 @@ int CmdDelete(int argc, char **argv) {
     const char *which = argv[1];
     const size_t length = strlen(which);
     const fido_ctap_credential_t *target = nullptr;
-    // Up to 2 digits is a list number; anything longer is an id prefix.
-    if (length <= 2 && strspn(which, "0123456789") == length) {
+    // Up to 3 digits is a list number; anything longer is an id prefix.
+    if (length <= 3 && strspn(which, "0123456789") == length) {
         const long n = strtol(which, nullptr, 10);
         if (n < 1 || static_cast<size_t>(n) > count) {
             printf("no credential #%s ('fido2 list')\n", which);

@@ -49,6 +49,9 @@ void test_boards_x4_pro(void) {
     TEST_ASSERT_EQUAL_INT(38, kX4.i2c.scl);
     TEST_ASSERT_EQUAL_INT(39, kX4.i2c.sda);
     TEST_ASSERT_EQUAL_UINT16(10, kX4.fido_reset_window_s);
+    // The SD card: below LionKey's 128-entry lists.
+    TEST_ASSERT_EQUAL_UINT16(125, kX4.fido_max_credentials);
+    TEST_ASSERT_TRUE(kX4.fido_max_credentials <= boards::kMaxFidoCredentials);
 }
 
 void test_boards_usable_gpios(void) {

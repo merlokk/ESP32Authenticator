@@ -19,7 +19,7 @@ public:
         battery = BatteryType::kCw2017;
         has_sd_card = true;
         has_frontlight = true;
-        fido_max_credentials = 20;  // SD card; more needs a higher kMaxFidoCredentials
+        fido_max_credentials = 125;  // SD card; RAM log 127 KB of PSRAM, fido.bin up to ~127 KB
         fido_reset_window_s = 10;   // 0 once the e-ink UI confirms a reset
         max_records = 500;          // SD card
 

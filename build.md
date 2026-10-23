@@ -204,7 +204,7 @@ Opening the port with RTS asserted resets the chip.
 | `web write on\|off` | allow / refuse settings changes from the site (saved) |
 | `fido2 [info]` | credentials stored of max (resident), store bytes used of size, file size (encrypted), file version (and the highest seen here) and change time, PIN set, attempts left, minimum length (and how many sites may read it, "change due"), always uv, PIN complexity, built-in UV (not configured), the reset rule (window, button hold), signature counter; when FIDO2 is off, why (e.g. an old store file: rollback) |
 | `fido2 list` | credentials: #, id (first 8 hex digits), resident, algorithm (ES256, EdDSA, Ed25519), site (RP ID, `...` if truncated), user name (display name), its origin: `made <local time> on <authenticator base MAC> by <host BLE identity address>` (`?` for what was not recorded, e.g. credentials made before) |
-| `fido2 delete <#\|id>` | delete one: number from `fido2 list` (1-2 digits) or a unique id prefix (4+ hex digits; numbers shift after a delete) |
+| `fido2 delete <#\|id>` | delete one: number from `fido2 list` (1-3 digits) or a unique id prefix (4+ hex digits; numbers shift after a delete) |
 | `fido2 reset` / `fido2 reset confirm` | say what would go / delete every credential and the PIN (counter kept; the file becomes an empty store with the next version). Waits up to 1 s for a running FIDO request, else "busy". Also the way out of a refused store file |
 | `sd [info]` / `sd ls [dir]` | microSD: card (CID name), size, bus clock, mount point, FAT free of total, or why not mounted / a directory: type, size, local modification time, name (no `..`). Read-only |
 | `battery [info]` | gauge (CW2017 at 0x63, profile, last init action), voltage (mV), level (%), charging (STAT pin) |
