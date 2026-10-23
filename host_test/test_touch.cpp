@@ -54,11 +54,13 @@ void test_touch_config_head(void) {
 }
 
 void test_touch_point(void) {
-    const uint8_t r[gt::kPointSize] = {0x2C, 0x01, 0x90, 0x01, 0x20, 0x00, 0, 0};
+    // Measured on the X4 Pro, the first of two fingers.
+    const uint8_t r[gt::kPointSize] = {0x53, 0x01, 0x52, 0x01, 0x2d, 0x00, 0x00, 0x01};
     const gt::Point p = gt::DecodePoint(r);
-    TEST_ASSERT_EQUAL_UINT16(300, p.x);
-    TEST_ASSERT_EQUAL_UINT16(400, p.y);
-    TEST_ASSERT_EQUAL_UINT16(32, p.size);
+    TEST_ASSERT_EQUAL_UINT16(339, p.x);
+    TEST_ASSERT_EQUAL_UINT16(338, p.y);
+    TEST_ASSERT_EQUAL_UINT16(45, p.size);
+    TEST_ASSERT_EQUAL_UINT8(1, p.id);
 }
 
 }  // namespace

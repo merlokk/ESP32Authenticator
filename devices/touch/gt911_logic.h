@@ -64,19 +64,21 @@ constexpr ConfigHead DecodeConfigHead(const uint8_t (&raw)[kConfigHeadSize]) {
             raw[6]};
 }
 
-// One contact record. X4 Pro: the coordinates start at byte 0 (no track id;
-// FreeInk gt911CoordsAtByte0), the panel is mounted portrait (X 0..480, Y
-// 0..800 on the 800x480 landscape panel).
+// One contact record. X4 Pro (measured): x, y, size little endian from byte 0
+// (FreeInk gt911CoordsAtByte0), byte 6 0, the track id in byte 7 (two
+// fingers: 0 and 1). The panel is mounted portrait: X 0..480, Y 0..800 on the
+// 800x480 landscape screen.
 struct Point {
     uint16_t x;
     uint16_t y;
     uint16_t size;
+    uint8_t id;
 };
 
 constexpr Point DecodePoint(const uint8_t *record) {
     return {static_cast<uint16_t>(record[0] | (record[1] << 8)),
             static_cast<uint16_t>(record[2] | (record[3] << 8)),
-            static_cast<uint16_t>(record[4] | (record[5] << 8))};
+            static_cast<uint16_t>(record[4] | (record[5] << 8)), record[7]};
 }
 
 inline constexpr uint8_t kStatusReady = 0x80;  // a new frame

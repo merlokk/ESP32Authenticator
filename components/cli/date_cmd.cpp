@@ -420,20 +420,17 @@ int CmdLight(int argc, char **argv) {
 
 namespace {
 
-// One frame: status, then each contact raw and decoded both ways (the
-// coordinates at byte 0, as on the X4 Pro, or after a track id at byte 1).
+// One frame: status, then each contact raw and decoded (gt911::DecodePoint).
 void PrintFrame(const touch::Snapshot &s, int64_t at_ms) {
     printf("%6lld ms  status 0x%02x  contacts %u%s\n", at_ms, s.status,
            static_cast<unsigned>(s.status & touch::gt911::kStatusCount),
            (s.status & touch::gt911::kStatusKey) != 0 ? "  home" : "");
     for (uint8_t i = 0; i < s.count; ++i) {
         const uint8_t *r = s.raw + i * touch::gt911::kPointSize;
-        const touch::gt911::Point at0 = touch::gt911::DecodePoint(r);
-        const touch::gt911::Point at1 = touch::gt911::DecodePoint(r + 1);
-        printf("           #%u  %02x %02x %02x %02x %02x %02x %02x %02x  "
-               "@0: x %u y %u size %u  @1: id %u x %u y %u\n",
-               static_cast<unsigned>(i), r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7], at0.x,
-               at0.y, at0.size, static_cast<unsigned>(r[0]), at1.x, at1.y);
+        const touch::gt911::Point p = touch::gt911::DecodePoint(r);
+        printf("           #%u  %02x %02x %02x %02x %02x %02x %02x %02x  id %u x %u y %u size %u\n",
+               static_cast<unsigned>(i), r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7],
+               static_cast<unsigned>(p.id), p.x, p.y, p.size);
     }
 }
 
@@ -465,21 +462,39 @@ int CmdTouch(int argc, char **argv) {
     printf("touch the panel or Home (%ld s)\n", seconds);
     const int64_t start_ms = esp_timer_get_time() / 1000;
     const int64_t end_ms = start_ms + seconds * 1000;
-    uint32_t seen = touch::GetSnapshot().frames;
-    const uint32_t first = seen;
+    // Only frames that differ from the last printed one: a still finger makes
+    // ~100 identical frames a second, and printing them all jams the USB
+    // console (it once stalled the host until a replug).
+    static touch::Snapshot last;  // ~50 bytes, off the console stack
+    last = touch::GetSnapshot();
+    const uint32_t first = last.frames;
+    uint32_t same = 0;
+    bool printed = false;
     while (esp_timer_get_time() / 1000 < end_ms) {
         vTaskDelay(pdMS_TO_TICKS(20));
         const touch::Snapshot s = touch::GetSnapshot();
-        if (s.frames != seen) {
-            if (s.frames - seen > 1) {
-                printf("           (%lu frame(s) between)\n",
-                       static_cast<unsigned long>(s.frames - seen - 1));
-            }
-            seen = s.frames;
-            PrintFrame(s, esp_timer_get_time() / 1000 - start_ms);
+        if (s.frames == last.frames) {
+            continue;
         }
+        const bool changed = !printed || s.status != last.status || s.count != last.count ||
+                             memcmp(s.raw, last.raw, s.count * touch::gt911::kPointSize) != 0;
+        if (!changed) {
+            same += s.frames - last.frames;
+            last.frames = s.frames;
+            continue;
+        }
+        if (same > 0) {
+            printf("           (%lu same frame(s))\n", static_cast<unsigned long>(same));
+            same = 0;
+        }
+        last = s;
+        printed = true;
+        PrintFrame(s, esp_timer_get_time() / 1000 - start_ms);
     }
-    printf("%lu new frame(s)\n", static_cast<unsigned long>(seen - first));
+    if (same > 0) {
+        printf("           (%lu same frame(s))\n", static_cast<unsigned long>(same));
+    }
+    printf("%lu new frame(s)\n", static_cast<unsigned long>(last.frames - first));
     return 0;
 }
 
