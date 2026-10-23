@@ -29,7 +29,7 @@ Target and status. Screen design and the open questions: [x4-design.md](x4-desig
 | UI | LVGL 9 (`components/ui`: library up, no display driver yet; today: USB console + web site) |
 | Host link | BLE HID keyboard (types credentials), BLE FIDO2 (CTAP2) |
 | Network | Wi-Fi (client / AP / AP+client) and a configuration web site |
-| Storage | `config.json` on SPIFFS; store files (`vault.bin`, `fido.bin`, encrypted) on the SD card when the board has one, else SPIFFS |
+| Storage | `config.json` on SPIFFS; store files (`vault.bin`, `fido.bin`, encrypted) in `/sdcard/.authenticator` when the board has a card slot (no card: no stores, never a second set on SPIFFS), else SPIFFS |
 
 Reference ESP-IDF + LVGL project: `../../ai-remote/approver-esp32` ([GitHub](https://github.com/merlokk/ai-remote/tree/main/approver-esp32)).
 
@@ -396,8 +396,9 @@ our fork [merlokk/lionkey](https://github.com/merlokk/lionkey), branch
 ## Passwords
 
 `components/vault`: `vault.bin` in the store directory (`StorageDir()` in
-`main.cpp`: the SD card when the board has one, else SPIFFS; the card is
-mounted, the store files are not on it yet, so none on the X4 Pro).
+`main.cpp`: `/sdcard/.authenticator` when the board has a card slot, made
+at boot; no card or not mounted: no stores until a reboot with one; else
+SPIFFS).
 
 - Records (`records.h`, pure, host-tested): site (1-96 bytes), user (0-96),
   password (0-128), TOTP secret (Base32, normalized, up to 64 characters;

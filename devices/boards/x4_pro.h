@@ -18,7 +18,7 @@ public:
         battery = BatteryType::kCw2017;
         has_sd_card = true;
         has_frontlight = true;
-        fido_max_credentials = 20;  // SPIFFS; more once the SD card driver exists
+        fido_max_credentials = 20;  // SD card; more needs a higher kMaxFidoCredentials
         fido_reset_window_s = 10;   // 0 once the e-ink UI confirms a reset
         max_records = 500;          // SD card
 

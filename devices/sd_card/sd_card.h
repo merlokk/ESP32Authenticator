@@ -13,6 +13,8 @@
 namespace sd_card {
 
 inline constexpr const char *kBasePath = "/sdcard";
+// The store files (fido.bin, vault.bin; encrypted), apart from the reader's.
+inline constexpr const char *kStoreDir = "/sdcard/.authenticator";
 
 // After boards::Init. Not fatal: Mounted() is false and Status() says why.
 esp_err_t Init();

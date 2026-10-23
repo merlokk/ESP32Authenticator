@@ -1,3 +1,5 @@
+#include <sys/stat.h>
+
 #include <cstdio>
 #include <cstring>
 
@@ -49,12 +51,21 @@ void InitNvs() {
     ESP_ERROR_CHECK(err);
 }
 
-// Where store files (fido.bin, vault.bin) live: the SD card when the board has
-// one, else SPIFFS. nullptr when that file system is not mounted.
+// Where store files (fido.bin, vault.bin) live: /sdcard/.authenticator when the
+// board has a card slot, else SPIFFS. nullptr when that file system is not
+// mounted: no card is no stores, never a second set on SPIFFS.
 const char *StorageDir() {
     if (boards::kBoard.has_sd_card) {
-        ESP_LOGE(TAG, "SD card: no driver yet, no store files");
-        return nullptr;
+        if (!sd_card::Mounted()) {
+            ESP_LOGE(TAG, "SD card: %s, no store files", sd_card::Name(sd_card::Status()));
+            return nullptr;
+        }
+        struct stat st = {};
+        if (stat(sd_card::kStoreDir, &st) != 0 && mkdir(sd_card::kStoreDir, 0775) != 0) {
+            ESP_LOGE(TAG, "SD card: cannot create %s, no store files", sd_card::kStoreDir);
+            return nullptr;
+        }
+        return sd_card::kStoreDir;
     }
     return spiffs_fs::Mounted() ? spiffs_fs::kBasePath : nullptr;
 }

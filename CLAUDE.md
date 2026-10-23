@@ -22,7 +22,8 @@ Firmware: C/C++ on **ESP-IDF**.
   green breathing when ready, blue while typing, yellow
   blinking for the FIDO2 button); TOTP codes on the console (`totp`); battery: CW2017 gauge (voltage, level) and
   charger STAT on a leased I2C bus (`battery`, BLE Battery Level); microSD
-  (SDMMC, FAT at `/sdcard`, read-only `sd`); LVGL 9 library (no display driver);
+  (SDMMC, FAT at `/sdcard`, read-only `sd`), the store files in
+  `/sdcard/.authenticator` on the X4 Pro (no card: no stores); LVGL 9 library (no display driver);
   password records (site/user/password/TOTP) in `vault.bin` with
   add/edit/delete on the console (`pass`) and the web site (with FIDO2
   credentials and TOTP codes); `vault.bin` and `fido.bin` are
@@ -35,8 +36,7 @@ Firmware: C/C++ on **ESP-IDF**.
   hmac-secret-mc, pcmr, attestation formats, encIdentifier, built-in UV
   plumbing (`uv: false`); see
   lionkey-update-plan.md.
-- Not yet: e-ink UI (LVGL), eFuse-bound key, sync over Wi-Fi, store files on
-  the SD card (the card is mounted: `sd`).
+- Not yet: e-ink UI (LVGL), eFuse-bound key, sync over Wi-Fi.
 
 ## Architecture
 
