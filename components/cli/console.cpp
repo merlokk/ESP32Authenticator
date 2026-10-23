@@ -19,6 +19,7 @@
 #include "board_devices.h"
 #include "date_cmd.h"
 #include "totp_cmd.h"
+#include "power.h"
 #include "ui.h"
 #include "fido_cmd.h"
 #include "pass_cmd.h"
@@ -43,7 +44,19 @@ constexpr const char *TAG = "cli";
 // Commands kept for the up-arrow (esp_console's default).
 constexpr int kHistoryLength = 32;
 
-int CmdUi(int, char **) {
+int CmdOff(int, char **) {
+    const esp_err_t err = power::RequestOff();
+    printf("%s\n", err == ESP_OK ? "powering off (Power wakes it)" : esp_err_to_name(err));
+    return err == ESP_OK ? 0 : 1;
+}
+
+int CmdUi(int argc, char **argv) {
+    if (argc == 2 && strcmp(argv[1], "wallpaper") == 0) {
+        const char *shown = "";
+        const esp_err_t err = ui::PreviewWallpaper(&shown);
+        printf("%s: %s\n", shown[0] != '\0' ? shown : "wallpaper", esp_err_to_name(err));
+        return err == ESP_OK ? 0 : 1;
+    }
     ui::PrintInfo();
     return 0;
 }
@@ -321,8 +334,10 @@ const esp_console_cmd_t kCommands[] = {
     },
     {
         .command = "sd",
-        .help = "microSD card (read-only): [info] card, size, clock, FAT free | ls [dir]",
-        .hint = "[info | ls [dir]]",
+        .help = "microSD card (read-only but wallpapers): [info] card, size, clock, FAT free | "
+                "ls [dir] | put <name.png> <length> <crc32> (base64 line, utils/wallpaper.py) | "
+                "rm <name.png> (in /sdcard/wallpapers)",
+        .hint = "[info | ls [dir] | put <name.png> <len> <crc32> | rm <name.png>]",
         .func = &CmdSd,
         .argtable = nullptr,
         .func_w_context = nullptr,
@@ -349,9 +364,20 @@ const esp_console_cmd_t kCommands[] = {
         .context = nullptr,
     },
     {
-        .command = "ui",
-        .help = "LVGL display: size, refreshes, the last one, the ui task's free stack",
+        .command = "off",
+        .help = "Power off: a random PNG from /sdcard/wallpapers on the screen, deep sleep; "
+                "the Power button wakes it (a reboot). Also: Power held",
         .hint = nullptr,
+        .func = &CmdOff,
+        .argtable = nullptr,
+        .func_w_context = nullptr,
+        .context = nullptr,
+    },
+    {
+        .command = "ui",
+        .help = "LVGL display: [info] size, refreshes, the last one, the ui task's free stack | "
+                "wallpaper: draw a random power-off wallpaper now (stays on)",
+        .hint = "[wallpaper]",
         .func = &CmdUi,
         .argtable = nullptr,
         .func_w_context = nullptr,

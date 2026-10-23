@@ -46,6 +46,7 @@ add_executable(host_test
     test_touch.cpp
     test_epd.cpp
     test_ui.cpp
+    test_wallpaper.cpp
     test_boards.cpp
     test_timesync.cpp
     test_timezone.cpp
@@ -101,6 +102,7 @@ target_include_directories(host_test PRIVATE
     ../devices/touch
     ../devices/epd
     ../components/ui
+    ../components/power
     ../components/pin_policy
     ../devices/crypto
     ../components/totp

@@ -18,6 +18,7 @@
 #include "frontlight.h"
 #include "keypad.h"
 #include "nvs_flash.h"
+#include "power.h"
 #include "sd_card.h"
 #include "spiffs_fs.h"
 #include "store_io.h"
@@ -148,17 +149,23 @@ void InitVault(const char *dir) {
     }
 }
 
-// Button bindings, from the keypad task. Power x2: the frontlight on / off.
+// Button bindings, from the keypad task. Power x2: the frontlight on / off;
+// Power held: off (wallpaper, deep sleep).
 void OnKey(const buttons::KeyEvent &e) {
-    if (e.key == static_cast<uint8_t>(boards::ButtonId::kPower) &&
-        e.kind == buttons::Kind::kClick && e.count == 2) {
+    if (e.key != static_cast<uint8_t>(boards::ButtonId::kPower)) {
+        return;
+    }
+    if (e.kind == buttons::Kind::kClick && e.count == 2) {
         frontlight::Toggle();
+    } else if (e.kind == buttons::Kind::kLong) {
+        power::RequestOff();
     }
 }
 
 }  // namespace
 
 extern "C" void app_main() {
+    power::Boot();  // the pins latched through the last deep sleep, released
     boards::Init();  // LED red; the board's clock seeds the system clock (UTC)
     battery::Init();  // not fatal: `battery` reports a missing gauge
     sd_card::Init();  // not fatal: `sd` says why it is not mounted

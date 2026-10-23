@@ -25,8 +25,10 @@ Firmware: C/C++ on **ESP-IDF**.
   off at boot, Power x2 toggles, `light`); e-ink panel driver (UC8179 /
   UC8279 / SSD1677 detected, full and fast refresh, `epd`); battery: CW2017 gauge (voltage, level) and
   charger STAT on a leased I2C bus (`battery`, BLE Battery Level); microSD
-  (SDMMC, FAT at `/sdcard`, read-only `sd`), the store files in
-  `/sdcard/.authenticator` on the X4 Pro (no card: no stores); LVGL 9 on the e-ink panel (480x800 portrait, boot screen, `ui`);
+  (SDMMC, FAT at `/sdcard`, `sd` read-only but wallpapers), the store files in
+  `/sdcard/.authenticator` on the X4 Pro (no card: no stores); LVGL 9 on the e-ink panel (480x800 portrait, boot screen, `ui`); power-off
+  (Power held / `off`): a random PNG from `/sdcard/wallpapers` (dithered), deep
+  sleep, Power wakes;
   password records (site/user/password/TOTP) in `vault.bin` with
   add/edit/delete on the console (`pass`) and the web site (with FIDO2
   credentials and TOTP codes); `vault.bin` and `fido.bin` are

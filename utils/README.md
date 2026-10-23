@@ -15,6 +15,7 @@ All tools take `-p <port>` (e.g. `COM6`) and exit with 1 when the device reports
 | `device.py` | Console session used by the tools: opens the port with DTR/RTS released (RTS resets the chip), answers smart-mode cursor queries, switches the console to `term dumb`, streams command output line by line. Writes time out after 2 s (a hung app does not read its console) |
 | `console.py` | Any console command (`wifi`, `web`, `config`, `devstatus`, ...), or the raw log without writing |
 | `spiffs.py` | SPIFFS files |
+| `wallpaper.py` | power-off wallpapers (PNG) in `/sdcard/wallpapers` |
 | `ble.py` | BLE stack, pairing, host switching, keyboard |
 
 ## console.py
@@ -54,6 +55,16 @@ python utils/spiffs.py -p COM6 rm <remote>
 - `get`: `spiffs catbase64`, decoded line by line.
 - `put`: `spiffs write <file> <length> <crc32>`; sends base64 in 192-char blocks and waits for the device's `.` ack after each (its RX buffer is 256 bytes and drops overflow). The device checks length and CRC32 (zlib) and removes the file on mismatch.
 - Files are streamed in chunks on both sides, never loaded whole.
+
+## wallpaper.py
+
+```powershell
+python utils/wallpaper.py -p COM6 put assets/*.png   # globs expanded here (cmd.exe does not)
+python utils/wallpaper.py -p COM6 ls
+python utils/wallpaper.py -p COM6 rm <name.png>
+```
+
+- `put`: `sd put <name> <length> <crc32>`, the same base64 stream as `spiffs.py put` (~100 KB/s). Plain `*.png` names without spaces; the device turns them to 1 bit itself.
 
 ## ble.py
 

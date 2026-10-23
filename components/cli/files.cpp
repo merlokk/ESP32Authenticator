@@ -314,35 +314,7 @@ int CmdWrite(int argc, char **argv) {
         printf("path too long\n");
         return 1;
     }
-    FILE *f = fopen(path, "wb");
-    if (f == nullptr) {
-        printf("cannot create %s\n", path);
-        return 1;
-    }
-
-    printf("ready: send base64, end with Enter\n");
-    fflush(stdout);
-    Base64Writer writer(f);
-    bool acked = false;
-    const char *error = ReceiveBase64Line(writer, &acked);
-    fclose(f);
-    if (acked) {
-        printf("\n");  // end the line of '.' acks
-    }
-
-    if (error == nullptr && check &&
-        (writer.length() != want_length || writer.crc() != want_crc)) {
-        error = "length/crc32 mismatch";
-    }
-    if (error != nullptr) {
-        remove(path);
-        printf("error: %s (got %u bytes, crc32 %08" PRIx32 "), file removed\n", error,
-               static_cast<unsigned>(writer.length()), writer.crc());
-        return 1;
-    }
-    printf("ok %u bytes, crc32 %08" PRIx32 "\n", static_cast<unsigned>(writer.length()),
-           writer.crc());
-    return 0;
+    return ReceiveFile(path, want_length, want_crc, check);
 }
 
 int CmdRm(int argc, char **argv) {
@@ -411,6 +383,38 @@ constexpr Subcommand kSubcommands[] = {
 };
 
 }  // namespace
+
+int ReceiveFile(const char *path, size_t want_length, uint32_t want_crc, bool check) {
+    FILE *f = fopen(path, "wb");
+    if (f == nullptr) {
+        printf("cannot create %s\n", path);
+        return 1;
+    }
+
+    printf("ready: send base64, end with Enter\n");
+    fflush(stdout);
+    Base64Writer writer(f);
+    bool acked = false;
+    const char *error = ReceiveBase64Line(writer, &acked);
+    fclose(f);
+    if (acked) {
+        printf("\n");  // end the line of '.' acks
+    }
+
+    if (error == nullptr && check &&
+        (writer.length() != want_length || writer.crc() != want_crc)) {
+        error = "length/crc32 mismatch";
+    }
+    if (error != nullptr) {
+        remove(path);
+        printf("error: %s (got %u bytes, crc32 %08" PRIx32 "), file removed\n", error,
+               static_cast<unsigned>(writer.length()), writer.crc());
+        return 1;
+    }
+    printf("ok %u bytes, crc32 %08" PRIx32 "\n", static_cast<unsigned>(writer.length()),
+           writer.crc());
+    return 0;
+}
 
 int CmdSpiffs(int argc, char **argv) {
     return Dispatch(kSubcommands, argc, argv,

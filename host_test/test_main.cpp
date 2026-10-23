@@ -20,6 +20,7 @@ void RegisterFrontlightTests(void);
 void RegisterTouchTests(void);
 void RegisterEpdTests(void);
 void RegisterUiTests(void);
+void RegisterWallpaperTests(void);
 void RegisterBoardTests(void);
 void RegisterTimesyncTests(void);
 void RegisterTimezoneTests(void);
@@ -73,6 +74,7 @@ int main(int argc, char **argv) {
     if (Wanted("touch")) RegisterTouchTests();
     if (Wanted("epd")) RegisterEpdTests();
     if (Wanted("ui")) RegisterUiTests();
+    if (Wanted("wallpaper")) RegisterWallpaperTests();
     if (Wanted("boards")) RegisterBoardTests();
     if (Wanted("timesync")) RegisterTimesyncTests();
     if (Wanted("timezone")) RegisterTimezoneTests();

@@ -20,6 +20,7 @@ Target and status. Screen design and the open questions: [x4-design.md](x4-desig
 | Time: SNTP, zones, clock | done |
 | Battery: voltage, level, charging | done (CW2017 + charger STAT, console `battery`, BLE Battery Level); screen not yet |
 | Wi-Fi, configuration site, console | done |
+| Power-off: a wallpaper on the screen, deep sleep, Power wakes | done (Power held or `off`; PNGs in `/sdcard/wallpapers`) |
 
 ## Stack
 
@@ -38,10 +39,10 @@ Reference ESP-IDF + LVGL project: `../../ai-remote/approver-esp32` ([GitHub](htt
 | Path | Contents |
 |---|---|
 | `main/` | `app_main`: OTA self-confirm, NVS, SPIFFS, config, console, Wi-Fi manager + web server, BLE autostart |
-| `components/` | app components (`cli`: USB command line; `config`: config.json; `wifimgr`: Wi-Fi policy + manager; `web`: configuration site, see Wi-Fi and web; `fido_ctap`: CTAP 2.3 core, see FIDO2; `timesync`, `timezone`: see Time; `totp`: Base32 / Base64 secrets and the previous/current/next windows, codes from `crypto::Totp`; `ui`: LVGL, see UI; `storefile`: store file header, load/save with the rollback check; `vault`: passwords, see Passwords) |
+| `components/` | app components (`cli`: USB command line; `config`: config.json; `wifimgr`: Wi-Fi policy + manager; `web`: configuration site, see Wi-Fi and web; `fido_ctap`: CTAP 2.3 core, see FIDO2; `timesync`, `timezone`: see Time; `totp`: Base32 / Base64 secrets and the previous/current/next windows, codes from `crypto::Totp`; `ui`: LVGL and the power-off wallpaper, see UI; `power`: power-off, see UI; `storefile`: store file header, load/save with the rollback check; `vault`: passwords, see Passwords) |
 | `lib/` | third-party git submodules (`lionkey`: our fork, see FIDO2) |
 | `host_test/` | host tests (Unity, MSVC), no board: see Tests |
-| `utils/` | host-side Python tools over the USB console (`device.py`: console session; `spiffs.py`: ls/info/rm/get/put; `ble.py`: ble commands, `kb` text quoting) |
+| `utils/` | host-side Python tools over the USB console (`device.py`: console session; `spiffs.py`: ls/info/rm/get/put; `wallpaper.py`: wallpapers on the card; `ble.py`: ble commands, `kb` text quoting) |
 | `devices/` | hardware drivers, one component per device (`hardware`: SoC info, eFuse, USB host connected; `spiffs_fs`: SPIFFS on `spiffs` at `/spiffs`, never formatted, it holds stock data on the X4 Pro; `ble`, `ble_kb`, `ble_fido`: see BLE; `wifi`: the radio (`wifi::Radio`), no decisions, stores nothing; `buttons`: GPIO buttons, polled, debounced 25 ms (`button_logic.h`, pure: debounce, short/long press from approver-esp32; single/double/... press: `MultiPress`, 400 ms gap; `key_events.h`, pure: one `KeyTracker` per button: pressed / released edges, long at 600 ms (fired while held), click xN 400 ms after the last release, a press is long or a click, never both; a finger down at boot is no press), pins from the board; `keypad`: the one owner of the board's buttons, a task polling every 10 ms, events in a queue (16, full: dropped and counted) for the UI, listeners called from the task (bindings), `Pressed()` / `HeldMs()` for the rest (FIDO2 presence), console `keys`; `crypto`: hardware RNG, SHA-256, AES-256-CBC, AES-256-GCM, HMAC-SHA1 via PSA, HOTP/TOTP (`otp.h`, pure: counter, truncation); `clock`: `rtc::Clock`, see Time; `led`: one WS2812 from UART1, see Boards; `i2c_bus`: the board's I2C bus, leased (from approver-esp32), see Boards; `battery`: CW2017 fuel gauge and charger STAT, see Boards; `sd_card`: microSD over SDMMC, FAT at `/sdcard`, see Boards; `frontlight`: cool and warm LED strings on LEDC, see Boards; `touch`: the GT911 on the leased I2C bus (`gt911_logic.h`, pure), polled by the keypad task, see Boards; `epd`: the e-ink panel (SSD1677 / UC8179 / UC8279, detected), see Boards; `boards`: board classes, see Boards). `devices/config.h`: the board the firmware is built for |
 
 ## Config
@@ -266,6 +267,24 @@ stack, priority 3) runs `lv_timer_handler`; other tasks touch widgets only
 inside `ui::Lock` / `ui::Unlock`. Measured on the X4 Pro (UC8179): turn 61 ms,
 full refresh 1.9 s, stack used ~3.4 KB. No input device yet (GT911 touch).
 Console `ui`; version in `version`.
+
+Power-off (`components/power`): the X4 Pro has no power switch, so "off" is
+deep sleep. Power held (600 ms, the keypad's long press) or console `off`:
+the ui task stops (its lock is never given back), frontlight off, a random
+PNG from `/sdcard/wallpapers` (the stock firmware's folder) on the panel
+(full refresh), the panel in deep sleep, wait for Power to be released, then
+RTC ext1 wake on Power (low, RTC pull-up) and deep sleep. Held through sleep
+(`power_logic.h`, as FreeInk's PowerManager): EPD RST high, SD and touch
+power off; `power::Boot()` releases them first thing at boot. A wake is a
+reboot: the boot screen, the PIN again. Wallpaper (`wallpaper.cpp`,
+`wallpaper_logic.h` pure): the PNG read whole into PSRAM (up to 4 MB),
+LVGL's lodepng (`LV_USE_LODEPNG`; it returns an `lv_draw_buf_t`, RGBA),
+grey (BT.601, alpha on white), centred (480x800 fills; larger is cropped),
+Atkinson dither (cleaner whites than Floyd-Steinberg on engravings), turned
+onto the panel. No folder or no PNG: the screen stays as it was. Console
+`ui wallpaper` draws one without sleeping; `sd put` / `sd rm`
+(`utils/wallpaper.py`) write only plain `*.png` names into the folder: the
+rest of the card stays read-only to the console.
 
 ## BLE
 

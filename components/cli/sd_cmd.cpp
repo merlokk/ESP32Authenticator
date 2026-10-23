@@ -4,10 +4,13 @@
 #include <sys/stat.h>
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <ctime>
 
+#include "files.h"
 #include "sd_card.h"
+#include "wallpaper_logic.h"
 
 namespace console {
 
@@ -65,6 +68,56 @@ int CmdLs(const char *rel) {
     return 0;
 }
 
+// Writes and deletes only wallpapers (plain *.png names in /sdcard/wallpapers):
+// the rest of the card, the store files above all, stays read-only here.
+bool WallpaperPath(const char *name, char *path, size_t size) {
+    if (!sd_card::Mounted()) {
+        printf("sd card    %s\n", sd_card::Name(sd_card::Status()));
+        return false;
+    }
+    if (!ui::wallpaper::IsImageName(name)) {
+        printf("name: a plain *.png name (written to %s)\n", ui::wallpaper::kDir);
+        return false;
+    }
+    const int n = snprintf(path, size, "%s/%s", ui::wallpaper::kDir, name);
+    if (n < 0 || static_cast<size_t>(n) >= size) {
+        printf("name too long\n");
+        return false;
+    }
+    return true;
+}
+
+int CmdPut(const char *name, size_t length, uint32_t crc) {
+    static char path[kPathSize];
+    if (!WallpaperPath(name, path, sizeof path)) {
+        return 1;
+    }
+    if (length > ui::wallpaper::kMaxFileBytes) {
+        printf("over %u KB: the device reads a wallpaper whole\n",
+               static_cast<unsigned>(ui::wallpaper::kMaxFileBytes / 1024));
+        return 1;
+    }
+    struct stat st = {};
+    if (stat(ui::wallpaper::kDir, &st) != 0 && mkdir(ui::wallpaper::kDir, 0775) != 0) {
+        printf("cannot create %s\n", ui::wallpaper::kDir);
+        return 1;
+    }
+    return ReceiveFile(path, length, crc, true);
+}
+
+int CmdRm(const char *name) {
+    static char path[kPathSize];
+    if (!WallpaperPath(name, path, sizeof path)) {
+        return 1;
+    }
+    if (remove(path) != 0) {
+        printf("cannot remove %s\n", path);
+        return 1;
+    }
+    printf("removed %s\n", path);
+    return 0;
+}
+
 }  // namespace
 
 int CmdSd(int argc, char **argv) {
@@ -75,7 +128,13 @@ int CmdSd(int argc, char **argv) {
     if (strcmp(argv[1], "ls") == 0 && argc <= 3) {
         return CmdLs(argc == 3 ? argv[2] : "");
     }
-    printf("usage: sd [info] | sd ls [dir]\n");
+    if (strcmp(argv[1], "put") == 0 && argc == 5) {
+        return CmdPut(argv[2], strtoul(argv[3], nullptr, 0), strtoul(argv[4], nullptr, 16));
+    }
+    if (strcmp(argv[1], "rm") == 0 && argc == 3) {
+        return CmdRm(argv[2]);
+    }
+    printf("usage: sd [info] | sd ls [dir] | sd put <name.png> <length> <crc32> | sd rm <name.png>\n");
     return 1;
 }
 

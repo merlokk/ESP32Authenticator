@@ -66,6 +66,7 @@ status changes, a full refresh now and then against ghosting (driver's choice).
 - Locking the screen (idle, sleep) keeps the key and the decrypted data in
   RAM: FIDO2 keeps working on a locked device (user presence: the button).
   Light sleep keeps RAM; deep sleep or power-off is a reboot (PIN again).
+  Power-off (Power held) shows a random wallpaper from `/sdcard/wallpapers`.
 - A special **wipe PIN** (config) erases the store and the FIDO2 credentials
   (as `fido2 reset`) and the key in RAM when typed on the PIN pad.
   It has to be checked before anything is decrypted, so config keeps only a

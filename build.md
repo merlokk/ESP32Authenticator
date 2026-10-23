@@ -51,7 +51,7 @@ idf.py -p COM6 flash
 
 ## Utils
 
-`utils/` (Python 3, `pip install -r utils/requirements.txt`): console helpers (`console.py`: any command or the raw log; `spiffs.py`; `ble.py`), see [utils/README.md](utils/README.md).
+`utils/` (Python 3, `pip install -r utils/requirements.txt`): console helpers (`console.py`: any command or the raw log; `spiffs.py`; `wallpaper.py`; `ble.py`), see [utils/README.md](utils/README.md).
 Transfers are streamed in chunks, files are never loaded whole. `device.py` answers smart-mode cursor queries and switches the console to `term dumb` on connect.
 
 ```powershell
@@ -60,6 +60,8 @@ python utils/spiffs.py -p COM6 info
 python utils/spiffs.py -p COM6 rm <remote>
 python utils/spiffs.py -p COM6 get <remote> [local]
 python utils/spiffs.py -p COM6 put <local> [remote]
+python utils/wallpaper.py -p COM6 put assets/*.png   # power-off wallpapers to the SD card
+python utils/wallpaper.py -p COM6 ls | rm <name.png>
 python utils/ble.py -p COM6 on | off | info | bonds | conns | disconnect
 python utils/ble.py -p COM6 pair [seconds]     # waits, prints the passkey
 python utils/ble.py -p COM6 pair [seconds] --bg | pair stop
@@ -216,10 +218,12 @@ Opening the port with RTS asserted resets the chip.
 | `fido2 list` | credentials: #, id (first 8 hex digits), resident, algorithm (ES256, EdDSA, Ed25519), site (RP ID, `...` if truncated), user name (display name), its origin: `made <local time> on <authenticator base MAC> by <host BLE identity address>` (`?` for what was not recorded, e.g. credentials made before) |
 | `fido2 delete <#\|id>` | delete one: number from `fido2 list` (1-3 digits) or a unique id prefix (4+ hex digits; numbers shift after a delete) |
 | `fido2 reset` / `fido2 reset confirm` | say what would go / delete every credential and the PIN (counter kept; the file becomes an empty store with the next version). Waits up to 1 s for a running FIDO request, else "busy". Also the way out of a refused store file |
-| `sd [info]` / `sd ls [dir]` | microSD: card (CID name), size, bus clock, mount point, FAT free of total, or why not mounted / a directory: type, size, local modification time, name (no `..`). Read-only |
+| `sd [info]` / `sd ls [dir]` / `sd put <name.png> <length> <crc32>` / `sd rm <name.png>` | microSD: card (CID name), size, bus clock, mount point, FAT free of total, or why not mounted / a directory: type, size, local modification time, name (no `..`) / a wallpaper into `/sdcard/wallpapers` (one base64 line, as `spiffs write`; `utils/wallpaper.py`) / deletes one. Read-only but the wallpapers |
 | `light [info]` / `light <1..100> [warmth]` / `light warmth <0..100>` / `light on\|off` | the frontlight: on/off, level, PWM duty per string / set the level (warmth 0 cool .. 100 warm, saved to `frontlight`) and light it / now only, not saved. Off at boot; Power x2 toggles. Fades 250 ms |
 | `epd [info]` / `epd test [orient\|corners\|edges\|checker\|black\|white] [full\|fast]` / `epd sleep` | the e-ink panel: controller, both probe passes (FLG, VER), the stock screenType, refreshes and the last duration / draw a test frame (orient: which way is up; corners, edges: what the bezel hides) / deep sleep, the picture stays |
 | `touch [info]` / `touch watch [s]` | the GT911: address, product, firmware, panel size, vendor, config head (version, output size, contacts, INT mode), frames and read errors, Home / each new frame that differs from the last for 1..120 s (repeats only counted: printing ~100 frames a second jammed the USB console until a replug): status, contacts raw and decoded (id, x, y, size) |
+| `ui [info]` / `ui wallpaper` | LVGL display: size, refreshes, the last one, the turn time, the ui task's free stack / draw a random power-off wallpaper now, staying on |
+| `off` | power-off: a wallpaper, deep sleep; Power wakes (a reboot). Also Power held |
 | `keys [info]` / `keys watch [s]` | the buttons: GPIO, raw and debounced level, held time, queue / events from now on for 1..120 s (default 10): pressed, released, long, click xN |
 | `battery [info]` | gauge (CW2017 at 0x63, profile, last init action), voltage (mV), level (%), charging (STAT pin) |
 | `battery regs` / `battery init` | gauge registers 0x00..0x0F and the resident profile, raw / check the profile again (loads it if it differs), reset the gauge |

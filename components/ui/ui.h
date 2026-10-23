@@ -20,6 +20,15 @@ bool HasDisplay();
 void Lock();
 void Unlock();
 
+// A random PNG from /sdcard/wallpapers (wallpaper_logic.h), dithered, full
+// refresh; blocks for seconds. The caller holds Lock, or the ui task may draw
+// over it. ESP_ERR_NOT_FOUND: no folder or no PNG in it.
+esp_err_t ShowWallpaper();
+// Console `ui wallpaper`: ShowWallpaper in a task of its own (under Lock),
+// waits for it; `shown` is the file. The device stays on; the next LVGL
+// change draws over it.
+esp_err_t PreviewWallpaper(const char **shown);
+
 // "9.4.0".
 const char *LvglVersion();
 

@@ -68,15 +68,9 @@ def cmd_get(dev: Device, args) -> int:
     return 0
 
 
-def cmd_put(dev: Device, args) -> int:
-    remote = args.remote or os.path.basename(args.local)
-    size = os.path.getsize(args.local)
-    crc = 0
-    with open(args.local, "rb") as f:
-        for chunk in iter(lambda: f.read(CHUNK), b""):
-            crc = zlib.crc32(chunk, crc)
-
-    dev.send_command(f"spiffs write {remote} {size} {crc:08x}")
+def send_file(dev: Device, local: str, command: str) -> int:
+    """Runs `command` (a write that takes one base64 line) and streams `local`."""
+    dev.send_command(command)
     # The "ready" line usually arrives whole; wait for its end only if not.
     got = dev.read_until(b"ready")
     if b"\n" not in got.split(b"ready", 1)[1]:
@@ -84,7 +78,7 @@ def cmd_put(dev: Device, args) -> int:
     # Flow control (see spiffs write in components/cli/files.cpp): send one
     # ACK_BLOCK of base64 at a time and wait for the device's '.' after each.
     pending = b""
-    with open(args.local, "rb") as f:
+    with open(local, "rb") as f:
         for chunk in iter(lambda: f.read(CHUNK), b""):
             pending += base64.b64encode(chunk)
             while len(pending) >= ACK_BLOCK:
@@ -96,6 +90,20 @@ def cmd_put(dev: Device, args) -> int:
     result = [line for line in dev.lines(skip_echo=False) if line.strip(".")]
     print("\n".join(result))
     return 0 if any(line.startswith("ok ") for line in result) else 1
+
+
+def size_and_crc(local: str) -> tuple[int, int]:
+    crc = 0
+    with open(local, "rb") as f:
+        for chunk in iter(lambda: f.read(CHUNK), b""):
+            crc = zlib.crc32(chunk, crc)
+    return os.path.getsize(local), crc
+
+
+def cmd_put(dev: Device, args) -> int:
+    remote = args.remote or os.path.basename(args.local)
+    size, crc = size_and_crc(args.local)
+    return send_file(dev, args.local, f"spiffs write {remote} {size} {crc:08x}")
 
 
 def main() -> int:
