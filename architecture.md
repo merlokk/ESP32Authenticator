@@ -27,7 +27,7 @@ Target and status. Screen design and the open questions: [x4-design.md](x4-desig
 | Layer | Choice |
 |---|---|
 | Framework | ESP-IDF (C/C++) |
-| UI | LVGL 9 (`components/ui`: 480x800 portrait on the e-ink panel, boot screen; no touch input yet; today: USB console + web site) |
+| UI | LVGL 9 (`components/ui`: 480x800 portrait on the e-ink panel, boot screen; GT911 touch as the pointer; today: USB console + web site) |
 | Host link | BLE HID keyboard (types credentials), BLE FIDO2 (CTAP2) |
 | Network | Wi-Fi (client / AP / AP+client) and a configuration web site |
 | Storage | `config.json` on SPIFFS; store files (`vault.bin`, `fido.bin`, encrypted) in `/sdcard/.authenticator` when the board has a card slot (no card: no stores, never a second set on SPIFFS), else SPIFFS |
@@ -179,8 +179,9 @@ is its one owner: every 10 ms the status (0x814E), after a new frame (bit
 0x80) the contacts (0x8150, 8 bytes each) and the clear. The capacitive
 Home key (bit 0x10) is latched across frames (a still key makes none) and
 is the keypad's fourth key (`ButtonId::kHome`, no GPIO): click / long
-events like the others. Contacts are kept as the last frame for the UI
-later. Console `touch` (info, `watch`), `[touch]` in `hwinfo`.
+events like the others. Contacts are kept as the last frame for LVGL
+(`touch::Contact`: the first contact; older than 100 ms, a lost lift frame,
+counts as up). Console `touch` (info, `watch`), `[touch]` in `hwinfo`.
 
 E-ink (`devices/epd`, from FreeInk, MIT): 800x480, 1 bit, MSB left, bit 1
 white, 100 bytes a row. The controller is found at boot by reading FLG
@@ -265,7 +266,10 @@ frame (portrait top = frame left, as held as a book; the bezel insets carry
 over) and `epd::Refresh` draws it: fast, every 20th full. `ui` task (8 KB
 stack, priority 3) runs `lv_timer_handler`; other tasks touch widgets only
 inside `ui::Lock` / `ui::Unlock`. Measured on the X4 Pro (UC8179): turn 61 ms,
-full refresh 1.9 s, stack used ~3.4 KB. No input device yet (GT911 touch).
+full refresh 1.9 s, stack used ~3.4 KB. The GT911 is LVGL's pointer, read
+every 20 ms (the default 200 ms misses short taps); its coordinates are the
+portrait screen's as they are (`TouchToScreen`, checked by eye: no swap or
+flip). Until the real screens the boot screen marks the last press.
 Console `ui`; version in `version`.
 
 Power-off (`components/power`): the X4 Pro has no power switch, so "off" is

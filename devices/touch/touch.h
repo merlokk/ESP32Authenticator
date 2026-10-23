@@ -3,7 +3,7 @@
 // The board's touch controller (X4 Pro: GT911 on the leased I2C bus,
 // gt911_logic.h). The keypad task polls it (one owner: a frame is read and
 // cleared once): the capacitive Home key becomes the keypad's `home`, the
-// panel contacts are kept as the last frame (the UI comes later).
+// panel contacts are kept as the last frame (LVGL reads them: Contact).
 
 #include <cstdint>
 
@@ -29,11 +29,16 @@ bool HomePressed();
 struct Snapshot {
     uint32_t frames;  // new frames seen
     uint32_t errors;  // failed reads
+    uint32_t at_ms;   // esp_timer time of the last new frame
     uint8_t status;   // of the last new frame
     uint8_t count;    // contacts in it (up to gt911::kMaxPoints read)
     uint8_t raw[gt911::kMaxPoints * gt911::kPointSize];
 };
 Snapshot GetSnapshot();
+
+// The first contact on the panel now (gt911::Touching), raw controller
+// coordinates; false when no finger is down. Any task.
+bool Contact(gt911::Point *out);
 
 // Console `touch`: address, product, firmware, resolution, vendor, config head.
 void PrintInfo();

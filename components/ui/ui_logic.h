@@ -54,6 +54,24 @@ inline void ToPanel(const uint8_t *portrait, uint8_t *frame) {
     }
 }
 
+// A GT911 contact (gt911_logic.h: X 0..479, Y 0..799, the sensor is mounted
+// portrait) to the portrait screen; clamped, so a reading at the edge stays on
+// it. The flips are measured on the X4 Pro.
+inline constexpr bool kTouchFlipX = false;
+inline constexpr bool kTouchFlipY = false;
+
+struct ScreenPoint {
+    uint16_t x;
+    uint16_t y;
+};
+
+constexpr ScreenPoint TouchToScreen(uint16_t tx, uint16_t ty) {
+    const uint16_t x = tx < kWidth ? tx : kWidth - 1;
+    const uint16_t y = ty < kHeight ? ty : kHeight - 1;
+    return {kTouchFlipX ? static_cast<uint16_t>(kWidth - 1 - x) : x,
+            kTouchFlipY ? static_cast<uint16_t>(kHeight - 1 - y) : y};
+}
+
 // Fast refreshes leave ghosts: every kFullEvery-th refresh is a full one
 // (and the first, though the driver forces that itself).
 class RefreshPlan {

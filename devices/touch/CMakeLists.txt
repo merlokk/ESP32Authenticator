@@ -2,4 +2,4 @@
 idf_component_register(SRCS "touch.cpp"
                     INCLUDE_DIRS "."
                     REQUIRES esp_driver_gpio
-                    PRIV_REQUIRES boards i2c_bus freertos)
+                    PRIV_REQUIRES boards i2c_bus freertos esp_timer)

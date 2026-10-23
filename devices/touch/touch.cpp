@@ -7,6 +7,7 @@
 #include "board_devices.h"
 #include "driver/gpio.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -149,6 +150,7 @@ esp_err_t Poll() {
         home = f.home;
         if (f.fresh) {
             ++snapshot.frames;
+            snapshot.at_ms = static_cast<uint32_t>(esp_timer_get_time() / 1000);
             snapshot.status = status;
             snapshot.count = count;
             memcpy(snapshot.raw, points, count * gt::kPointSize);
@@ -159,6 +161,17 @@ esp_err_t Poll() {
 }
 
 bool HomePressed() { return home; }
+
+bool Contact(gt::Point *out) {
+    const uint32_t now = static_cast<uint32_t>(esp_timer_get_time() / 1000);
+    portENTER_CRITICAL(&lock);
+    const bool down = gt::Touching(snapshot.count, now - snapshot.at_ms);
+    if (down) {
+        *out = gt::DecodePoint(snapshot.raw);
+    }
+    portEXIT_CRITICAL(&lock);
+    return down;
+}
 
 Snapshot GetSnapshot() {
     portENTER_CRITICAL(&lock);

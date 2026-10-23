@@ -63,6 +63,13 @@ void test_touch_point(void) {
     TEST_ASSERT_EQUAL_UINT8(1, p.id);
 }
 
+void test_touch_stale_contacts(void) {
+    TEST_ASSERT_TRUE(gt::Touching(1, 0));
+    TEST_ASSERT_TRUE(gt::Touching(2, gt::kStaleMs));
+    TEST_ASSERT_FALSE(gt::Touching(0, 0));                // the lift frame
+    TEST_ASSERT_FALSE(gt::Touching(1, gt::kStaleMs + 1));  // lift frame lost
+}
+
 }  // namespace
 
 void RegisterTouchTests(void) {
@@ -71,4 +78,5 @@ void RegisterTouchTests(void) {
     RUN_TEST(test_touch_info);
     RUN_TEST(test_touch_config_head);
     RUN_TEST(test_touch_point);
+    RUN_TEST(test_touch_stale_contacts);
 }

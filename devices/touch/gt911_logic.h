@@ -108,4 +108,14 @@ constexpr Frame Decode(uint8_t status, bool home_before) {
     return {true, (status & kStatusKey) != 0, static_cast<uint8_t>(status & kStatusCount)};
 }
 
+// While a finger is down the controller sends a frame every ~10 ms; the
+// lift is one frame with no contacts. A lost lift frame (a failed read) must
+// not leave the finger down for good: older than this, the last contacts
+// are gone.
+inline constexpr uint32_t kStaleMs = 100;
+
+constexpr bool Touching(uint8_t contacts, uint32_t age_ms) {
+    return contacts > 0 && age_ms <= kStaleMs;
+}
+
 }  // namespace touch::gt911

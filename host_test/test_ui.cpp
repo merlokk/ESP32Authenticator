@@ -68,6 +68,23 @@ void test_ui_refresh_plan(void) {
     TEST_ASSERT_FALSE(plan.NextIsFull());
 }
 
+void test_ui_touch_to_screen(void) {
+    // The sensor's corners land on the screen's corners (measured on the X4 Pro).
+    ui::ScreenPoint p = ui::TouchToScreen(0, 0);
+    TEST_ASSERT_EQUAL_UINT16(0, p.x);
+    TEST_ASSERT_EQUAL_UINT16(0, p.y);
+    p = ui::TouchToScreen(479, 799);
+    TEST_ASSERT_EQUAL_UINT16(479, p.x);
+    TEST_ASSERT_EQUAL_UINT16(799, p.y);
+    p = ui::TouchToScreen(100, 700);
+    TEST_ASSERT_EQUAL_UINT16(100, p.x);
+    TEST_ASSERT_EQUAL_UINT16(700, p.y);
+    // Past the edge: clamped onto it.
+    p = ui::TouchToScreen(480, 800);
+    TEST_ASSERT_EQUAL_UINT16(479, p.x);
+    TEST_ASSERT_EQUAL_UINT16(799, p.y);
+}
+
 }  // namespace
 
 void RegisterUiTests(void) {
@@ -75,4 +92,5 @@ void RegisterUiTests(void) {
     RUN_TEST(test_ui_corners);
     RUN_TEST(test_ui_to_panel_every_pixel_once);
     RUN_TEST(test_ui_refresh_plan);
+    RUN_TEST(test_ui_touch_to_screen);
 }

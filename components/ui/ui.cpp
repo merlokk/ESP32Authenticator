@@ -12,6 +12,7 @@
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "lvgl.h"
+#include "touch.h"
 #include "ui_logic.h"
 
 namespace ui {
@@ -24,6 +25,9 @@ constexpr uint32_t kStackBytes = 8192;  // LVGL's software renderer
 constexpr int kPriority = 3;            // below the keypad
 constexpr uint32_t kMinSleepMs = 10;
 constexpr uint32_t kMaxSleepMs = 200;   // LV_DEF_REFR_PERIOD
+// LVGL reads an input device every LV_DEF_REFR_PERIOD (200 ms) by default: a
+// short tap would slip between two reads.
+constexpr uint32_t kTouchReadMs = 20;
 
 // An I1 draw buffer starts with its 2-colour palette.
 constexpr size_t kPaletteBytes = LV_COLOR_INDEXED_PALETTE_SIZE(LV_COLOR_FORMAT_I1) * 4;
@@ -46,6 +50,13 @@ uint32_t refreshes = 0;
 uint32_t last_rotate_us = 0;
 esp_err_t last_err = ESP_OK;
 
+lv_indev_t *pointer = nullptr;
+ScreenPoint last_point = {};  // LVGL wants a point on release too
+bool last_down = false;
+uint32_t presses = 0;
+lv_obj_t *touch_mark = nullptr;
+lv_obj_t *touch_label = nullptr;
+
 uint32_t TickMs() { return static_cast<uint32_t>(esp_timer_get_time() / 1000); }
 
 // DIRECT mode: LVGL redraws the dirty areas in place; the panel takes whole
@@ -64,6 +75,52 @@ void Flush(lv_display_t *disp, const lv_area_t *, uint8_t *px_map) {
     lv_display_flush_ready(disp);
 }
 
+// The GT911 as LVGL's pointer, read in the ui task (lv_timer_handler).
+void ReadTouch(lv_indev_t *, lv_indev_data_t *data) {
+    touch::gt911::Point p = {};
+    const bool down = touch::Contact(&p);
+    if (down) {
+        last_point = TouchToScreen(p.x, p.y);
+        presses += last_down ? 0 : 1;
+    }
+    last_down = down;
+    data->point.x = last_point.x;
+    data->point.y = last_point.y;
+    data->state = down ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
+}
+
+// Until the real screens: a cross where the finger went down and its
+// coordinates (checks the touch mapping by eye).
+void OnScreenPressed(lv_event_t *) {
+    lv_point_t p = {};
+    lv_indev_get_point(lv_indev_active(), &p);
+    lv_obj_set_pos(touch_mark, p.x - lv_obj_get_width(touch_mark) / 2,
+                   p.y - lv_obj_get_height(touch_mark) / 2);
+    lv_obj_remove_flag(touch_mark, LV_OBJ_FLAG_HIDDEN);
+    lv_label_set_text_fmt(touch_label, "touch %d, %d", static_cast<int>(p.x),
+                          static_cast<int>(p.y));
+}
+
+void StartTouch() {
+    pointer = lv_indev_create();
+    lv_indev_set_type(pointer, LV_INDEV_TYPE_POINTER);
+    lv_indev_set_read_cb(pointer, ReadTouch);
+    lv_indev_set_display(pointer, display);
+    lv_timer_set_period(lv_indev_get_read_timer(pointer), kTouchReadMs);
+
+    lv_obj_t *scr = lv_screen_active();
+    touch_mark = lv_label_create(scr);
+    lv_label_set_text(touch_mark, LV_SYMBOL_PLUS);
+    lv_obj_set_style_text_font(touch_mark, &lv_font_montserrat_32, 0);
+    lv_obj_add_flag(touch_mark, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_update_layout(touch_mark);
+    touch_label = lv_label_create(scr);
+    lv_label_set_text(touch_label, "touch the screen");
+    lv_obj_set_style_text_font(touch_label, &lv_font_montserrat_20, 0);
+    lv_obj_align(touch_label, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_add_event_cb(scr, OnScreenPressed, LV_EVENT_PRESSED, nullptr);
+}
+
 // Until the real screens: the name, the firmware and a 2 px frame inside the
 // bezel (all of it shows when the insets are right).
 void BootScreen() {
@@ -73,6 +130,7 @@ void BootScreen() {
 
     lv_obj_t *border = lv_obj_create(scr);
     lv_obj_remove_style_all(border);
+    lv_obj_remove_flag(border, LV_OBJ_FLAG_CLICKABLE);  // presses go to the screen
     lv_obj_set_pos(border, kInsetLeft, kInsetTop);
     lv_obj_set_size(border, kWidth - kInsetLeft - kInsetRight, kHeight - kInsetTop - kInsetBottom);
     lv_obj_set_style_border_width(border, 2, 0);
@@ -119,6 +177,9 @@ esp_err_t StartDisplay() {
     lv_display_set_buffers(display, screen, nullptr, kBufBytes, LV_DISPLAY_RENDER_MODE_DIRECT);
     lv_display_set_flush_cb(display, Flush);
     BootScreen();
+    if (touch::Present()) {
+        StartTouch();
+    }
     // ESP-IDF counts the stack depth in bytes.
     task = xTaskCreateStatic(&Task, "ui", kStackBytes, nullptr, kPriority, task_stack,
                              &task_storage);
@@ -174,6 +235,17 @@ void PrintInfo() {
            " us, stack free %u B\n",
            kWidth, kHeight, refreshes, RefreshPlan::kFullEvery, esp_err_to_name(last_err),
            last_rotate_us, static_cast<unsigned>(uxTaskGetStackHighWaterMark(task)));
+    if (pointer == nullptr) {
+        printf("ui: no touch\n");
+        return;
+    }
+    Lock();
+    const ScreenPoint p = last_point;
+    const bool down = last_down;
+    const uint32_t n = presses;
+    Unlock();
+    printf("ui: touch every %" PRIu32 " ms, %s at %u, %u, %" PRIu32 " presses\n", kTouchReadMs,
+           down ? "down" : "up", p.x, p.y, n);
 }
 
 }  // namespace ui

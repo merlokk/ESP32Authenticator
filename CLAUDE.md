@@ -26,7 +26,8 @@ Firmware: C/C++ on **ESP-IDF**.
   UC8279 / SSD1677 detected, full and fast refresh, `epd`); battery: CW2017 gauge (voltage, level) and
   charger STAT on a leased I2C bus (`battery`, BLE Battery Level); microSD
   (SDMMC, FAT at `/sdcard`, `sd` read-only but wallpapers), the store files in
-  `/sdcard/.authenticator` on the X4 Pro (no card: no stores); LVGL 9 on the e-ink panel (480x800 portrait, boot screen, `ui`); power-off
+  `/sdcard/.authenticator` on the X4 Pro (no card: no stores); LVGL 9 on the e-ink panel (480x800 portrait, boot screen, GT911 touch
+as the pointer, `ui`); power-off
   (Power held / `off`): a random PNG from `/sdcard/wallpapers` (dithered), deep
   sleep, Power wakes;
   password records (site/user/password/TOTP) in `vault.bin` with
@@ -41,7 +42,7 @@ Firmware: C/C++ on **ESP-IDF**.
   hmac-secret-mc, pcmr, attestation formats, encIdentifier, built-in UV
   plumbing (`uv: false`); see
   lionkey-update-plan.md.
-- Not yet: e-ink UI screens and touch input in LVGL, eFuse-bound key, sync over Wi-Fi.
+- Not yet: e-ink UI screens, eFuse-bound key, sync over Wi-Fi.
 
 ## Architecture
 

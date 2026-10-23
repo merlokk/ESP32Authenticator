@@ -3,7 +3,8 @@
 // LVGL v9: 1-bit colour, all memory in PSRAM (lv_mem_psram.c), settings in
 // sdkconfig.defaults. The e-ink panel is a 480x800 portrait display
 // (ui_logic.h turns it onto the landscape panel), redrawn by the "ui" task
-// that runs lv_timer_handler. No input device yet (GT911 touch comes later).
+// that runs lv_timer_handler. The GT911 (touch.h, polled by the keypad task)
+// is LVGL's pointer, mapped onto the portrait screen (TouchToScreen).
 
 #include "esp_err.h"
 
