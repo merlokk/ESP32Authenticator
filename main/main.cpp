@@ -13,6 +13,7 @@
 #include "esp_ota_ops.h"
 #include "fido_ctap.h"
 #include "nvs_flash.h"
+#include "sd_card.h"
 #include "spiffs_fs.h"
 #include "store_io.h"
 #include "timesync.h"
@@ -142,6 +143,7 @@ void InitVault(const char *dir) {
 extern "C" void app_main() {
     boards::Init();  // LED red; the board's clock seeds the system clock (UTC)
     battery::Init();  // not fatal: `battery` reports a missing gauge
+    sd_card::Init();  // not fatal: `sd` says why it is not mounted
     ConfirmRunningApp();
     InitNvs();
     spiffs_fs::Init();  // not fatal: the console reports an unmounted fs

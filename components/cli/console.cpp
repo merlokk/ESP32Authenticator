@@ -26,6 +26,8 @@
 #include "wifi_cmd.h"
 #include "files.h"
 #include "hardware.h"
+#include "sd_card.h"
+#include "sd_cmd.h"
 #include "web_server.h"
 #include "linenoise/linenoise.h"
 
@@ -66,6 +68,8 @@ int CmdHwInfo(int, char **) {
     boards::PrintClock();
     printf("[battery]\n");
     battery::PrintInfo();
+    printf("[sd card]\n");
+    sd_card::PrintInfo();
     printf("[led]\n");
     PrintLedInfo();
     return 0;
@@ -97,6 +101,8 @@ void PrintDevStatus() {
     PrintDateInfo();
     Section("battery");
     battery::PrintInfo();
+    Section("sd");
+    sd_card::PrintInfo();
     Section("led info");
     PrintLedInfo();
     Section("wifi info");
@@ -302,6 +308,15 @@ const esp_console_cmd_t kCommands[] = {
         .context = nullptr,
     },
     {
+        .command = "sd",
+        .help = "microSD card (read-only): [info] card, size, clock, FAT free | ls [dir]",
+        .hint = "[info | ls [dir]]",
+        .func = &CmdSd,
+        .argtable = nullptr,
+        .func_w_context = nullptr,
+        .context = nullptr,
+    },
+    {
         .command = "battery",
         .help = "Battery: [info] voltage, level, charging | regs: gauge registers and profile | "
                 "init: check the profile again, reset the gauge",
@@ -323,7 +338,7 @@ const esp_console_cmd_t kCommands[] = {
     },
     {
         .command = "devstatus",
-        .help = "Everything at once: version, info, board, date, battery, led info, wifi info, web, ble info, fido2 info, "
+        .help = "Everything at once: version, info, board, date, battery, sd, led info, wifi info, web, ble info, fido2 info, "
                 "pass info "
                 "(also the site's Device status page)",
         .hint = nullptr,
@@ -361,7 +376,7 @@ const esp_console_cmd_t kCommands[] = {
     },
     {
         .command = "hwinfo",
-        .help = "Print chip and IDs, flash, PSRAM, eFuse, NVS, partitions, temperature, clock, battery, LED",
+        .help = "Print chip and IDs, flash, PSRAM, eFuse, NVS, partitions, temperature, clock, battery, SD card, LED",
         .hint = nullptr,
         .func = &CmdHwInfo,
         .argtable = nullptr,

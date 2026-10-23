@@ -42,7 +42,7 @@ Reference ESP-IDF + LVGL project: `../../ai-remote/approver-esp32` ([GitHub](htt
 | `lib/` | third-party git submodules (`lionkey`: our fork, see FIDO2) |
 | `host_test/` | host tests (Unity, MSVC), no board: see Tests |
 | `utils/` | host-side Python tools over the USB console (`device.py`: console session; `spiffs.py`: ls/info/rm/get/put; `ble.py`: ble commands, `kb` text quoting) |
-| `devices/` | hardware drivers, one component per device (`hardware`: SoC info, eFuse, USB host connected; `spiffs_fs`: SPIFFS on `spiffs` at `/spiffs`, never formatted, it holds stock data on the X4 Pro; `ble`, `ble_kb`, `ble_fido`: see BLE; `wifi`: the radio (`wifi::Radio`), no decisions, stores nothing; `buttons`: GPIO buttons, polled, debounced 25 ms (`button_logic.h`, pure: debounce, short/long press from approver-esp32; single/double/... press: `MultiPress`, 400 ms gap), pins from the board; `crypto`: hardware RNG, SHA-256, AES-256-CBC, AES-256-GCM, HMAC-SHA1 via PSA, HOTP/TOTP (`otp.h`, pure: counter, truncation); `clock`: `rtc::Clock`, see Time; `led`: one WS2812 from UART1, see Boards; `i2c_bus`: the board's I2C bus, leased (from approver-esp32), see Boards; `battery`: CW2017 fuel gauge and charger STAT, see Boards; `boards`: board classes, see Boards). `devices/config.h`: the board the firmware is built for |
+| `devices/` | hardware drivers, one component per device (`hardware`: SoC info, eFuse, USB host connected; `spiffs_fs`: SPIFFS on `spiffs` at `/spiffs`, never formatted, it holds stock data on the X4 Pro; `ble`, `ble_kb`, `ble_fido`: see BLE; `wifi`: the radio (`wifi::Radio`), no decisions, stores nothing; `buttons`: GPIO buttons, polled, debounced 25 ms (`button_logic.h`, pure: debounce, short/long press from approver-esp32; single/double/... press: `MultiPress`, 400 ms gap), pins from the board; `crypto`: hardware RNG, SHA-256, AES-256-CBC, AES-256-GCM, HMAC-SHA1 via PSA, HOTP/TOTP (`otp.h`, pure: counter, truncation); `clock`: `rtc::Clock`, see Time; `led`: one WS2812 from UART1, see Boards; `i2c_bus`: the board's I2C bus, leased (from approver-esp32), see Boards; `battery`: CW2017 fuel gauge and charger STAT, see Boards; `sd_card`: microSD over SDMMC, FAT at `/sdcard`, see Boards; `boards`: board classes, see Boards). `devices/config.h`: the board the firmware is built for |
 
 ## Config
 
@@ -150,7 +150,7 @@ has its pins) is a `static_assert` and a host test.
 
 `board_devices.h` carries it out: `boards::Init()` (LED, peripheral rail
 high, I2C bus, the clock: BM8563 if found, else the timer), `I2c()`, `Clock()`, `Button(id)`, `PrintInfo()`
-(`board`), `BootDone()`. No display, touch or SD driver yet.
+(`board`), `BootDone()`. No display or touch driver yet.
 
 I2C (`devices/i2c_bus`, from approver-esp32): one `i2cbus::Bus` owned by the
 board (`boards::I2c()`), 400 kHz; a task borrows it with `Acquire()` (a
@@ -165,6 +165,17 @@ decision: none / soft reset / profile upload. `battery::Init()` after
 (stock loads the same one), so it is only written when it differs. Readouts:
 `battery` (console), `[battery]` in `hwinfo`, the BLE Battery Level
 (`battery::Level()`, 100 without a reading).
+
+SD card (`devices/sd_card`): native SDMMC, 1-bit, FAT at `/sdcard`, mounted
+once at boot (`sd_card::Init()` after `battery::Init()`). Sequence from
+FreeInk: power off 80 ms / on 120 ms (GPIO5, active low) before each
+attempt, mount, then a real read of sector 0; the power stays on.
+`sd_policy.h` (pure): 40 MHz twice, then 20 MHz, at most 4 attempts; no
+answer twice = no card; no FAT = left alone. Never formatted (the card holds
+the reader's books). Long names in UTF-8 (`CONFIG_FATFS_API_ENCODING_UTF_8`).
+No card-detect line. Console `sd` (read-only), `[sd card]` in `hwinfo`.
+Measured: the stock 16 GB card mounts on the first attempt at 40 MHz, ~1 s
+of boot.
 
 LED (`devices/led`, from approver-esp32-yubikey): WS2812 driven by UART1 at
 3.33 Mbaud, 6 data bits, TX inverted (two bit cells per character, no RMT);
@@ -385,8 +396,8 @@ our fork [merlokk/lionkey](https://github.com/merlokk/lionkey), branch
 ## Passwords
 
 `components/vault`: `vault.bin` in the store directory (`StorageDir()` in
-`main.cpp`: the SD card when the board has one, else SPIFFS; no SD driver yet,
-so no store files on the X4 Pro).
+`main.cpp`: the SD card when the board has one, else SPIFFS; the card is
+mounted, the store files are not on it yet, so none on the X4 Pro).
 
 - Records (`records.h`, pure, host-tested): site (1-96 bytes), user (0-96),
   password (0-128), TOTP secret (Base32, normalized, up to 64 characters;

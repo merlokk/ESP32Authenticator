@@ -41,6 +41,7 @@ add_executable(host_test
     test_web_admin.cpp
     test_clock.cpp
     test_rtc.cpp
+    test_sd.cpp
     test_boards.cpp
     test_timesync.cpp
     test_timezone.cpp
@@ -66,6 +67,7 @@ add_executable(host_test
     ../components/timesync/sync_policy.cpp
     ../components/timezone/zones.cpp
     ../devices/led/led_frames.cpp
+    ../devices/sd_card/sd_policy.cpp
     ../components/totp/totp.cpp
     ../components/storefile/store_header.cpp
     ../components/storefile/store_io.cpp
@@ -90,6 +92,7 @@ target_include_directories(host_test PRIVATE
     ../devices/led
     ../devices/buttons
     ../devices/battery
+    ../devices/sd_card
     ../components/pin_policy
     ../devices/crypto
     ../components/totp

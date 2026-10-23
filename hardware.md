@@ -94,7 +94,9 @@ factory serial (`X4CB02EN…`).
 
 ## Notes
 
-- SD works only in native SDMMC mode; SPI-mode CMD0 gets no response.
+- SD works only in native SDMMC mode; SPI-mode CMD0 gets no response. The
+  stock card (ASTC 16 GB, FAT: `Books/`, `Fonts/`, `XTData/`, `XTCache/`)
+  mounts at 40 MHz on the first attempt.
 - Frontlight PWM: 10 kHz (early OEM) or 25 kHz, 10-bit (stock 7.x).
 - Stock firmware (`xteink_app` 7.5.11, ESP-IDF v6.0.1): silent on the USB
   console, exposes the microSD as USB MSC, talks to `api-prod.xteink.cc|cn`.
