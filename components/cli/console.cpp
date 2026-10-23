@@ -317,6 +317,16 @@ const esp_console_cmd_t kCommands[] = {
         .context = nullptr,
     },
     {
+        .command = "keys",
+        .help = "Push buttons: [info] GPIO, level, held time | watch [seconds]: events "
+                "(pressed, released, long, click xN)",
+        .hint = "[info | watch [seconds]]",
+        .func = &CmdKeys,
+        .argtable = nullptr,
+        .func_w_context = nullptr,
+        .context = nullptr,
+    },
+    {
         .command = "battery",
         .help = "Battery: [info] voltage, level, charging | regs: gauge registers and profile | "
                 "init: check the profile again, reset the gauge",

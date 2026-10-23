@@ -14,6 +14,7 @@
 #include "esp_log.h"
 #include "esp_ota_ops.h"
 #include "fido_ctap.h"
+#include "keypad.h"
 #include "nvs_flash.h"
 #include "sd_card.h"
 #include "spiffs_fs.h"
@@ -71,21 +72,17 @@ const char *StorageDir() {
 }
 
 // FIDO2 over BLE: the LionKey CTAP core behind the ble_fido transport. User
-// presence: the board's Left button (BOOT on the dev board), debounced; polled
-// only by the CTAP request task.
+// presence: the board's Left button (BOOT on the dev board), debounced by the
+// keypad task, which owns the pins.
 void InitFido(const char *dir) {
-    static buttons::Button presence = boards::Button(boards::ButtonId::kLeft);
-    presence.Init();
     static char store[64];
     const bool have_fs = dir != nullptr && snprintf(store, sizeof store, "%s/fido.bin", dir) <
                                                static_cast<int>(sizeof store);
     // The only transport today is BLE: the creator of a credential is the host
     // on the link.
     const fido_ctap_hooks_t hooks = {
-        ble_fido::Keepalive, ble_fido::Cancelled, [] {
-            presence.Poll();
-            return presence.Pressed();
-        },
+        ble_fido::Keepalive, ble_fido::Cancelled,
+        [] { return keypad::Pressed(boards::ButtonId::kLeft); },
         [](fido_ctap_client_t *out) {
             out->transport = FIDO_CTAP_TRANSPORT_BLE;
             return ble::PeerIdentity(&out->addr_type, out->addr);
@@ -155,6 +152,7 @@ extern "C" void app_main() {
     boards::Init();  // LED red; the board's clock seeds the system clock (UTC)
     battery::Init();  // not fatal: `battery` reports a missing gauge
     sd_card::Init();  // not fatal: `sd` says why it is not mounted
+    keypad::Start();  // the buttons: events, and Left for FIDO2 presence
     ConfirmRunningApp();
     InitNvs();
     spiffs_fs::Init();  // not fatal: the console reports an unmounted fs

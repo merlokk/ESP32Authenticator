@@ -2,7 +2,10 @@
 // (devices/buttons/button_logic.h).
 // Ported from approver-esp32 (host_test/test_buttons.cpp).
 
+#include <initializer_list>
+
 #include "button_logic.h"
+#include "key_events.h"
 #include "unity.h"
 
 namespace {
@@ -238,6 +241,105 @@ void test_multi_survives_the_millisecond_wrap(void) {
     TEST_ASSERT_EQUAL_UINT8(2, m.Update(false, 0x18 + 400));
 }
 
+// --- KeyTracker (key_events.h)
+
+using buttons::Kind;
+using buttons::KeyTracker;
+using buttons::kLongMs;
+
+// Every event from `from` to `to` (exclusive) in 1 ms steps at one level.
+struct Seen {
+    Kind kinds[16];
+    uint8_t counts[16];
+    int n = 0;
+};
+
+void Run(KeyTracker &k, bool raw, uint32_t from, uint32_t to, Seen &seen) {
+    for (uint32_t t = from; t < to; ++t) {
+        const buttons::KeyEvents e = k.Update(raw, t);
+        for (uint8_t i = 0; i < e.size && seen.n < 16; ++i) {
+            TEST_ASSERT_EQUAL_UINT8(7, e.items[i].key);
+            seen.kinds[seen.n] = e.items[i].kind;
+            seen.counts[seen.n++] = e.items[i].count;
+        }
+    }
+}
+
+void AssertKinds(const Seen &seen, std::initializer_list<Kind> expected) {
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(expected.size()), seen.n);
+    int i = 0;
+    for (const Kind k : expected) {
+        TEST_ASSERT_EQUAL_INT(static_cast<int>(k), static_cast<int>(seen.kinds[i++]));
+    }
+}
+
+void test_keys_single_click(void) {
+    KeyTracker k(7);
+    k.Reset(false, 0);
+    Seen seen;
+    Run(k, true, 0, 200, seen);
+    Run(k, false, 200, 1000, seen);
+    AssertKinds(seen, {Kind::kPressed, Kind::kReleased, Kind::kClick});
+    TEST_ASSERT_EQUAL_UINT8(1, seen.counts[2]);
+}
+
+void test_keys_double_click(void) {
+    KeyTracker k(7);
+    k.Reset(false, 0);
+    Seen seen;
+    Run(k, true, 0, 100, seen);
+    Run(k, false, 100, 300, seen);
+    Run(k, true, 300, 400, seen);
+    Run(k, false, 400, 1200, seen);
+    AssertKinds(seen, {Kind::kPressed, Kind::kReleased, Kind::kPressed, Kind::kReleased,
+                       Kind::kClick});
+    TEST_ASSERT_EQUAL_UINT8(2, seen.counts[4]);
+}
+
+void test_keys_long_press_fires_while_held_and_is_no_click(void) {
+    KeyTracker k(7);
+    k.Reset(false, 0);
+    Seen seen;
+    // Debounced down at 25 ms: long at 25 + kLongMs, still held.
+    Run(k, true, 0, 25 + kLongMs + 1, seen);
+    AssertKinds(seen, {Kind::kPressed, Kind::kLong});
+    Run(k, true, 25 + kLongMs + 1, 2000, seen);
+    Run(k, false, 2000, 3000, seen);
+    AssertKinds(seen, {Kind::kPressed, Kind::kLong, Kind::kReleased});
+}
+
+void test_keys_a_press_of_exactly_the_threshold_is_long_only(void) {
+    KeyTracker k(7);
+    k.Reset(false, 0);
+    Seen seen;
+    // Raw down 0..kLongMs+25: debounced 25..kLongMs+50, held kLongMs exactly.
+    Run(k, true, 0, kLongMs + 25, seen);
+    Run(k, false, kLongMs + 25, kLongMs + 2000, seen);
+    AssertKinds(seen, {Kind::kPressed, Kind::kLong, Kind::kReleased});
+}
+
+void test_keys_a_finger_down_at_boot_is_no_press(void) {
+    KeyTracker k(7);
+    k.Reset(true, 0);
+    TEST_ASSERT_TRUE(k.Pressed());
+    Seen seen;
+    Run(k, true, 0, 2000, seen);       // held well past kLongMs: no long
+    Run(k, false, 2000, 3000, seen);   // the release shows, no click
+    AssertKinds(seen, {Kind::kReleased});
+    Run(k, true, 3000, 3100, seen);    // the next press counts
+    Run(k, false, 3100, 4000, seen);
+    AssertKinds(seen, {Kind::kReleased, Kind::kPressed, Kind::kReleased, Kind::kClick});
+}
+
+void test_keys_held_ms(void) {
+    KeyTracker k(7);
+    k.Reset(false, 0);
+    TEST_ASSERT_EQUAL_UINT32(0, k.HeldMs(10));
+    Seen seen;
+    Run(k, true, 0, 100, seen);  // debounced at 25
+    TEST_ASSERT_EQUAL_UINT32(75, k.HeldMs(100));
+}
+
 }  // namespace
 
 void RegisterButtonTests(void) {
@@ -266,4 +368,10 @@ void RegisterButtonTests(void) {
     RUN_TEST(test_multi_a_long_press_seen_only_at_its_ends_is_not_a_tap);
     RUN_TEST(test_multi_the_gap_is_not_counted_while_held);
     RUN_TEST(test_multi_survives_the_millisecond_wrap);
+    RUN_TEST(test_keys_single_click);
+    RUN_TEST(test_keys_double_click);
+    RUN_TEST(test_keys_long_press_fires_while_held_and_is_no_click);
+    RUN_TEST(test_keys_a_press_of_exactly_the_threshold_is_long_only);
+    RUN_TEST(test_keys_a_finger_down_at_boot_is_no_press);
+    RUN_TEST(test_keys_held_ms);
 }

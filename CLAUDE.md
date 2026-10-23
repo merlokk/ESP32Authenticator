@@ -20,7 +20,8 @@ Firmware: C/C++ on **ESP-IDF**.
   web site; USB console; `config.json`; time (SNTP, time zones, `rtc::Clock`:
   BM8563 RTC on the X4 Pro, else the CPU timer); board classes chosen in `devices/config.h`; WS2812 LED (red at boot,
   green breathing when ready, blue while typing, yellow
-  blinking for the FIDO2 button); TOTP codes on the console (`totp`); battery: CW2017 gauge (voltage, level) and
+  blinking for the FIDO2 button); TOTP codes on the console (`totp`); buttons (Left, Right, Power) in one
+  keypad task: click xN / long events, `keys`; battery: CW2017 gauge (voltage, level) and
   charger STAT on a leased I2C bus (`battery`, BLE Battery Level); microSD
   (SDMMC, FAT at `/sdcard`, read-only `sd`), the store files in
   `/sdcard/.authenticator` on the X4 Pro (no card: no stores); LVGL 9 library (no display driver);

@@ -12,6 +12,8 @@
 #include "board_devices.h"
 #include "clock_math.h"
 #include "config.h"
+#include "esp_timer.h"
+#include "keypad.h"
 #include "freertos/FreeRTOS.h"
 #include "led.h"
 #include "freertos/task.h"
@@ -359,6 +361,47 @@ int PrintLedInfo() {
            static_cast<unsigned>(s.idle_percent));
     printf("wire       %" PRIu32 " writes, %" PRIu32 " failed\n", s.writes, s.write_failures);
     printf("stack      %" PRIu32 " B free\n", s.stack_low_water);
+    return 0;
+}
+
+int CmdKeys(int argc, char **argv) {
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "info") == 0)) {
+        keypad::PrintInfo();
+        return 0;
+    }
+    if (strcmp(argv[1], "watch") != 0 || argc > 3) {
+        printf("usage: keys [info] | keys watch [seconds 1..120]\n");
+        return 1;
+    }
+    long seconds = 10;
+    if (argc == 3) {
+        char *end = nullptr;
+        seconds = strtol(argv[2], &end, 10);
+        if (end == argv[2] || *end != '\0' || seconds < 1 || seconds > 120) {
+            printf("seconds: 1..120\n");
+            return 1;
+        }
+    }
+    // The queue is for the UI later; here it shows what happens from now on.
+    keypad::Flush();
+    printf("press the buttons (%ld s)\n", seconds);
+    const int64_t start_ms = esp_timer_get_time() / 1000;
+    const int64_t end_ms = start_ms + seconds * 1000;
+    unsigned seen = 0;
+    buttons::KeyEvent e;
+    while (esp_timer_get_time() / 1000 < end_ms) {
+        if (!keypad::Next(&e, 100)) {
+            continue;
+        }
+        ++seen;
+        printf("%6lld ms  %-6s %s", esp_timer_get_time() / 1000 - start_ms,
+               boards::Name(static_cast<boards::ButtonId>(e.key)), buttons::Name(e.kind));
+        if (e.kind == buttons::Kind::kClick) {
+            printf(" x%u", static_cast<unsigned>(e.count));
+        }
+        printf("\n");
+    }
+    printf("%u event(s)\n", seen);
     return 0;
 }
 

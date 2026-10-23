@@ -69,6 +69,8 @@ unit, meaning unknown).
 | 41 | SD CLK | 40 MHz |
 | 42 | SD CMD | |
 
+Buttons on the X4 Pro (measured): idle high, pressed low with the internal pull-up; a 1.1 s hold of Power does not cut the power.
+
 Power-up order: GPIO1 HIGH → GPIO2 LOW (touch) → GPIO5 pulse (SD).
 
 ## I2C devices (SDA 39 / SCL 38)
