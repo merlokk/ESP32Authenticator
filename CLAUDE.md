@@ -22,7 +22,8 @@ Firmware: C/C++ on **ESP-IDF**.
   green breathing when ready, blue while typing, yellow
   blinking for the FIDO2 button); TOTP codes on the console (`totp`); buttons (Left, Right, Power, Home on the
   GT911) in one keypad task: click xN / long events, `keys`; frontlight (cool/warm PWM,
-  off at boot, Power x2 toggles, `light`); battery: CW2017 gauge (voltage, level) and
+  off at boot, Power x2 toggles, `light`); e-ink panel driver (UC8179 /
+  UC8279 / SSD1677 detected, full and fast refresh, `epd`); battery: CW2017 gauge (voltage, level) and
   charger STAT on a leased I2C bus (`battery`, BLE Battery Level); microSD
   (SDMMC, FAT at `/sdcard`, read-only `sd`), the store files in
   `/sdcard/.authenticator` on the X4 Pro (no card: no stores); LVGL 9 library (no display driver);
@@ -38,7 +39,7 @@ Firmware: C/C++ on **ESP-IDF**.
   hmac-secret-mc, pcmr, attestation formats, encIdentifier, built-in UV
   plumbing (`uv: false`); see
   lionkey-update-plan.md.
-- Not yet: e-ink UI (LVGL), eFuse-bound key, sync over Wi-Fi.
+- Not yet: e-ink UI (LVGL on the panel), eFuse-bound key, sync over Wi-Fi.
 
 ## Architecture
 

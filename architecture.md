@@ -42,7 +42,7 @@ Reference ESP-IDF + LVGL project: `../../ai-remote/approver-esp32` ([GitHub](htt
 | `lib/` | third-party git submodules (`lionkey`: our fork, see FIDO2) |
 | `host_test/` | host tests (Unity, MSVC), no board: see Tests |
 | `utils/` | host-side Python tools over the USB console (`device.py`: console session; `spiffs.py`: ls/info/rm/get/put; `ble.py`: ble commands, `kb` text quoting) |
-| `devices/` | hardware drivers, one component per device (`hardware`: SoC info, eFuse, USB host connected; `spiffs_fs`: SPIFFS on `spiffs` at `/spiffs`, never formatted, it holds stock data on the X4 Pro; `ble`, `ble_kb`, `ble_fido`: see BLE; `wifi`: the radio (`wifi::Radio`), no decisions, stores nothing; `buttons`: GPIO buttons, polled, debounced 25 ms (`button_logic.h`, pure: debounce, short/long press from approver-esp32; single/double/... press: `MultiPress`, 400 ms gap; `key_events.h`, pure: one `KeyTracker` per button: pressed / released edges, long at 600 ms (fired while held), click xN 400 ms after the last release, a press is long or a click, never both; a finger down at boot is no press), pins from the board; `keypad`: the one owner of the board's buttons, a task polling every 10 ms, events in a queue (16, full: dropped and counted) for the UI, listeners called from the task (bindings), `Pressed()` / `HeldMs()` for the rest (FIDO2 presence), console `keys`; `crypto`: hardware RNG, SHA-256, AES-256-CBC, AES-256-GCM, HMAC-SHA1 via PSA, HOTP/TOTP (`otp.h`, pure: counter, truncation); `clock`: `rtc::Clock`, see Time; `led`: one WS2812 from UART1, see Boards; `i2c_bus`: the board's I2C bus, leased (from approver-esp32), see Boards; `battery`: CW2017 fuel gauge and charger STAT, see Boards; `sd_card`: microSD over SDMMC, FAT at `/sdcard`, see Boards; `frontlight`: cool and warm LED strings on LEDC, see Boards; `touch`: the GT911 on the leased I2C bus (`gt911_logic.h`, pure), polled by the keypad task, see Boards; `boards`: board classes, see Boards). `devices/config.h`: the board the firmware is built for |
+| `devices/` | hardware drivers, one component per device (`hardware`: SoC info, eFuse, USB host connected; `spiffs_fs`: SPIFFS on `spiffs` at `/spiffs`, never formatted, it holds stock data on the X4 Pro; `ble`, `ble_kb`, `ble_fido`: see BLE; `wifi`: the radio (`wifi::Radio`), no decisions, stores nothing; `buttons`: GPIO buttons, polled, debounced 25 ms (`button_logic.h`, pure: debounce, short/long press from approver-esp32; single/double/... press: `MultiPress`, 400 ms gap; `key_events.h`, pure: one `KeyTracker` per button: pressed / released edges, long at 600 ms (fired while held), click xN 400 ms after the last release, a press is long or a click, never both; a finger down at boot is no press), pins from the board; `keypad`: the one owner of the board's buttons, a task polling every 10 ms, events in a queue (16, full: dropped and counted) for the UI, listeners called from the task (bindings), `Pressed()` / `HeldMs()` for the rest (FIDO2 presence), console `keys`; `crypto`: hardware RNG, SHA-256, AES-256-CBC, AES-256-GCM, HMAC-SHA1 via PSA, HOTP/TOTP (`otp.h`, pure: counter, truncation); `clock`: `rtc::Clock`, see Time; `led`: one WS2812 from UART1, see Boards; `i2c_bus`: the board's I2C bus, leased (from approver-esp32), see Boards; `battery`: CW2017 fuel gauge and charger STAT, see Boards; `sd_card`: microSD over SDMMC, FAT at `/sdcard`, see Boards; `frontlight`: cool and warm LED strings on LEDC, see Boards; `touch`: the GT911 on the leased I2C bus (`gt911_logic.h`, pure), polled by the keypad task, see Boards; `epd`: the e-ink panel (SSD1677 / UC8179 / UC8279, detected), see Boards; `boards`: board classes, see Boards). `devices/config.h`: the board the firmware is built for |
 
 ## Config
 
@@ -155,7 +155,7 @@ has its pins) is a `static_assert` and a host test.
 
 `board_devices.h` carries it out: `boards::Init()` (LED, peripheral rail
 high, I2C bus, the clock: BM8563 if found, else the timer), `I2c()`, `Clock()`, `Button(id)`, `PrintInfo()`
-(`board`), `BootDone()`. No display or touch driver yet.
+(`board`), `BootDone()`.
 
 I2C (`devices/i2c_bus`, from approver-esp32): one `i2cbus::Bus` owned by the
 board (`boards::I2c()`), 400 kHz; a task borrows it with `Acquire()` (a
@@ -180,6 +180,20 @@ Home key (bit 0x10) is latched across frames (a still key makes none) and
 is the keypad's fourth key (`ButtonId::kHome`, no GPIO): click / long
 events like the others. Contacts are kept as the last frame for the UI
 later. Console `touch` (info, `watch`), `[touch]` in `hwinfo`.
+
+E-ink (`devices/epd`, from FreeInk, MIT): 800x480, 1 bit, MSB left, bit 1
+white, 100 bytes a row. The controller is found at boot by reading FLG
+(0x71) and VER (0x70) back over the data line (GPIO11 bit-banged as input,
+two passes): an SSD1677 never answers, a UC81xx's VER byte 2 picks UC8179 or
+UC8279. `epd_logic.h` (pure): detection, the stock screenType map, the RAM
+row order per controller (UC8179: 600 gates, bottom row first, padding
+after; UC8279: padding first; SSD1677: a Y-down window), BUSY polarity
+(SSD1677 high = busy, UC81xx low = busy), the command bytes, the bezel
+insets. The driver: SPI2 10 MHz mode 0, CS and DC by hand, planes through a
+4 KB DMA buffer from a PSRAM frame; full and fast refresh (the old plane is
+rewritten after each, so the next fast one diffs against the glass), the
+panel powered off after each, deep sleep. Init draws nothing: the picture
+on the glass stays. Console `epd` (info, test patterns, sleep).
 
 Frontlight (`devices/frontlight`, from FreeInk): cool GPIO8 and warm GPIO9,
 active high, LEDC 25 kHz / 10 bits (stock 7.x), LEDC channels 0 and 1.

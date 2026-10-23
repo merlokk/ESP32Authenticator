@@ -37,7 +37,15 @@ unit, meaning unknown).
 
 - Write-only SPI (no MISO); BUSY is active-HIGH.
 - SPI clock: OEM 5 MHz, FreeInk 10 MHz, TuyaOpen 20 MHz.
-- Native landscape scan. Viewable insets T/R/B/L = 9/7/3/7 px (bezel overlap).
+- Native landscape scan. Viewable insets T/R/B/L = 9/7/3/7 px (bezel overlap;
+  FreeInk). Our unit, measured in 4 px steps, in frame coordinates
+  (landscape): 4/2/4/8. Held as a book (portrait, the default) the frame's
+  left edge (x 0) is on top and its top edge (y 0) on the right: the UI turns
+  it 90 degrees.
+- Our unit: UC8179, FLG 0x13, VER `00 00 01 FF FF` (= stock screenType 1).
+  Full refresh 1.9 s, fast 0.9 s, each with the plane uploads and power on/off.
+- The data line reads back: a UC81xx answers FLG (0x71) and VER (0x70) on
+  GPIO11 as input (how the controller is detected).
 - No external EPD PMIC or GPIO power enable.
 
 ## Pinout

@@ -29,6 +29,8 @@
 #include "sd_card.h"
 #include "touch.h"
 #include "sd_cmd.h"
+#include "epd_cmd.h"
+#include "epd.h"
 #include "web_server.h"
 #include "linenoise/linenoise.h"
 
@@ -69,6 +71,8 @@ int CmdHwInfo(int, char **) {
     boards::PrintClock();
     printf("[battery]\n");
     battery::PrintInfo();
+    printf("[epd]\n");
+    epd::PrintInfo();
     printf("[touch]\n");
     touch::PrintInfo();
     printf("[sd card]\n");
@@ -325,6 +329,16 @@ const esp_console_cmd_t kCommands[] = {
                 "on | off (now; off at boot, Power x2 toggles)",
         .hint = "[info | <1..100> [warmth] | warmth <0..100> | on | off]",
         .func = &CmdLight,
+        .argtable = nullptr,
+        .func_w_context = nullptr,
+        .context = nullptr,
+    },
+    {
+        .command = "epd",
+        .help = "E-ink panel: [info] controller, probe, refreshes | test [orient|corners|edges|checker|black|white] "
+                "[full|fast] | sleep",
+        .hint = "[info | test [pattern] [full|fast] | sleep]",
+        .func = &CmdEpd,
         .argtable = nullptr,
         .func_w_context = nullptr,
         .context = nullptr,

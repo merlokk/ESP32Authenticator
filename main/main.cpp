@@ -13,6 +13,7 @@
 #include "crypto.h"
 #include "esp_log.h"
 #include "esp_ota_ops.h"
+#include "epd.h"
 #include "fido_ctap.h"
 #include "frontlight.h"
 #include "keypad.h"
@@ -176,6 +177,7 @@ extern "C" void app_main() {
         snprintf(ble_cfg.name, sizeof ble_cfg.name, "%s", boards::kBoard.ble_name);
     }
     ble::SetName(ble_cfg.name);
+    epd::Init();  // finds the panel's controller; draws nothing (the picture stays)
     // Off at boot; config.json keeps the level a double press of Power lights.
     if (frontlight::Init() == ESP_OK) {
         frontlight::SetLevel(config::Get().frontlight.brightness, config::Get().frontlight.warmth);
