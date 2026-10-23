@@ -8,7 +8,7 @@
 //   address, netmask, gateway, dns1, dns2}}. Anything else is refused by name
 //   (web.* included: the site cannot unlock itself). An absent `ip` keeps the
 //   network's current one (matched by SSID). `ble.name`: 1..29 bytes
-//   (config::ValidBleName, not empty).
+//   (config::ValidBleName, not empty). `display.wallpaper`: grey or bw.
 // - Passwords are write-only: GET never returns one. In a POST an absent or
 //   null password keeps the current one (networks matched by SSID), "" clears.
 // - All or nothing: any refusal leaves `into` untouched.

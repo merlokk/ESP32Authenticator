@@ -168,8 +168,8 @@
     el.textContent = word;
   }
 
-  function said(message, kind) {
-    var box = by("said");
+  function said(message, kind, id) {
+    var box = by(id || "said");
     if (!box) return;
     box.hidden = false;
     box.className = "notice" + (kind ? " " + kind : "");
@@ -256,7 +256,28 @@
            bytes(d.spiffs_total) + " (" + used.toFixed(0) + "%)" : "not mounted");
       fill(by("spiffs-meter"), used, 80, 95);
       text(by("firmware"), d.firmware + " on esp-idf " + d.idf);
+      markWallpaper(d.wallpaper);
     }
+
+    // config.json display.wallpaper: grey (where the panel has it) or bw.
+    function markWallpaper(mode) {
+      var buttons = by("wallpaper").querySelectorAll("button");
+      for (var i = 0; i < buttons.length; i++) {
+        buttons[i].className = buttons[i].getAttribute("data-mode") === mode ? "on" : "";
+      }
+    }
+    by("wallpaper").addEventListener("click", function (e) {
+      var mode = e.target.getAttribute && e.target.getAttribute("data-mode");
+      if (!mode) return;
+      said("applying…", "", "said-wallpaper");
+      post("/api/settings", { display: { wallpaper: mode } }, function () {
+        post("/api/action?do=save", null, function () {
+          markWallpaper(mode);
+          said(mode === "grey" ? "4 grey levels, saved; a panel without them draws black and white"
+                               : "black and white, saved", "ok", "said-wallpaper");
+        }, function (why) { said("set, but not saved: " + why, "bad", "said-wallpaper"); });
+      }, function (why) { said(why, "bad", "said-wallpaper"); });
+    });
 
     function failed(why) {
       lamp("bad", why);

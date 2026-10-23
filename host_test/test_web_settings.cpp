@@ -226,6 +226,26 @@ void test_ble_name(void) {
     TEST_ASSERT_EQUAL_STRING("", d.ble.name);
 }
 
+void test_display_wallpaper(void) {
+    config::Data d = Base();
+    web::WriteOutcome out = Apply(R"({"display": {"wallpaper": "bw"}})", &d);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(WriteResult::kOk), static_cast<int>(out.result));
+    TEST_ASSERT_TRUE(d.display.wallpaper == config::WallpaperMode::kBw);
+    TEST_ASSERT_FALSE(out.wifi_changed);
+    TEST_ASSERT_FALSE(out.ble_changed);
+    out = Apply(R"({"display": {"wallpaper": "grey"}})", &d);
+    TEST_ASSERT_TRUE(d.display.wallpaper == config::WallpaperMode::kGrey);
+    AssertRefused(R"({"display": {"wallpaper": "gray"}})", WriteResult::kBadValue,
+                  "display.wallpaper");
+    AssertRefused(R"({"display": {"wallpaper": 1}})", WriteResult::kBadValue, "display.wallpaper");
+    AssertRefused(R"({"display": {"other": "bw"}})", WriteResult::kUnknownField, "display.other");
+    AssertRefused(R"({"display": "bw"})", WriteResult::kBadValue, "display");
+    // A refusal elsewhere drops it too.
+    d = Base();
+    out = Apply(R"({"display": {"wallpaper": "bw"}, "web": {}})", &d);
+    TEST_ASSERT_TRUE(d.display.wallpaper == config::WallpaperMode::kGrey);
+}
+
 }  // namespace
 
 void RegisterWebSettingsTests(void) {
@@ -243,4 +263,5 @@ void RegisterWebSettingsTests(void) {
     RUN_TEST(test_not_a_document);
     RUN_TEST(test_actions);
     RUN_TEST(test_ble_name);
+    RUN_TEST(test_display_wallpaper);
 }

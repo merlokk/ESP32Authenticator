@@ -316,7 +316,7 @@ esp_err_t StatusApi(httpd_req_t *request) {
         ",\"fido_used\":%u,\"fido_size\":%u,\"fido_pin\":%s,\"fido_pin_retries\":%u"
         ",\"fido_counter\":%" PRIu32 ",\"fido_version\":%" PRIu32 ",\"fido_modified\":%lld"
         ",\"time_utc\":%lld,\"time_offset\":%d,\"time_zone\":\"%s\",\"time_sync\":\"%s\""
-        ",\"time_sync_ago_s\":%ld,\"ble_name\":\"%s\"}",
+        ",\"time_sync_ago_s\":%ld,\"ble_name\":\"%s\",\"wallpaper\":\"%s\"}",
         app->version, app->idf_ver, static_cast<uint32_t>(esp_timer_get_time() / 1000000),
         static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL)),
         static_cast<unsigned>(heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL)),
@@ -337,7 +337,7 @@ esp_err_t StatusApi(httpd_req_t *request) {
         time_set ? static_cast<long long>(now) : 0LL,
         time_set ? tz::OffsetSeconds(now) : 0, zone, sync_state,
         sync.since_last_ms == timesync::kNever ? -1L : static_cast<long>(sync.since_last_ms / 1000),
-        ble_name);
+        ble_name, config::Name(config::Get().display.wallpaper));
     return SendJson(request, nullptr, g_json);
 }
 

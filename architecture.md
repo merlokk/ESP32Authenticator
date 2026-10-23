@@ -363,7 +363,7 @@ and never starts without lwIP (an assert).
 | `GET /api/status` | firmware, heap, SPIFFS, Wi-Fi (IP, MAC, internet), AP, BLE, FIDO (readiness, requests, credentials stored of max, store bytes, PIN set and attempts, signature counter, file version and modification time; `fido_store` false while a request holds the store, `fido_off` why FIDO2 is off). No secrets |
 | `GET /api/devstatus` | the console's `devstatus` dump (stdout swapped for the request) |
 | `GET /api/hwinfo` | the console's `hwinfo` dump, the same way (eFuse key purposes and flags only, no NVS values) |
-| `GET /api/settings`, `POST /api/settings` | Wi-Fi mode, AP, networks (with `ip`; absent `ip` keeps the current one), `ble.name` (applied to the radio at once; the front page sets and saves it). Whitelist; passwords write-only (absent/null keeps, `""` clears); all-or-nothing; memory only |
+| `GET /api/settings`, `POST /api/settings` | Wi-Fi mode, AP, networks (with `ip`; absent `ip` keeps the current one), `ble.name` (applied to the radio at once; the front page sets and saves it), `display.wallpaper` (`grey` / `bw`, the front page's switch, saved). Whitelist; passwords write-only (absent/null keeps, `""` clears); all-or-nothing; memory only |
 | `GET /api/wifi/scan` | access points (hidden/duplicate names dropped) |
 | `POST /api/action?do=save\|reload\|retry` | save config.json / reload it / put Wi-Fi settings on the radio |
 | `POST /api/reboot?confirm=reboot` | restart |
@@ -391,7 +391,8 @@ and never starts without lwIP (an assert).
   amber from 80 %, red from 90 %; PIN and attempts left; signature counter;
   file version and change time; why FIDO2 is off, if it is),
   Device (local time and zone, time sync, uptime, heap, PSRAM, SPIFFS with a bar of the space used, amber
-  from 80 %, red from 95 %, firmware).
+  from 80 %, red from 95 %, firmware; the power-off wallpaper switch, 4 grey
+  levels / black and white, set and saved at a click).
 - Pages and `app.js` are cached for an hour: after a reflash, reload with
   Ctrl+F5 to get the new script.
 

@@ -267,6 +267,29 @@ bool ReadBle(const cJSON *ble, config::Data *into, WriteOutcome *out) {
     return true;
 }
 
+// `display`: {"wallpaper": "grey" | "bw"}, nothing else.
+bool ReadDisplay(const cJSON *display, config::Data *into, WriteOutcome *out) {
+    if (!cJSON_IsObject(display)) {
+        Say(out, WriteResult::kBadValue, "display");
+        return false;
+    }
+    for (const cJSON *item = display->child; item != nullptr; item = item->next) {
+        const char *key = item->string != nullptr ? item->string : "";
+        if (std::strcmp(key, "wallpaper") != 0) {
+            char detail[sizeof out->detail];
+            std::snprintf(detail, sizeof detail, "display.%s", key);
+            Say(out, WriteResult::kUnknownField, detail);
+            return false;
+        }
+        if (!cJSON_IsString(item) || item->valuestring == nullptr ||
+            !config::ParseWallpaperMode(item->valuestring, &into->display.wallpaper)) {
+            Say(out, WriteResult::kBadValue, "display.wallpaper");
+            return false;
+        }
+    }
+    return true;
+}
+
 }  // namespace
 
 WriteOutcome ApplySettings(const char *body, size_t length, config::Data *into) {
@@ -306,6 +329,8 @@ WriteOutcome ApplySettings(const char *body, size_t length, config::Data *into) 
             ok = ReadWifi(section, into->wifi, &staged, &out);
         } else if (std::strcmp(key, "ble") == 0) {
             ok = ReadBle(section, &staged, &out);
+        } else if (std::strcmp(key, "display") == 0) {
+            ok = ReadDisplay(section, &staged, &out);
         } else {
             Say(&out, WriteResult::kUnknownField, key);
             ok = false;
