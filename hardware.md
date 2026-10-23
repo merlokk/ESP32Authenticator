@@ -77,7 +77,7 @@ Power-up order: GPIO1 HIGH → GPIO2 LOW (touch) → GPIO5 pulse (SD).
 
 | Addr | Device | Notes |
 |---|---|---|
-| 0x5D (alt 0x14) | GT911 touch | Self-loads its config, no upload needed. Portrait-mounted (X 0..480, Y 0..800), so swap XY. Home key is status `0x814E` bit `0x10`. |
+| 0x5D (alt 0x14) | GT911 touch | Self-loads its config, no upload needed. Portrait-mounted (X 0..480, Y 0..800), so swap XY. Home key is status `0x814E` bit `0x10`. Our unit: firmware 0x1060, vendor 0x00, config version 0x41 (`A`), output 480 x 800, 5 contacts, INT falling. Contact records: x, y, size (LE) from byte 0, no track id; with the device held buttons down, top left read x 38 y 16, bottom right x 466 y 794. A still Home key makes no frames: its state is latched. |
 | 0x63 | CW2017 fuel gauge | Reports 0% until the 80-byte BATINFO profile is loaded (regs `0x10`–`0x5F`, flag `0x0B` bit 7); it keeps it while the cell is connected (stock loads the same table). SoC is reg `0x04` (+ `0x05`/256), VCELL is regs `0x02`/`0x03` (14 bits, 312.5 uV). VERSION `0x0F` on our unit. No current register: charging only from GPIO21. |
 | 0x51 | BM8563 RTC | PCF8563-compatible. Stock keeps UTC in it. After STOP clears, the first tick comes 1.000 s later (PCF8563: 0.5078 s). |
 

@@ -15,6 +15,7 @@
 #include "esp_timer.h"
 #include "frontlight.h"
 #include "keypad.h"
+#include "touch.h"
 #include "freertos/FreeRTOS.h"
 #include "led.h"
 #include "freertos/task.h"
@@ -415,6 +416,71 @@ int CmdLight(int argc, char **argv) {
     }
     frontlight::PrintInfo();
     return Save();
+}
+
+namespace {
+
+// One frame: status, then each contact raw and decoded both ways (the
+// coordinates at byte 0, as on the X4 Pro, or after a track id at byte 1).
+void PrintFrame(const touch::Snapshot &s, int64_t at_ms) {
+    printf("%6lld ms  status 0x%02x  contacts %u%s\n", at_ms, s.status,
+           static_cast<unsigned>(s.status & touch::gt911::kStatusCount),
+           (s.status & touch::gt911::kStatusKey) != 0 ? "  home" : "");
+    for (uint8_t i = 0; i < s.count; ++i) {
+        const uint8_t *r = s.raw + i * touch::gt911::kPointSize;
+        const touch::gt911::Point at0 = touch::gt911::DecodePoint(r);
+        const touch::gt911::Point at1 = touch::gt911::DecodePoint(r + 1);
+        printf("           #%u  %02x %02x %02x %02x %02x %02x %02x %02x  "
+               "@0: x %u y %u size %u  @1: id %u x %u y %u\n",
+               static_cast<unsigned>(i), r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7], at0.x,
+               at0.y, at0.size, static_cast<unsigned>(r[0]), at1.x, at1.y);
+    }
+}
+
+}  // namespace
+
+int CmdTouch(int argc, char **argv) {
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "info") == 0)) {
+        touch::PrintInfo();
+        return 0;
+    }
+    if (strcmp(argv[1], "watch") != 0 || argc > 3) {
+        printf("usage: touch [info] | touch watch [seconds 1..120]\n");
+        return 1;
+    }
+    if (!touch::Present()) {
+        touch::PrintInfo();
+        return 1;
+    }
+    long seconds = 10;
+    if (argc == 3) {
+        char *end = nullptr;
+        seconds = strtol(argv[2], &end, 10);
+        if (end == argv[2] || *end != '\0' || seconds < 1 || seconds > 120) {
+            printf("seconds: 1..120\n");
+            return 1;
+        }
+    }
+    // The keypad task reads and clears the frames; this shows each new one.
+    printf("touch the panel or Home (%ld s)\n", seconds);
+    const int64_t start_ms = esp_timer_get_time() / 1000;
+    const int64_t end_ms = start_ms + seconds * 1000;
+    uint32_t seen = touch::GetSnapshot().frames;
+    const uint32_t first = seen;
+    while (esp_timer_get_time() / 1000 < end_ms) {
+        vTaskDelay(pdMS_TO_TICKS(20));
+        const touch::Snapshot s = touch::GetSnapshot();
+        if (s.frames != seen) {
+            if (s.frames - seen > 1) {
+                printf("           (%lu frame(s) between)\n",
+                       static_cast<unsigned long>(s.frames - seen - 1));
+            }
+            seen = s.frames;
+            PrintFrame(s, esp_timer_get_time() / 1000 - start_ms);
+        }
+    }
+    printf("%lu new frame(s)\n", static_cast<unsigned long>(seen - first));
+    return 0;
 }
 
 int CmdKeys(int argc, char **argv) {

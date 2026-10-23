@@ -17,6 +17,7 @@ void RegisterClockTests(void);
 void RegisterRtcTests(void);
 void RegisterSdTests(void);
 void RegisterFrontlightTests(void);
+void RegisterTouchTests(void);
 void RegisterBoardTests(void);
 void RegisterTimesyncTests(void);
 void RegisterTimezoneTests(void);
@@ -67,6 +68,7 @@ int main(int argc, char **argv) {
     if (Wanted("rtc")) RegisterRtcTests();
     if (Wanted("sd")) RegisterSdTests();
     if (Wanted("frontlight")) RegisterFrontlightTests();
+    if (Wanted("touch")) RegisterTouchTests();
     if (Wanted("boards")) RegisterBoardTests();
     if (Wanted("timesync")) RegisterTimesyncTests();
     if (Wanted("timezone")) RegisterTimezoneTests();

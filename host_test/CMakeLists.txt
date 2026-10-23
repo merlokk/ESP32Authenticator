@@ -43,6 +43,7 @@ add_executable(host_test
     test_rtc.cpp
     test_sd.cpp
     test_frontlight.cpp
+    test_touch.cpp
     test_boards.cpp
     test_timesync.cpp
     test_timezone.cpp
@@ -95,6 +96,7 @@ target_include_directories(host_test PRIVATE
     ../devices/battery
     ../devices/sd_card
     ../devices/frontlight
+    ../devices/touch
     ../components/pin_policy
     ../devices/crypto
     ../components/totp

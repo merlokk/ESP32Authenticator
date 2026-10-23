@@ -1,10 +1,11 @@
 #pragma once
 
-// The board's push buttons (X4 Pro: Left, Right, Power; dev board: BOOT as
-// Left), owned by one task: polled every buttons::kPollIntervalMs, debounced,
-// turned into events (key_events.h) in a queue for the UI, and the live state
-// for the rest (FIDO2 user presence reads Left here). Nobody else reads the
-// pins: one owner per button.
+// The board's push buttons (X4 Pro: Left, Right, Power, and the capacitive
+// Home key of the GT911; dev board: BOOT as Left), owned by one task: polled
+// every buttons::kPollIntervalMs, debounced, turned into events
+// (key_events.h) in a queue for the UI, and the live state for the rest
+// (FIDO2 user presence reads Left here). Nobody else reads the pins or the
+// GT911: one owner per button.
 
 #include <cstdint>
 

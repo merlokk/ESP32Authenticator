@@ -39,8 +39,10 @@ enum class BatteryType : uint8_t {
 
 // Logical buttons. On the dev board the BOOT button is Left (FIDO2 user
 // presence on every board).
-enum class ButtonId : uint8_t { kLeft, kRight, kPower };
-inline constexpr size_t kButtonCount = 3;
+// kHome is no GPIO: the touch controller's capacitive key (GT911 boards).
+enum class ButtonId : uint8_t { kLeft, kRight, kPower, kHome };
+inline constexpr size_t kButtonCount = 3;  // on GPIOs: Left, Right, Power
+inline constexpr size_t kKeyCount = 4;     // and Home
 
 struct ButtonPin {
     int8_t gpio = kNoPin;
@@ -88,6 +90,8 @@ struct PowerPins {
     int8_t charger_status = kNoPin;   // input, high = charging
 };
 
+inline constexpr ButtonPin kNoButton{};
+
 class Board {
 public:
     const char *name = "";
@@ -128,8 +132,11 @@ public:
     PowerPins power_pins;
 
     constexpr const ButtonPin &Button(ButtonId id) const {
-        return buttons[static_cast<size_t>(id)];
+        return static_cast<size_t>(id) < kButtonCount ? buttons[static_cast<size_t>(id)]
+                                                      : kNoButton;
     }
+    // The capacitive Home key comes with the GT911.
+    constexpr bool HasHomeKey() const { return touch == TouchType::kGt911; }
     constexpr bool HasButton(ButtonId id) const { return Button(id).gpio != kNoPin; }
     constexpr bool NeedsI2c() const {
         return hw_clock != HwClockType::kNone || touch != TouchType::kNone ||
@@ -249,7 +256,10 @@ constexpr const char *Name(BatteryType t) {
     return t == BatteryType::kCw2017 ? "CW2017" : "none";
 }
 constexpr const char *Name(ButtonId id) {
-    return id == ButtonId::kLeft ? "left" : id == ButtonId::kRight ? "right" : "power";
+    return id == ButtonId::kLeft    ? "left"
+           : id == ButtonId::kRight ? "right"
+           : id == ButtonId::kPower ? "power"
+                                    : "home";
 }
 
 }  // namespace boards

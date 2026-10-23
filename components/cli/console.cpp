@@ -27,6 +27,7 @@
 #include "files.h"
 #include "hardware.h"
 #include "sd_card.h"
+#include "touch.h"
 #include "sd_cmd.h"
 #include "web_server.h"
 #include "linenoise/linenoise.h"
@@ -68,6 +69,8 @@ int CmdHwInfo(int, char **) {
     boards::PrintClock();
     printf("[battery]\n");
     battery::PrintInfo();
+    printf("[touch]\n");
+    touch::PrintInfo();
     printf("[sd card]\n");
     sd_card::PrintInfo();
     printf("[led]\n");
@@ -322,6 +325,16 @@ const esp_console_cmd_t kCommands[] = {
                 "on | off (now; off at boot, Power x2 toggles)",
         .hint = "[info | <1..100> [warmth] | warmth <0..100> | on | off]",
         .func = &CmdLight,
+        .argtable = nullptr,
+        .func_w_context = nullptr,
+        .context = nullptr,
+    },
+    {
+        .command = "touch",
+        .help = "Touch controller (GT911): [info] product, firmware, size, config | watch [seconds]: "
+                "each frame, contacts raw and decoded",
+        .hint = "[info | watch [seconds]]",
+        .func = &CmdTouch,
         .argtable = nullptr,
         .func_w_context = nullptr,
         .context = nullptr,

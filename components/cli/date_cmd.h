@@ -25,6 +25,11 @@
 //   light warmth <0..100>         the tint only
 //   light on | off                now, not saved
 //
+// `touch` command (the GT911; the keypad task reads it, Home is the keypad's `home`):
+//   touch [info]         address, product, firmware, panel size, vendor, config head,
+//                        frames and read errors, Home
+//   touch watch [s]      each new frame for 1..120 s: status, contacts raw and decoded
+//
 // `keys` command (the board's push buttons, keypad task):
 //   keys [info]          per button: GPIO, raw and debounced level, held time; queue
 //   keys watch [s]       events from now on for 1..120 s (default 10): pressed,
@@ -43,6 +48,7 @@ int CmdLed(int argc, char **argv);
 int CmdBattery(int argc, char **argv);
 int CmdKeys(int argc, char **argv);
 int CmdLight(int argc, char **argv);
+int CmdTouch(int argc, char **argv);
 
 // Readouts reused by `devstatus` and `hwinfo`.
 void PrintDateInfo();

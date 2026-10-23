@@ -10,17 +10,22 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/task.h"
+#include "touch.h"
 
 namespace keypad {
 
 namespace {
 
 constexpr const char *TAG = "keypad";
-constexpr size_t kCount = boards::kButtonCount;
+constexpr size_t kCount = boards::kKeyCount;
+constexpr size_t kHome = static_cast<size_t>(boards::ButtonId::kHome);
 
 struct Key {
     buttons::Button pin{GPIO_NUM_NC};
+    bool touch_key = false;  // Home: the GT911, not a pin
     buttons::KeyTracker tracker;
+
+    bool Present() const { return touch_key || pin.Present(); }
 };
 
 Key keys[kCount];
@@ -46,10 +51,16 @@ void Task(void *) {
     for (;;) {
         const uint32_t now = NowMs();
         for (Key &k : keys) {
-            if (!k.pin.Present()) {
+            if (!k.Present()) {
                 continue;
             }
-            const bool raw = k.pin.RawPressed();
+            bool raw = false;
+            if (k.touch_key) {
+                touch::Poll();  // a failed read keeps the last state
+                raw = touch::HomePressed();
+            } else {
+                raw = k.pin.RawPressed();
+            }
             portENTER_CRITICAL(&lock);
             const buttons::KeyEvents events = k.tracker.Update(raw, now);
             portEXIT_CRITICAL(&lock);
@@ -71,7 +82,7 @@ void Task(void *) {
 
 Key *Find(boards::ButtonId id) {
     const size_t i = static_cast<size_t>(id);
-    return i < kCount && keys[i].pin.Present() ? &keys[i] : nullptr;
+    return i < kCount && keys[i].Present() ? &keys[i] : nullptr;
 }
 
 }  // namespace
@@ -87,6 +98,14 @@ esp_err_t Start() {
         Key &k = keys[i];
         k.pin = boards::Button(static_cast<boards::ButtonId>(i));
         k.tracker = buttons::KeyTracker(static_cast<uint8_t>(i));
+        if (i == kHome) {
+            k.touch_key = boards::kBoard.HasHomeKey() && touch::Init() == ESP_OK;
+            if (k.touch_key) {
+                touch::Poll();
+                k.tracker.Reset(touch::HomePressed(), now);
+            }
+            continue;
+        }
         if (!k.pin.Present()) {
             continue;
         }
@@ -167,8 +186,12 @@ void PrintInfo() {
             continue;
         }
         const uint32_t held = HeldMs(id);
-        printf("%-10s GPIO%d, raw %s, %s", boards::Name(id), static_cast<int>(k->pin.Gpio()),
-               k->pin.RawPressed() ? "down" : "up", Pressed(id) ? "pressed" : "released");
+        if (k->touch_key) {
+            printf("%-10s GT911 key, %s", boards::Name(id), Pressed(id) ? "pressed" : "released");
+        } else {
+            printf("%-10s GPIO%d, raw %s, %s", boards::Name(id), static_cast<int>(k->pin.Gpio()),
+                   k->pin.RawPressed() ? "down" : "up", Pressed(id) ? "pressed" : "released");
+        }
         if (held > 0) {
             printf(" for %" PRIu32 " ms", held);
         }
