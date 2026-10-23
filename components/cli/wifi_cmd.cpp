@@ -591,6 +591,43 @@ int CmdWallpaper(int argc, char **argv) {
     return argc == 2 ? CmdSave(0, nullptr) : 0;
 }
 
+//   config power [idle <0..1440 min>] [keep <0..168 h>]  (saved)
+//     idle: off after this long with nothing done (0: never)
+//     keep: a wake this soon after the sleep needs no PIN (0: always the PIN)
+int CmdPower(int argc, char **argv) {
+    config::Power &p = config::Get().power;
+    config::Power next = p;
+    for (int i = 1; i < argc; i += 2) {
+        char *end = nullptr;
+        const unsigned long v = i + 1 < argc ? strtoul(argv[i + 1], &end, 10) : 0;
+        const bool number = i + 1 < argc && argv[i + 1][0] != '\0' && *end == '\0';
+        if (number && strcmp(argv[i], "idle") == 0 && v <= config::kMaxIdleMinutes) {
+            next.idle_minutes = static_cast<uint16_t>(v);
+        } else if (number && strcmp(argv[i], "keep") == 0 && v <= config::kMaxKeepPinHours) {
+            next.keep_pin_hours = static_cast<uint8_t>(v);
+        } else {
+            printf("usage: config power [idle <0..%u min>] [keep <0..%u h>]\n",
+                   static_cast<unsigned>(config::kMaxIdleMinutes),
+                   static_cast<unsigned>(config::kMaxKeepPinHours));
+            return 1;
+        }
+    }
+    p = next;
+    if (p.idle_minutes != 0) {
+        printf("idle       off after %u min with nothing done (not on USB)\n",
+               static_cast<unsigned>(p.idle_minutes));
+    } else {
+        printf("idle       never off on its own\n");
+    }
+    if (p.keep_pin_hours != 0) {
+        printf("keep PIN   a wake within %u h of the sleep needs no PIN (off lock: it does)\n",
+               static_cast<unsigned>(p.keep_pin_hours));
+    } else {
+        printf("keep PIN   off: the PIN after every wake\n");
+    }
+    return argc > 1 ? CmdSave(0, nullptr) : 0;
+}
+
 constexpr Subcommand kConfigSubcommands[] = {
     {"show", &CmdShow},
     {"info", &CmdConfigInfo},
@@ -598,6 +635,7 @@ constexpr Subcommand kConfigSubcommands[] = {
     {"save", &CmdSave},
     {"test", &CmdTest},
     {"wallpaper", &CmdWallpaper},
+    {"power", &CmdPower},
 };
 
 }  // namespace
@@ -619,7 +657,8 @@ int CmdWeb(int argc, char **argv) {
 int CmdConfig(int argc, char **argv) {
     return Dispatch(kConfigSubcommands, argc, argv,
                     "config show | info | reload | save | "
-                    "test [pin <6 digits>|off | presence on|off] | wallpaper [grey|bw]");
+                    "test [pin <6 digits>|off | presence on|off] | wallpaper [grey|bw] | "
+                    "power [idle <minutes>] [keep <hours>]");
 }
 
 void PrintWifiInfo() { CmdInfo(0, nullptr); }

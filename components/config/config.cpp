@@ -59,6 +59,10 @@ const char kDefaultJson[] = R"json({
   "display": {
     "wallpaper": "grey"
   },
+  "power": {
+    "idleMinutes": 10,
+    "keepPinHours": 0
+  },
   "pin": {
     "lockMinutes": 10,
     "wipe": "",
@@ -252,6 +256,18 @@ bool ParseTime(const cJSON *section, Time *out, char *error, size_t size) {
 bool ParseDisplay(const cJSON *section, Display *out, char *error, size_t size) {
     return GetMode(section, "wallpaper", ParseWallpaperMode, &out->wallpaper, "grey, bw", "display",
                    error, size);
+}
+
+bool ParsePower(const cJSON *section, Power *out, char *error, size_t size) {
+    uint32_t idle = out->idle_minutes;
+    uint32_t keep = out->keep_pin_hours;
+    if (!GetUint(section, "idleMinutes", 0, kMaxIdleMinutes, &idle, "power", error, size) ||
+        !GetUint(section, "keepPinHours", 0, kMaxKeepPinHours, &keep, "power", error, size)) {
+        return false;
+    }
+    out->idle_minutes = static_cast<uint16_t>(idle);
+    out->keep_pin_hours = static_cast<uint8_t>(keep);
+    return true;
 }
 
 bool ParseFrontlight(const cJSON *section, Frontlight *out, char *error, size_t size) {
@@ -545,6 +561,16 @@ bool ParseSections(const cJSON *root, Data *staged, char *error, size_t size) {
             return false;
         }
     }
+    const cJSON *power = cJSON_GetObjectItemCaseSensitive(root, "power");
+    if (power != nullptr) {
+        if (!cJSON_IsObject(power)) {
+            SetError(error, size, "power: expected an object");
+            return false;
+        }
+        if (!ParsePower(power, &parsed.power, error, size)) {
+            return false;
+        }
+    }
     const cJSON *pin = cJSON_GetObjectItemCaseSensitive(root, "pin");
     if (pin != nullptr) {
         if (!cJSON_IsObject(pin)) {
@@ -706,6 +732,9 @@ size_t Serialize(const Data &d, char *out, size_t size) {
     cJSON_AddNumberToObject(light, "warmth", d.frontlight.warmth);
     cJSON *display = cJSON_AddObjectToObject(root, "display");
     cJSON_AddStringToObject(display, "wallpaper", Name(d.display.wallpaper));
+    cJSON *power = cJSON_AddObjectToObject(root, "power");
+    cJSON_AddNumberToObject(power, "idleMinutes", d.power.idle_minutes);
+    cJSON_AddNumberToObject(power, "keepPinHours", d.power.keep_pin_hours);
     cJSON *pin = cJSON_AddObjectToObject(root, "pin");
     cJSON_AddNumberToObject(pin, "lockMinutes", d.pin.lock_minutes);
     cJSON_AddStringToObject(pin, "wipe", d.pin.wipe);

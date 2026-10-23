@@ -2,6 +2,7 @@
 
 #include <cinttypes>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 #include "esp_app_desc.h"
@@ -45,10 +46,35 @@ constexpr const char *TAG = "cli";
 // Commands kept for the up-arrow (esp_console's default).
 constexpr int kHistoryLength = 32;
 
-int CmdOff(int, char **) {
-    const esp_err_t err = power::RequestOff();
-    printf("%s\n", err == ESP_OK ? "powering off (Power wakes it)" : esp_err_to_name(err));
-    return err == ESP_OK ? 0 : 1;
+// off [lock] [wake <seconds>]: wake is for tests (a timer wakes it too).
+int CmdOff(int argc, char **argv) {
+    bool lock = false;
+    unsigned long wake = 0;
+    for (int i = 1; i < argc; ++i) {
+        char *end = nullptr;
+        if (strcmp(argv[i], "lock") == 0) {
+            lock = true;
+        } else if (strcmp(argv[i], "wake") == 0 && i + 1 < argc &&
+                   (wake = strtoul(argv[i + 1], &end, 10)) > 0 && *end == '\0' && wake <= 86400) {
+            ++i;
+        } else {
+            printf("usage: off [lock] [wake <1..86400 s>]\n");
+            return 1;
+        }
+    }
+    const esp_err_t err = power::RequestOff(lock, static_cast<uint32_t>(wake));
+    if (err != ESP_OK) {
+        printf("%s\n", esp_err_to_name(err));
+        return 1;
+    }
+    const uint8_t keep = config::Get().power.keep_pin_hours;
+    printf("powering off (Power wakes it%s); ", wake != 0 ? ", and a timer" : "");
+    if (lock || keep == 0) {
+        printf("the PIN after the wake\n");
+    } else {
+        printf("no PIN for a wake within %u h\n", static_cast<unsigned>(keep));
+    }
+    return 0;
 }
 
 int CmdUi(int argc, char **argv) {
@@ -370,8 +396,11 @@ const esp_console_cmd_t kCommands[] = {
     {
         .command = "off",
         .help = "Power off: a random PNG from /sdcard/wallpapers on the screen, deep sleep; "
-                "the Power button wakes it (a reboot). Also: Power held",
-        .hint = nullptr,
+                "the Power button wakes it (a reboot). Also: Power held, idle "
+                "(power.idleMinutes). The vault key is kept through the sleep for "
+                "power.keepPinHours; lock: not (also Power x3). wake <s>: a timer wakes it "
+                "too (tests)",
+        .hint = "[lock] [wake <seconds>]",
         .func = &CmdOff,
         .argtable = nullptr,
         .func_w_context = nullptr,
@@ -443,7 +472,9 @@ const esp_console_cmd_t kCommands[] = {
         .command = "config",
         .help = "config.json: show (passwords masked) | info | reload | save | "
                 "test [pin <6 digits>|off | presence on|off] (development, saved) | "
-                "wallpaper [grey|bw] (power-off wallpaper tones, saved)",
+                "wallpaper [grey|bw] (power-off wallpaper tones, saved) | "
+                "power [idle <minutes>] [keep <hours>] (off when idle, the PIN kept through a "
+                "sleep; saved)",
         .hint = "<show|info|reload|save|test|wallpaper>",
         .func = &CmdConfig,
         .argtable = nullptr,

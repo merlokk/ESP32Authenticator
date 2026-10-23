@@ -557,6 +557,48 @@ void Lock() {
     Notify(KeyEvent::kGone);
 }
 
+bool CopyKey(Key *out) {
+    if (g_state == State::kOff) {
+        return false;
+    }
+    Guard guard;
+    if (g_have_key) {
+        *out = g_key;
+    }
+    return g_have_key;
+}
+
+Error Open(const Key &key) {
+    if (g_state == State::kOff) {
+        return Error::kLocked;
+    }
+    KeyEvent event = KeyEvent::kNone;
+    Error e = Error::kOk;
+    {
+        Guard guard;
+        if (g_have_key) {
+            return SameKey(key, g_key) ? Error::kOk : Error::kLocked;
+        }
+        if (LockLeft() > 0) {
+            return Error::kPinLocked;
+        }
+        g_key = key;
+        g_have_key = true;
+        if (ReadFile(nullptr) == Read::kOk) {
+            Opened();
+            event = KeyEvent::kIn;
+        } else {
+            g_records->Clear();
+            ForgetKey();
+            g_state = State::kLocked;
+            g_why = nullptr;
+            e = Error::kLocked;
+        }
+    }
+    Notify(event);
+    return e;
+}
+
 Error ChangePin(const char *old_pin, const char *new_pin) {
     if (!ValidPin(old_pin) || !ValidPin(new_pin)) {
         return Error::kBadPin;

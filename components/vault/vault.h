@@ -99,6 +99,13 @@ esp_err_t Init(const char *dir, size_t capacity);
 Error Unlock(const char *pin);
 // Wipes the records and the key.
 void Lock();
+// A copy of the key in memory (kept through a sleep, power.h); false: none.
+// Wipe it after use.
+bool CopyKey(Key *out);
+// Opens the store with a key kept through a sleep, no PIN (nothing counted):
+// kOk, or kLocked (another key, no or a damaged file: the key dropped, the
+// PIN as ever), kPinLocked while PIN entry is locked.
+Error Open(const Key &key);
 // A new key from `new_pin` (new salt); vault.bin and fido.bin are written
 // with it from memory. Needs the store open. A wrong `old_pin` counts as a
 // wrong PIN. kFidoNotLoaded: fido.bin exists but is not loaded (it could not

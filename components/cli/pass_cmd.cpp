@@ -334,6 +334,13 @@ int CmdPinInfo() {
     } else {
         printf("then a %u-minute lock\n", static_cast<unsigned>(config::Get().pin.lock_minutes));
     }
+    const uint8_t keep = config::Get().power.keep_pin_hours;
+    if (keep != 0) {
+        printf("sleep      the key kept for %u h of sleep (config power keep; off lock: not)\n",
+               static_cast<unsigned>(keep));
+    } else {
+        printf("sleep      the PIN after every wake (config power keep <hours>)\n");
+    }
     printf("wipe PIN   %s\n", info.wipe_set ? "set (erases the store and FIDO2 when entered)"
                                              : "not set ('pin wipe set <pin>')");
     return 0;

@@ -20,7 +20,7 @@ Target and status. Screen design and the open questions: [x4-design.md](x4-desig
 | Time: SNTP, zones, clock | done |
 | Battery: voltage, level, charging | done (CW2017 + charger STAT, console `battery`, BLE Battery Level); screen not yet |
 | Wi-Fi, configuration site, console | done |
-| Power-off: a wallpaper on the screen, deep sleep, Power wakes | done (Power held or `off`; PNGs in `/sdcard/wallpapers`) |
+| Power-off: a wallpaper on the screen, deep sleep, Power wakes | done (Power held, x3 locked, idle or `off`; PNGs in `/sdcard/wallpapers`; the PIN kept through a sleep: `power.keepPinHours`) |
 
 ## Stack
 
@@ -62,6 +62,9 @@ Reference ESP-IDF + LVGL project: `../../ai-remote/approver-esp32` ([GitHub](htt
   `pin wipe set`, masked by `config show`), never the PIN itself.
   `complexity` (default true): a new PIN, vault and FIDO2, must pass
   `pin_policy.h` (no repeats, runs or common PINs).
+- `power`: `idleMinutes` (0..1440, default 10, 0: never) off with nothing
+  done; `keepPinHours` (0..168, default 0: the PIN after every wake) how
+  long after a sleep a wake needs no PIN.
 - `test`: development aids. `test.pin` (empty or 6 digits) unlocks the vault
   at boot; masked by `config show`, never on the site. `test.autoPresence`
   (default false): FIDO2 / U2F user presence is confirmed without the button
@@ -95,6 +98,7 @@ Reference ESP-IDF + LVGL project: `../../ai-remote/approver-esp32` ([GitHub](htt
   "led": {"brightness": 15, "idleBrightness": 7},
   "frontlight": {"brightness": 20, "warmth": 50},
   "display": {"wallpaper": "grey"},
+  "power": {"idleMinutes": 10, "keepPinHours": 0},
   "pin": {"lockMinutes": 10, "wipe": "", "complexity": true},
   "test": {"pin": ""}
 }
@@ -274,14 +278,32 @@ flip). Until the real screens the boot screen marks the last press.
 Console `ui`; version in `version`.
 
 Power-off (`components/power`): the X4 Pro has no power switch, so "off" is
-deep sleep. Power held (600 ms, the keypad's long press) or console `off`:
-the ui task stops (its lock is never given back), frontlight off, a random
+deep sleep. Power held (600 ms, the keypad's long press), Power x3 (locked),
+idle or console `off [lock] [wake <s>]`: the ui task stops (its lock is never
+given back), frontlight off, BLE off (the host sees the link closed), a random
 PNG from `/sdcard/wallpapers` (the stock firmware's folder) on the panel
 (full refresh), the panel in deep sleep, wait for Power to be released, then
 RTC ext1 wake on Power (low, RTC pull-up) and deep sleep. Held through sleep
 (`power_logic.h`, as FreeInk's PowerManager): EPD RST high, SD and touch
-power off; `power::Boot()` releases them first thing at boot. A wake is a
-reboot: the boot screen, the PIN again. Wallpaper (`wallpaper.cpp`,
+power off, the frontlight's PWM pins low; `power::Boot()` releases them first
+thing at boot. GPIO1 (peripheral rail) is not held, as in FreeInk. A sleep
+the chip refuses (`esp_deep_sleep_try_to_start` returns): a restart, not a
+drain at full current. A wake is a reboot: the boot screen, the PIN again,
+unless the key was kept. Kept key (`power.keepPinHours`, not after Power x3
+or `off lock`): right before the sleep the vault key (`vault::CopyKey`) goes
+into RTC memory (`RTC_NOINIT`: kept in deep sleep and resets, lost with the
+battery) with the sleep time and a checksum (`Kept`, pure); `Boot()` takes
+it out only after a deep-sleep wake and wipes RTC memory; then, with the
+board clock in the system clock, `TakeKept` checks the time (from the
+sleep, under the hours, a 2-minute slack back; the clock lost: no) and
+`vault::Open(key)` opens the stores (another key in the file: locked,
+nothing counted). Without secure boot and with the download mode open,
+whoever holds the device could read it (as the 6-digit PIN can be brute-
+forced offline from the files today). Idle (`power.idleMinutes`, read live):
+a task checks every 5 s; activity is any key event, a touch press, BLE
+typing, a FIDO2 request (start and end), a web request; a USB host (the
+console, SOF frames: not a charger) or the pairing window keeps it on and
+the idle time starts when it ends. Wallpaper (`wallpaper.cpp`,
 `wallpaper_logic.h` pure): the PNG read whole into PSRAM (up to 4 MB),
 LVGL's lodepng (`LV_USE_LODEPNG`; it returns an `lv_draw_buf_t`, RGBA),
 grey (BT.601, alpha on white), centred (480x800 fills; larger is cropped),

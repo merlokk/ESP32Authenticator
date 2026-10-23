@@ -223,7 +223,7 @@ Opening the port with RTS asserted resets the chip.
 | `epd [info]` / `epd test [orient\|corners\|edges\|checker\|black\|white\|grey] [full\|fast]` / `epd sleep` | the e-ink panel: controller, both probe passes (FLG, VER), the stock screenType, refreshes and the last duration (full, fast or grey) / draw a test frame (orient: which way is up; corners, edges: what the bezel hides; grey: four bands black to white, UC8179 only) / deep sleep, the picture stays |
 | `touch [info]` / `touch watch [s]` | the GT911: address, product, firmware, panel size, vendor, config head (version, output size, contacts, INT mode), frames and read errors, Home / each new frame that differs from the last for 1..120 s (repeats only counted: printing ~100 frames a second jammed the USB console until a replug): status, contacts raw and decoded (id, x, y, size) |
 | `ui [info]` / `ui wallpaper [grey\|bw]` | LVGL display: size, refreshes, the last one, the turn time, the ui task's free stack, touch (up/down, last point, presses) / draw a random power-off wallpaper now (as `display.wallpaper`, or as given), staying on |
-| `off` | power-off: a wallpaper, deep sleep; Power wakes (a reboot). Also Power held |
+| `off [lock] [wake <s>]` | power-off: a wallpaper, deep sleep; Power wakes (a reboot). Also Power held, idle (`power.idleMinutes`); the vault key kept for `power.keepPinHours`, `lock` (also Power x3): not; `wake`: a timer wakes it too (tests) |
 | `keys [info]` / `keys watch [s]` | the buttons: GPIO, raw and debounced level, held time, queue / events from now on for 1..120 s (default 10): pressed, released, long, click xN |
 | `battery [info]` | gauge (CW2017 at 0x63, profile, last init action), voltage (mV), level (%), charging (STAT pin) |
 | `battery regs` / `battery init` | gauge registers 0x00..0x0F and the resident profile, raw / check the profile again (loads it if it differs), reset the gauge |
@@ -255,6 +255,7 @@ entry for `pin.lockMinutes` (config.json), also across a reboot.
 | `config show` | current config as JSON, passwords masked (networks, AP, web) |
 | `config info` | file path, source (file / built-in defaults), why the file was not used |
 | `config test [pin <6 digits>\|off \| presence on\|off]` | development: `test.pin` (the vault unlocks at boot) and `test.autoPresence` (FIDO2 without the button), saved; the PIN is never shown. For test runs (`tests/fido2` with reboots, the fill test); turn both off after |
+| `config power [idle <0..1440 min>] [keep <0..168 h>]` | off when idle (0: never; never on USB) / a wake this soon after the sleep needs no PIN (0: always), saved |
 | `config wallpaper [grey\|bw]` | the power-off wallpaper: 4 grey levels (where the panel has them) or black and white (`display.wallpaper`), saved |
 | `config reload` / `config save` | re-read config.json (keeps values on error) and apply Wi-Fi (incl. internet check), web, time and LED settings / write current values |
 | `efuse` | every eFuse field (list generated at build time from IDF `esp_efuse_table.csv`) and raw blocks BLK0..BLK10 |

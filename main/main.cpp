@@ -100,7 +100,14 @@ void InitFido(const char *dir) {
     fido_ctap_set_pin_complexity(config::Get().pin.complexity);
     if (fido_ctap_init(&hooks, have_fs ? store : nullptr, boards::kBoard.fido_max_credentials) ==
         ESP_OK) {
-        ble_fido::SetMessageHandler(fido_ctap_request);
+        // A request (and its wait for the button) is activity: no idle off.
+        ble_fido::SetMessageHandler([](const uint8_t *msg, size_t len, uint8_t *out,
+                                       size_t out_size) {
+            power::NoteActivity();
+            const size_t n = fido_ctap_request(msg, len, out, out_size);
+            power::NoteActivity();
+            return n;
+        });
     } else {
         ESP_LOGE(TAG, "fido: CTAP core init failed");
     }
@@ -139,9 +146,25 @@ void InitVault(const char *dir) {
         .unstage = [] { fido_ctap_unstage_key(); },
         .wipe = [] { fido_ctap_wipe(); },
     });
+    // The key kept through the sleep (power.keepPinHours): handed over at
+    // the sleep, taken back at the wake.
+    power::SetSleepHook([](bool lock) {
+        const uint8_t hours = config::Get().power.keep_pin_hours;
+        vault::Key k;
+        if (!lock && hours != 0 && vault::CopyKey(&k)) {
+            power::Keep(&k, sizeof k, hours);
+        }
+        vault::Wipe(&k, sizeof k);
+    });
     if (vault::Init(dir, boards::kBoard.max_records) != ESP_OK || dir == nullptr) {
         return;
     }
+    vault::Key kept;
+    if (power::TakeKept(&kept, sizeof kept)) {
+        const vault::Error e = vault::Open(kept);
+        ESP_LOGI(TAG, "vault: the PIN kept through the sleep: %s", vault::Describe(e));
+    }
+    vault::Wipe(&kept, sizeof kept);
     const char *pin = config::Get().test.pin;
     if (pin[0] != '\0') {
         const vault::Error e = vault::Unlock(pin);
@@ -149,14 +172,18 @@ void InitVault(const char *dir) {
     }
 }
 
-// Button bindings, from the keypad task. Power x2: the frontlight on / off;
-// Power held: off (wallpaper, deep sleep).
+// Button bindings, from the keypad task; any key is activity. Power x2: the
+// frontlight on / off; Power held: off (wallpaper, deep sleep); Power x3: off
+// locked (the PIN after the wake, whatever power.keepPinHours says).
 void OnKey(const buttons::KeyEvent &e) {
+    power::NoteActivity();
     if (e.key != static_cast<uint8_t>(boards::ButtonId::kPower)) {
         return;
     }
     if (e.kind == buttons::Kind::kClick && e.count == 2) {
         frontlight::Toggle();
+    } else if (e.kind == buttons::Kind::kClick && e.count == 3) {
+        power::RequestOff(true);
     } else if (e.kind == buttons::Kind::kLong) {
         power::RequestOff();
     }
@@ -192,9 +219,13 @@ extern "C" void app_main() {
     boards::SetLedBrightness(config::Get().led.percent, config::Get().led.idle_percent);
 
     ui::Init();  // LVGL on the panel (portrait), the boot screen
+    ui::SetPressHook(power::NoteActivity);
 
     ble_kb::Register();  // BLE profiles, before the stack starts
-    ble_kb::SetTypingHook(boards::LedTyping);
+    ble_kb::SetTypingHook([] {
+        boards::LedTyping();
+        power::NoteActivity();
+    });
     ble_fido::Register();
     const char *dir = StorageDir();
     if (dir != nullptr) {
@@ -214,6 +245,7 @@ extern "C" void app_main() {
 
     // The web server reconciles on the Wi-Fi manager's tick (hook first); the
     // manager task follows config.json (radio off unless wifi.active).
+    web::SetRequestHook(power::NoteActivity);
     ESP_ERROR_CHECK(web::Init());
     ESP_ERROR_CHECK(wifimgr::Init());
     // SNTP when the internet is up; the result goes back to the board's clock.
@@ -221,5 +253,6 @@ extern "C" void app_main() {
     if (config::Get().ble.active) {
         ble::On();
     }
+    power::Start();  // the idle watch (power.idleMinutes)
     boards::BootDone();  // LED: ready
 }

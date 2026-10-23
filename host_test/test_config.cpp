@@ -90,6 +90,8 @@ void AssertDefaults(const config::Data &d) {
     TEST_ASSERT_EQUAL_STRING("", d.test.pin);
     TEST_ASSERT_FALSE(d.test.auto_presence);
     TEST_ASSERT_EQUAL_UINT16(10, d.pin.lock_minutes);
+    TEST_ASSERT_EQUAL_UINT16(10, d.power.idle_minutes);
+    TEST_ASSERT_EQUAL_UINT8(0, d.power.keep_pin_hours);
     TEST_ASSERT_TRUE(d.pin.complexity);
     TEST_ASSERT_EQUAL_STRING("", d.pin.wipe);
 }
@@ -503,6 +505,27 @@ void test_parse_display() {
     AssertParseFails(R"({"display": {"wallpaper": "gray"}})", "display.wallpaper");
 }
 
+void test_parse_power() {
+    config::Data d;
+    config::FillDefaults(&d);
+    char error[config::kErrorSize] = {};
+    TEST_ASSERT_TRUE_MESSAGE(
+        ParseText(R"({"power": {"idleMinutes": 0, "keepPinHours": 168}})", &d, error, sizeof error),
+        error);
+    TEST_ASSERT_EQUAL_UINT16(0, d.power.idle_minutes);
+    TEST_ASSERT_EQUAL_UINT8(168, d.power.keep_pin_hours);
+    char json[config::kMaxFileSize];
+    TEST_ASSERT_GREATER_THAN(0, config::Serialize(d, json, sizeof json));
+    config::Data out;
+    config::FillDefaults(&out);
+    TEST_ASSERT_TRUE_MESSAGE(ParseText(json, &out, error, sizeof error), error);
+    TEST_ASSERT_EQUAL_UINT16(0, out.power.idle_minutes);
+    TEST_ASSERT_EQUAL_UINT8(168, out.power.keep_pin_hours);
+    AssertParseFails(R"({"power": 1})", "power: expected an object");
+    AssertParseFails(R"({"power": {"idleMinutes": 1441}})", "power.idleMinutes");
+    AssertParseFails(R"({"power": {"keepPinHours": 169}})", "power.keepPinHours");
+}
+
 void test_valid_host() {
     TEST_ASSERT_TRUE(config::ValidHost(""));
     TEST_ASSERT_TRUE(config::ValidHost("pool.ntp.org"));
@@ -803,6 +826,7 @@ void RegisterConfigTests(void) {
     RUN_TEST(test_parse_led);
     RUN_TEST(test_parse_frontlight);
     RUN_TEST(test_parse_display);
+    RUN_TEST(test_parse_power);
     RUN_TEST(test_parse_ipv4);
     RUN_TEST(test_parse_static_ip);
     RUN_TEST(test_parse_rejects_bad_static_ip);

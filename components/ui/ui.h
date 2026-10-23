@@ -31,6 +31,9 @@ esp_err_t ShowWallpaper(bool grey = true);
 // change draws over it.
 esp_err_t PreviewWallpaper(bool grey, const char **shown);
 
+// Called from the ui task when a finger goes down (power::NoteActivity).
+void SetPressHook(void (*hook)());
+
 // "9.4.0".
 const char *LvglVersion();
 

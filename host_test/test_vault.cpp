@@ -301,6 +301,30 @@ void test_vault_reset_with_a_new_key_refuses_a_weak_pin(void) {
     TEST_ASSERT_TRUE(vault::GetInfo().state == vault::State::kOpen);
 }
 
+void test_vault_a_kept_key_opens_the_store_without_a_pin(void) {
+    FreshVault(true);
+    vault::Key key;
+    TEST_ASSERT_FALSE(vault::CopyKey(&key));
+    TEST_ASSERT_EQUAL(Error::kOk, vault::Unlock(kStrongPin));
+    TEST_ASSERT_EQUAL(Error::kOk, vault::Add("site", "u", "pw", "", nullptr));
+    TEST_ASSERT_TRUE(vault::CopyKey(&key));
+    vault::Lock();
+    TEST_ASSERT_EQUAL(Error::kOk, vault::Open(key));
+    TEST_ASSERT_TRUE(vault::GetInfo().state == vault::State::kOpen);
+    TEST_ASSERT_EQUAL_size_t(1, vault::GetInfo().count);
+    TEST_ASSERT_EQUAL(Error::kOk, vault::Open(key));  // already in: the same key
+
+    vault::Key other = key;
+    other.key[0] ^= 1;
+    TEST_ASSERT_EQUAL(Error::kLocked, vault::Open(other));  // in: another key refused
+    vault::Lock();
+    TEST_ASSERT_EQUAL(Error::kLocked, vault::Open(other));  // the file's key id differs
+    TEST_ASSERT_TRUE(vault::GetInfo().state == vault::State::kLocked);
+    TEST_ASSERT_FALSE(vault::GetInfo().has_key);
+    TEST_ASSERT_EQUAL(0, vault::GetInfo().pin_failures);  // nothing counted
+    TEST_ASSERT_EQUAL(Error::kOk, vault::Unlock(kStrongPin));
+}
+
 }  // namespace
 
 void RegisterVaultTests(void) {
@@ -324,4 +348,5 @@ void RegisterVaultTests(void) {
     RUN_TEST(test_vault_new_store_refuses_a_weak_pin);
     RUN_TEST(test_vault_change_pin_refuses_a_weak_pin);
     RUN_TEST(test_vault_reset_with_a_new_key_refuses_a_weak_pin);
+    RUN_TEST(test_vault_a_kept_key_opens_the_store_without_a_pin);
 }

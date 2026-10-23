@@ -44,6 +44,8 @@ constexpr size_t kHostSize = 64;     // SNTP server: host name or IPv4
 // BLE device name: 29 bytes fill the scan response (31 - length - type).
 constexpr size_t kBleNameSize = 30;
 constexpr uint8_t kMaxSyncHours = 168;
+constexpr uint16_t kMaxIdleMinutes = 1440;
+constexpr uint8_t kMaxKeepPinHours = 168;
 
 // A fixed address for one network (per network: home DHCP, office static).
 // Kept as typed; `enabled` false is DHCP and keeps the fields for later.
@@ -142,6 +144,12 @@ struct Display {
     WallpaperMode wallpaper;
 };
 
+// Power-off on its own, and the PIN through a sleep (components/power).
+struct Power {
+    uint16_t idle_minutes;   // 0..1440: off after this long with nothing done; 0: never
+    uint8_t keep_pin_hours;  // 0..168: a wake this soon after the sleep needs no PIN; 0: always
+};
+
 // The vault PIN (x4-design.md): the lock after 10 wrong PINs, and the wipe
 // PIN, kept only as a salted hash (set by `pin wipe set`).
 struct Pin {
@@ -166,6 +174,7 @@ struct Data {
     Led led;
     Frontlight frontlight;
     Display display;
+    Power power;
     Pin pin;
     Test test;
 };

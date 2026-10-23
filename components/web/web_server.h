@@ -50,6 +50,8 @@ using DiagnosticsPrinter = void (*)();
 void SetDiagnostics(DiagnosticsPrinter printer);
 // The same for /api/hwinfo: the console's `hwinfo`.
 void SetHardwareInfo(DiagnosticsPrinter printer);
+// Called on every request (power::NoteActivity: the site in use keeps it on).
+void SetRequestHook(void (*hook)());
 
 bool Running();
 Status Get();

@@ -113,6 +113,7 @@ Status g_status;
 Desired g_desired = Desired::kAuto;
 DiagnosticsPrinter g_diagnostics = nullptr;
 DiagnosticsPrinter g_hardware_info = nullptr;
+void (*g_request_hook)() = nullptr;
 
 // A failed start is retried every 5 s, not every tick.
 constexpr uint32_t kRetryAfterMs = 5000;
@@ -187,6 +188,9 @@ esp_err_t Unauthorised(httpd_req_t *request) {
 
 // The live config, per request: a changed credential applies at once.
 bool Allowed(httpd_req_t *request) {
+    if (g_request_hook != nullptr) {
+        g_request_hook();
+    }
     const config::Web &web = config::Get().web;
     if (!AuthRequired(web.user, web.password)) {
         return true;
@@ -763,6 +767,8 @@ void Apply() { SetDesired(DesiredFromConfig()); }
 void SetDiagnostics(DiagnosticsPrinter printer) { g_diagnostics = printer; }
 
 void SetHardwareInfo(DiagnosticsPrinter printer) { g_hardware_info = printer; }
+
+void SetRequestHook(void (*hook)()) { g_request_hook = hook; }
 
 bool Running() { return g_server != nullptr; }
 

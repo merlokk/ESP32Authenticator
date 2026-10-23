@@ -54,6 +54,7 @@ lv_indev_t *pointer = nullptr;
 ScreenPoint last_point = {};  // LVGL wants a point on release too
 bool last_down = false;
 uint32_t presses = 0;
+void (*press_hook)() = nullptr;
 lv_obj_t *touch_mark = nullptr;
 lv_obj_t *touch_label = nullptr;
 
@@ -81,7 +82,12 @@ void ReadTouch(lv_indev_t *, lv_indev_data_t *data) {
     const bool down = touch::Contact(&p);
     if (down) {
         last_point = TouchToScreen(p.x, p.y);
-        presses += last_down ? 0 : 1;
+        if (!last_down) {
+            ++presses;
+            if (press_hook != nullptr) {
+                press_hook();
+            }
+        }
     }
     last_down = down;
     data->point.x = last_point.x;
@@ -213,6 +219,8 @@ esp_err_t Init() {
 bool Ready() { return started; }
 
 bool HasDisplay() { return task != nullptr; }
+
+void SetPressHook(void (*hook)()) { press_hook = hook; }
 
 void Lock() { xSemaphoreTakeRecursive(mutex, portMAX_DELAY); }
 

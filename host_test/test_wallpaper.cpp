@@ -1,6 +1,6 @@
 // Power-off wallpaper: file names, grey, the dither (components/ui/
-// wallpaper_logic.h); the pins held through deep sleep (components/power/
-// power_logic.h).
+// wallpaper_logic.h); the pins held through deep sleep, the idle off and the
+// key kept through a sleep (components/power/power_logic.h).
 
 #include <vector>
 
@@ -148,15 +148,58 @@ void test_epd_grey_tables(void) {
 void test_power_sleep_holds(void) {
     constexpr boards::X4Pro b;
     constexpr power::Holds h = power::SleepHolds(b);
-    TEST_ASSERT_EQUAL_size_t(3, h.size);
+    TEST_ASSERT_EQUAL_size_t(5, h.size);
     TEST_ASSERT_EQUAL_INT8(14, h.items[0].pin);  // EPD RST high: the panel stays asleep
     TEST_ASSERT_EQUAL_UINT8(1, h.items[0].level);
     TEST_ASSERT_EQUAL_INT8(5, h.items[1].pin);   // SD power off
     TEST_ASSERT_EQUAL_UINT8(1, h.items[1].level);
     TEST_ASSERT_EQUAL_INT8(2, h.items[2].pin);   // touch power off
     TEST_ASSERT_EQUAL_UINT8(1, h.items[2].level);
+    TEST_ASSERT_EQUAL_INT8(8, h.items[3].pin);   // frontlight cool low
+    TEST_ASSERT_EQUAL_UINT8(0, h.items[3].level);
+    TEST_ASSERT_EQUAL_INT8(9, h.items[4].pin);   // frontlight warm low
+    TEST_ASSERT_EQUAL_UINT8(0, h.items[4].level);
     constexpr boards::DevBoard none;  // no panel, SD or touch
     TEST_ASSERT_EQUAL_size_t(0, power::SleepHolds(none).size);
+}
+
+void test_power_idle_off(void) {
+    TEST_ASSERT_FALSE(power::IdleOff(10 * 60000, 0, 0, false));  // 0: never
+    TEST_ASSERT_FALSE(power::IdleOff(10 * 60000 - 1, 0, 10, false));
+    TEST_ASSERT_TRUE(power::IdleOff(10 * 60000, 0, 10, false));
+    TEST_ASSERT_FALSE(power::IdleOff(10 * 60000, 0, 10, true));  // held on
+    TEST_ASSERT_FALSE(power::IdleOff(5, 6, 1, false));  // activity after the reading
+    // Minutes beyond 32-bit milliseconds: an uptime of 60 days.
+    constexpr uint64_t day = 24ull * 3600 * 1000;
+    TEST_ASSERT_TRUE(power::IdleOff(60 * day, 60 * day - 1440ull * 60000, 1440, false));
+}
+
+void test_power_kept_secret(void) {
+    const uint8_t secret[3] = {1, 2, 3};
+    constexpr int64_t t = 1800000000;  // 2027
+    power::Kept k = {};
+    TEST_ASSERT_FALSE(power::FillKept(&k, secret, 3, t, 0));  // no hours
+    TEST_ASSERT_FALSE(power::FillKept(&k, secret, 3, 0, 8));  // no clock
+    uint8_t big[power::kKeptBytes + 1] = {};
+    TEST_ASSERT_FALSE(power::FillKept(&k, big, sizeof big, t, 8));
+    TEST_ASSERT_TRUE(power::FillKept(&k, secret, 3, t, 8));
+    TEST_ASSERT_EQUAL_UINT32(3, k.size);
+    TEST_ASSERT_EQUAL_UINT8(3, k.data[2]);
+    TEST_ASSERT_TRUE(power::KeptUsable(k, t));
+    TEST_ASSERT_TRUE(power::KeptUsable(k, t + 8 * 3600 - 1));
+    TEST_ASSERT_FALSE(power::KeptUsable(k, t + 8 * 3600));  // out of time
+    TEST_ASSERT_TRUE(power::KeptUsable(k, t - power::kKeptSlackSeconds));
+    TEST_ASSERT_FALSE(power::KeptUsable(k, t - power::kKeptSlackSeconds - 1));  // clock moved back
+    TEST_ASSERT_FALSE(power::KeptUsable(k, 0));  // the clock lost
+    power::Kept bad = k;
+    bad.data[0] ^= 1;  // RTC memory after a power loss
+    TEST_ASSERT_FALSE(power::KeptUsable(bad, t));
+    bad = k;
+    bad.until_utc += 3600;  // longer than it was kept for
+    TEST_ASSERT_FALSE(power::KeptUsable(bad, t));
+    bad = k;
+    bad.magic = 0;
+    TEST_ASSERT_FALSE(power::KeptUsable(bad, t));
 }
 
 }  // namespace
@@ -169,4 +212,6 @@ void RegisterWallpaperTests(void) {
     RUN_TEST(test_wallpaper_grey_levels);
     RUN_TEST(test_epd_grey_tables);
     RUN_TEST(test_power_sleep_holds);
+    RUN_TEST(test_power_idle_off);
+    RUN_TEST(test_power_kept_secret);
 }

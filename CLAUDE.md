@@ -28,9 +28,11 @@ Firmware: C/C++ on **ESP-IDF**.
   (SDMMC, FAT at `/sdcard`, `sd` read-only but wallpapers), the store files in
   `/sdcard/.authenticator` on the X4 Pro (no card: no stores); LVGL 9 on the e-ink panel (480x800 portrait, boot screen, GT911 touch
 as the pointer, `ui`); power-off
-  (Power held / `off`): a random PNG from `/sdcard/wallpapers` (dithered to 4 grey levels on
+  (Power held / x3 locked / idle `power.idleMinutes` / `off`): a random PNG from
+  `/sdcard/wallpapers` (dithered to 4 grey levels on
   the UC8179 or B/W, `display.wallpaper`), deep
-  sleep, Power wakes;
+  sleep, Power wakes; the vault key kept in RTC memory through the sleep for
+  `power.keepPinHours` (no PIN after the wake);
   password records (site/user/password/TOTP) in `vault.bin` with
   add/edit/delete on the console (`pass`) and the web site (with FIDO2
   credentials and TOTP codes); `vault.bin` and `fido.bin` are
