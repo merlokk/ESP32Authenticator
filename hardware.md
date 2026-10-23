@@ -6,7 +6,9 @@ Not the ESP32-C3 XTEINK X4: the X4 Pro is a different board.
 
 | Item | Value |
 |---|---|
-| MCU | ESP32-S3, 16 MB flash, 8 MB octal PSRAM |
+| MCU | ESP32-S3 (QFN56) rev v0.2, 40 MHz XTAL |
+| Flash | 16 MB Puya (JEDEC 0x85/0x2018), quad; stock image header DIO 80 MHz |
+| PSRAM | 8 MB embedded octal, AP 3.3 V |
 | Radio | 2.4 GHz Wi-Fi, BLE |
 | Display | 4.3" e-ink, 800×480 B/W, 219 PPI |
 | Touch | GT911 capacitive + capacitive Home key |
@@ -27,6 +29,11 @@ Varies by production batch. Same glass and pinout for all of them; detect the co
 | SSD1677 | Original units. Internal booster, OTP waveform; FULL `0x22=0xF7`, FAST `0x22=0xFC`. |
 | UC8179 | UltraChip variant. |
 | UC8279 | UltraChip variant. |
+
+Stock firmware 7.5.11 ships waveforms for UC8179 and UC8279 (`*_gray_full`,
+`*_gray_aa`, `*_aa_prebw_mid`) and an `ESP32S3_X4_TL_SSD1677` board name; the
+panel kind is stored in NVS `hw_calib` (`screenType`, `screenId`; both 1 on our
+unit, meaning unknown).
 
 - Write-only SPI (no MISO); BUSY is active-HIGH.
 - SPI clock: OEM 5 MHz, FreeInk 10 MHz, TuyaOpen 20 MHz.
@@ -75,7 +82,9 @@ Power-up order: GPIO1 HIGH → GPIO2 LOW (touch) → GPIO5 pulse (SD).
 ## eFuse: flashing switches
 
 Burned bits cannot be cleared. Some X4 Pro units ship with flashing disabled;
-check with `hwinfo` / `efuse`.
+check with `hwinfo` / `efuse`. Our unit (2026-10): all of these 0, secure boot
+and flash encryption off, key blocks empty; BLOCK3 (user data) holds the
+factory serial (`X4CB02EN…`).
 
 | eFuse = 1 | Effect |
 |---|---|
@@ -87,7 +96,19 @@ check with `hwinfo` / `efuse`.
 
 - SD works only in native SDMMC mode; SPI-mode CMD0 gets no response.
 - Frontlight PWM: 10 kHz (early OEM) or 25 kHz, 10-bit (stock 7.x).
-- OEM flash layout (dual OTA, 16 MB): see [sources.md](sources.md).
+- Stock firmware (`xteink_app` 7.5.11, ESP-IDF v6.0.1): silent on the USB
+  console, exposes the microSD as USB MSC, talks to `api-prod.xteink.cc|cn`.
+  Full backup and details: [originalfw/README.md](originalfw/README.md).
+- Stock partition table:
+
+| Name | Type/SubType | Offset | Size |
+|---|---|---|---|
+| nvs | data/nvs | 0x9000 | 20K |
+| otadata | data/ota | 0xe000 | 8K |
+| app0 | app/ota_0 | 0x10000 | 8064K |
+| app1 | app/ota_1 | 0x7f0000 | 8064K |
+| spiffs | data/spiffs | 0xfd0000 | 80K |
+| coredump | data/coredump | 0xfe4000 | 112K |
 
 ## Sources
 
