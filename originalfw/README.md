@@ -54,11 +54,14 @@ calibration. SPIFFS holds only `/README.md` (default placeholder).
 
 ## Restore
 
+Back to the stock firmware (from the repo root, inside the IDF profile):
+
 ```
-python -m esptool -p COM7 write-flash 0 x4pro_full_16MB.bin
+python -m esptool -p COM7 write-flash 0 originalfw/x4pro_full_16MB.bin
 ```
 
-This restores NVS too (calibration, settings); the factory state needs no
+The `.bin` files are not in git (`.gitignore`): keep a copy of this folder
+outside the repo. This restores NVS too (calibration, settings); the factory state needs no
 other files. eFuses are untouched by any of this.
 
 ## Dump notes
