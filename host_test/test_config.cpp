@@ -463,6 +463,27 @@ void test_parse_led() {
     AssertParseFails(R"({"led": {"brightness": 1.5}})", "led.brightness");
 }
 
+void test_parse_frontlight() {
+    config::Data d;
+    config::FillDefaults(&d);
+    TEST_ASSERT_EQUAL_UINT8(0, d.frontlight.brightness);  // dark until asked
+    TEST_ASSERT_EQUAL_UINT8(50, d.frontlight.warmth);
+    char error[config::kErrorSize] = {};
+    TEST_ASSERT_TRUE_MESSAGE(
+        ParseText(R"({"frontlight": {"brightness": 40, "warmth": 100}})", &d, error, sizeof error),
+        error);
+    char json[config::kMaxFileSize];
+    TEST_ASSERT_GREATER_THAN(0, config::Serialize(d, json, sizeof json));
+    config::Data out;
+    config::FillDefaults(&out);
+    TEST_ASSERT_TRUE_MESSAGE(ParseText(json, &out, error, sizeof error), error);
+    TEST_ASSERT_EQUAL_UINT8(40, out.frontlight.brightness);
+    TEST_ASSERT_EQUAL_UINT8(100, out.frontlight.warmth);
+    AssertParseFails(R"({"frontlight": 1})", "frontlight: expected an object");
+    AssertParseFails(R"({"frontlight": {"brightness": 101}})", "frontlight.brightness");
+    AssertParseFails(R"({"frontlight": {"warmth": -1}})", "frontlight.warmth");
+}
+
 void test_valid_host() {
     TEST_ASSERT_TRUE(config::ValidHost(""));
     TEST_ASSERT_TRUE(config::ValidHost("pool.ntp.org"));
@@ -761,6 +782,7 @@ void RegisterConfigTests(void) {
     RUN_TEST(test_parse_rejects_bad_time);
     RUN_TEST(test_valid_host);
     RUN_TEST(test_parse_led);
+    RUN_TEST(test_parse_frontlight);
     RUN_TEST(test_parse_ipv4);
     RUN_TEST(test_parse_static_ip);
     RUN_TEST(test_parse_rejects_bad_static_ip);

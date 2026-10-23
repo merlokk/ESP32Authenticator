@@ -217,6 +217,7 @@ Opening the port with RTS asserted resets the chip.
 | `fido2 delete <#\|id>` | delete one: number from `fido2 list` (1-3 digits) or a unique id prefix (4+ hex digits; numbers shift after a delete) |
 | `fido2 reset` / `fido2 reset confirm` | say what would go / delete every credential and the PIN (counter kept; the file becomes an empty store with the next version). Waits up to 1 s for a running FIDO request, else "busy". Also the way out of a refused store file |
 | `sd [info]` / `sd ls [dir]` | microSD: card (CID name), size, bus clock, mount point, FAT free of total, or why not mounted / a directory: type, size, local modification time, name (no `..`). Read-only |
+| `light [info]` / `light <0..100> [warmth]` / `light warmth <0..100>` / `light off` | the frontlight: on/off, brightness, warmth, PWM duty per string / set it (0: off; warmth 0 cool .. 100 warm), fades 250 ms, saved (`frontlight`) |
 | `keys [info]` / `keys watch [s]` | the buttons: GPIO, raw and debounced level, held time, queue / events from now on for 1..120 s (default 10): pressed, released, long, click xN |
 | `battery [info]` | gauge (CW2017 at 0x63, profile, last init action), voltage (mV), level (%), charging (STAT pin) |
 | `battery regs` / `battery init` | gauge registers 0x00..0x0F and the resident profile, raw / check the profile again (loads it if it differs), reset the gauge |

@@ -13,6 +13,7 @@
 #include "clock_math.h"
 #include "config.h"
 #include "esp_timer.h"
+#include "frontlight.h"
 #include "keypad.h"
 #include "freertos/FreeRTOS.h"
 #include "led.h"
@@ -362,6 +363,52 @@ int PrintLedInfo() {
     printf("wire       %" PRIu32 " writes, %" PRIu32 " failed\n", s.writes, s.write_failures);
     printf("stack      %" PRIu32 " B free\n", s.stack_low_water);
     return 0;
+}
+
+// 0..100, the whole word a number.
+bool ParsePercent(const char *text, uint8_t *out) {
+    char *end = nullptr;
+    const long v = strtol(text, &end, 10);
+    if (end == text || *end != '\0' || v < 0 || v > 100) {
+        return false;
+    }
+    *out = static_cast<uint8_t>(v);
+    return true;
+}
+
+int CmdLight(int argc, char **argv) {
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "info") == 0)) {
+        frontlight::PrintInfo();
+        return 0;
+    }
+    if (!frontlight::Present()) {
+        printf("this board has no frontlight\n");
+        return 1;
+    }
+    config::Frontlight &cfg = config::Get().frontlight;
+    uint8_t brightness = cfg.brightness;
+    uint8_t warmth = cfg.warmth;
+    bool ok = argc <= 3;
+    if (ok && strcmp(argv[1], "off") == 0) {
+        ok = argc == 2;
+        brightness = 0;
+    } else if (ok && strcmp(argv[1], "warmth") == 0) {
+        ok = argc == 3 && ParsePercent(argv[2], &warmth);
+    } else if (ok) {
+        ok = ParsePercent(argv[1], &brightness) && (argc == 2 || ParsePercent(argv[2], &warmth));
+    }
+    if (!ok) {
+        printf("usage: light [info] | light <0..100> [warmth 0..100] | light warmth <0..100> |"
+               " light off\n");
+        return 1;
+    }
+    cfg.brightness = brightness;
+    cfg.warmth = warmth;
+    if (frontlight::Set(brightness, warmth) != ESP_OK) {
+        return 1;
+    }
+    frontlight::PrintInfo();
+    return Save();
 }
 
 int CmdKeys(int argc, char **argv) {

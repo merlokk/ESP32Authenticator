@@ -14,6 +14,7 @@
 #include "esp_log.h"
 #include "esp_ota_ops.h"
 #include "fido_ctap.h"
+#include "frontlight.h"
 #include "keypad.h"
 #include "nvs_flash.h"
 #include "sd_card.h"
@@ -166,6 +167,9 @@ extern "C" void app_main() {
         snprintf(ble_cfg.name, sizeof ble_cfg.name, "%s", boards::kBoard.ble_name);
     }
     ble::SetName(ble_cfg.name);
+    if (frontlight::Init() == ESP_OK) {  // dark until config.json says otherwise
+        frontlight::Set(config::Get().frontlight.brightness, config::Get().frontlight.warmth);
+    }
     boards::SetLedBrightness(config::Get().led.percent, config::Get().led.idle_percent);
 
     ui::Init();  // LVGL; no display driver yet

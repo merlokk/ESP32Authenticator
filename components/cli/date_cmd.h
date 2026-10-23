@@ -18,6 +18,11 @@
 //   battery regs     gauge registers 0x00..0x0F and the resident profile, raw
 //   battery init     check the profile again (loads it if needed), reset the gauge
 //
+// `light` command (the frontlight; saved to config.json `frontlight`):
+//   light [info]                  on/off, brightness, warmth, PWM duties
+//   light <0..100> [warmth]       brightness (0: off), warmth 0 cool .. 100 warm
+//   light warmth <0..100> | off
+//
 // `keys` command (the board's push buttons, keypad task):
 //   keys [info]          per button: GPIO, raw and debounced level, held time; queue
 //   keys watch [s]       events from now on for 1..120 s (default 10): pressed,
@@ -35,6 +40,7 @@ int CmdBoard(int argc, char **argv);
 int CmdLed(int argc, char **argv);
 int CmdBattery(int argc, char **argv);
 int CmdKeys(int argc, char **argv);
+int CmdLight(int argc, char **argv);
 
 // Readouts reused by `devstatus` and `hwinfo`.
 void PrintDateInfo();

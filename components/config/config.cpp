@@ -52,6 +52,10 @@ const char kDefaultJson[] = R"json({
     "brightness": 15,
     "idleBrightness": 7
   },
+  "frontlight": {
+    "brightness": 0,
+    "warmth": 50
+  },
   "pin": {
     "lockMinutes": 10,
     "wipe": "",
@@ -239,6 +243,18 @@ bool ParseTime(const cJSON *section, Time *out, char *error, size_t size) {
         return false;
     }
     out->sync_hours = static_cast<uint8_t>(hours);
+    return true;
+}
+
+bool ParseFrontlight(const cJSON *section, Frontlight *out, char *error, size_t size) {
+    uint32_t brightness = out->brightness;
+    uint32_t warmth = out->warmth;
+    if (!GetUint(section, "brightness", 0, 100, &brightness, "frontlight", error, size) ||
+        !GetUint(section, "warmth", 0, 100, &warmth, "frontlight", error, size)) {
+        return false;
+    }
+    out->brightness = static_cast<uint8_t>(brightness);
+    out->warmth = static_cast<uint8_t>(warmth);
     return true;
 }
 
@@ -501,6 +517,16 @@ bool ParseSections(const cJSON *root, Data *staged, char *error, size_t size) {
             return false;
         }
     }
+    const cJSON *light = cJSON_GetObjectItemCaseSensitive(root, "frontlight");
+    if (light != nullptr) {
+        if (!cJSON_IsObject(light)) {
+            SetError(error, size, "frontlight: expected an object");
+            return false;
+        }
+        if (!ParseFrontlight(light, &parsed.frontlight, error, size)) {
+            return false;
+        }
+    }
     const cJSON *pin = cJSON_GetObjectItemCaseSensitive(root, "pin");
     if (pin != nullptr) {
         if (!cJSON_IsObject(pin)) {
@@ -657,6 +683,9 @@ size_t Serialize(const Data &d, char *out, size_t size) {
     cJSON *led = cJSON_AddObjectToObject(root, "led");
     cJSON_AddNumberToObject(led, "brightness", d.led.percent);
     cJSON_AddNumberToObject(led, "idleBrightness", d.led.idle_percent);
+    cJSON *light = cJSON_AddObjectToObject(root, "frontlight");
+    cJSON_AddNumberToObject(light, "brightness", d.frontlight.brightness);
+    cJSON_AddNumberToObject(light, "warmth", d.frontlight.warmth);
     cJSON *pin = cJSON_AddObjectToObject(root, "pin");
     cJSON_AddNumberToObject(pin, "lockMinutes", d.pin.lock_minutes);
     cJSON_AddStringToObject(pin, "wipe", d.pin.wipe);

@@ -317,6 +317,15 @@ const esp_console_cmd_t kCommands[] = {
         .context = nullptr,
     },
     {
+        .command = "light",
+        .help = "Frontlight (saved): [info] | <0..100> [warmth 0..100] | warmth <0..100> | off",
+        .hint = "[info | <0..100> [warmth] | warmth <0..100> | off]",
+        .func = &CmdLight,
+        .argtable = nullptr,
+        .func_w_context = nullptr,
+        .context = nullptr,
+    },
+    {
         .command = "keys",
         .help = "Push buttons: [info] GPIO, level, held time | watch [seconds]: events "
                 "(pressed, released, long, click xN)",

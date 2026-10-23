@@ -126,6 +126,11 @@ struct Led {
     uint8_t idle_percent;  // 0..100, resting states (the ready breath)
 };
 
+struct Frontlight {
+    uint8_t brightness;  // 0..100, 0: off; applied at boot
+    uint8_t warmth;      // 0..100: 0 all cool, 100 all warm
+};
+
 // The vault PIN (x4-design.md): the lock after 10 wrong PINs, and the wipe
 // PIN, kept only as a salted hash (set by `pin wipe set`).
 struct Pin {
@@ -148,6 +153,7 @@ struct Data {
     Web web;
     Time time;
     Led led;
+    Frontlight frontlight;
     Pin pin;
     Test test;
 };
