@@ -43,6 +43,11 @@ constexpr const char *TAG = "cli";
 // Commands kept for the up-arrow (esp_console's default).
 constexpr int kHistoryLength = 32;
 
+int CmdUi(int, char **) {
+    ui::PrintInfo();
+    return 0;
+}
+
 int CmdVersion(int, char **) {
     const esp_app_desc_t *app = esp_app_get_description();
     printf("firmware   %s %s\n", app->project_name, app->version);
@@ -339,6 +344,15 @@ const esp_console_cmd_t kCommands[] = {
                 "[full|fast] | sleep",
         .hint = "[info | test [pattern] [full|fast] | sleep]",
         .func = &CmdEpd,
+        .argtable = nullptr,
+        .func_w_context = nullptr,
+        .context = nullptr,
+    },
+    {
+        .command = "ui",
+        .help = "LVGL display: size, refreshes, the last one, the ui task's free stack",
+        .hint = nullptr,
+        .func = &CmdUi,
         .argtable = nullptr,
         .func_w_context = nullptr,
         .context = nullptr,

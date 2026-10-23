@@ -15,7 +15,7 @@ Target and status. Screen design and the open questions: [x4-design.md](x4-desig
 | Store file header (version, modification time) and rollback check (highest version in NVS) | done (`storefile`) |
 | Encrypted stores: `vault.bin` and `fido.bin`, AES-256-GCM with a key from the PIN (the same on every device with the PIN and the files), loaded whole into PSRAM | done |
 | Sync over the internet, the later modification time wins | not yet; service not chosen |
-| X4 Pro screen: status bar, credential list, pages, settings | not yet (LVGL up, no display driver) |
+| X4 Pro screen: status bar, credential list, pages, settings | not yet (LVGL on the panel, portrait; boot screen only) |
 | Settings: frontlight, Wi-Fi | Wi-Fi on the console and the site; frontlight not yet |
 | Time: SNTP, zones, clock | done |
 | Battery: voltage, level, charging | done (CW2017 + charger STAT, console `battery`, BLE Battery Level); screen not yet |
@@ -26,7 +26,7 @@ Target and status. Screen design and the open questions: [x4-design.md](x4-desig
 | Layer | Choice |
 |---|---|
 | Framework | ESP-IDF (C/C++) |
-| UI | LVGL 9 (`components/ui`: library up, no display driver yet; today: USB console + web site) |
+| UI | LVGL 9 (`components/ui`: 480x800 portrait on the e-ink panel, boot screen; no touch input yet; today: USB console + web site) |
 | Host link | BLE HID keyboard (types credentials), BLE FIDO2 (CTAP2) |
 | Network | Wi-Fi (client / AP / AP+client) and a configuration web site |
 | Storage | `config.json` on SPIFFS; store files (`vault.bin`, `fido.bin`, encrypted) in `/sdcard/.authenticator` when the board has a card slot (no card: no stores, never a second set on SPIFFS), else SPIFFS |
@@ -249,14 +249,23 @@ system clock agree within 1 ms; after a reboot the system clock is within
 ## UI
 
 `components/ui`: LVGL 9.4 (`lvgl/lvgl`, as in approver-esp32, without
-`esp_lvgl_port`), `ui::Init()` in `app_main` (`lv_init`, esp_timer tick).
-`sdkconfig.defaults`: 1-bit colour (monochrome theme, for the X4 Pro e-ink),
-refresh period 200 ms (e-ink is slow; FreeRTOS tick stays
-100 Hz: the LVGL tick is esp_timer), custom allocator `lv_mem_psram.c`: every LVGL allocation (widgets, layers,
-draw buffers) in PSRAM, internal RAM only if PSRAM is full, so Wi-Fi, BLE and
-the web server keep the internal heap. No display, input device or
-`lv_timer_handler` task yet: the X4 e-ink panel and GT911 touch drivers come
-later. Version in `version`.
+`esp_lvgl_port`), `ui::Init()` in `app_main` after `epd::Init` (`lv_init`,
+esp_timer tick; with a panel: the display and the `ui` task).
+`sdkconfig.defaults`: 1-bit colour (monochrome theme), refresh period 200 ms
+(e-ink is slow; FreeRTOS tick stays 100 Hz: the LVGL tick is esp_timer),
+Montserrat 14 / 20 / 32, custom allocator `lv_mem_psram.c`: every LVGL
+allocation (widgets, layers, draw buffers) in PSRAM, internal RAM only if
+PSRAM is full, so Wi-Fi, BLE and the web server keep the internal heap.
+
+Display: 480x800 portrait, I1, one screen buffer in PSRAM, DIRECT mode (LVGL
+redraws dirty areas in place). On the last flushed area `ui_logic.h` (pure,
+host-tested) turns the screen 90 degrees clockwise into the 800x480 panel
+frame (portrait top = frame left, as held as a book; the bezel insets carry
+over) and `epd::Refresh` draws it: fast, every 20th full. `ui` task (8 KB
+stack, priority 3) runs `lv_timer_handler`; other tasks touch widgets only
+inside `ui::Lock` / `ui::Unlock`. Measured on the X4 Pro (UC8179): turn 61 ms,
+full refresh 1.9 s, stack used ~3.4 KB. No input device yet (GT911 touch).
+Console `ui`; version in `version`.
 
 ## BLE
 

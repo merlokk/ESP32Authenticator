@@ -184,7 +184,7 @@ extern "C" void app_main() {
     }
     boards::SetLedBrightness(config::Get().led.percent, config::Get().led.idle_percent);
 
-    ui::Init();  // LVGL; no display driver yet
+    ui::Init();  // LVGL on the panel (portrait), the boot screen
 
     ble_kb::Register();  // BLE profiles, before the stack starts
     ble_kb::SetTypingHook(boards::LedTyping);

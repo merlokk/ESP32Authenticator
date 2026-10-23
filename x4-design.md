@@ -22,7 +22,7 @@ the console, the configuration site, the BLE keyboard and `totp` on the console.
 
 ## Screen
 
-Portrait, 480x800. The panel scans landscape (hardware.md): the driver rotates.
+Portrait, 480x800. The panel scans landscape (hardware.md): `ui_logic.h` turns the LVGL screen onto it.
 
 ```
 +------------------------------+
