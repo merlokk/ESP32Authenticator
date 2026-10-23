@@ -466,7 +466,7 @@ void test_parse_led() {
 void test_parse_frontlight() {
     config::Data d;
     config::FillDefaults(&d);
-    TEST_ASSERT_EQUAL_UINT8(0, d.frontlight.brightness);  // dark until asked
+    TEST_ASSERT_EQUAL_UINT8(20, d.frontlight.brightness);  // the level; off at boot
     TEST_ASSERT_EQUAL_UINT8(50, d.frontlight.warmth);
     char error[config::kErrorSize] = {};
     TEST_ASSERT_TRUE_MESSAGE(
@@ -481,6 +481,7 @@ void test_parse_frontlight() {
     TEST_ASSERT_EQUAL_UINT8(100, out.frontlight.warmth);
     AssertParseFails(R"({"frontlight": 1})", "frontlight: expected an object");
     AssertParseFails(R"({"frontlight": {"brightness": 101}})", "frontlight.brightness");
+    AssertParseFails(R"({"frontlight": {"brightness": 0}})", "frontlight.brightness");
     AssertParseFails(R"({"frontlight": {"warmth": -1}})", "frontlight.warmth");
 }
 

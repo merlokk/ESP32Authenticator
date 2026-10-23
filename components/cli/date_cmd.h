@@ -18,10 +18,12 @@
 //   battery regs     gauge registers 0x00..0x0F and the resident profile, raw
 //   battery init     check the profile again (loads it if needed), reset the gauge
 //
-// `light` command (the frontlight; saved to config.json `frontlight`):
-//   light [info]                  on/off, brightness, warmth, PWM duties
-//   light <0..100> [warmth]       brightness (0: off), warmth 0 cool .. 100 warm
-//   light warmth <0..100> | off
+// `light` command (the frontlight; the level is saved to config.json
+// `frontlight`, the on/off state is not: off at boot, Power x2 toggles):
+//   light [info]                  on/off, level (brightness, warmth), PWM duties
+//   light <1..100> [warmth]       set the level (warmth 0 cool .. 100 warm) and light it
+//   light warmth <0..100>         the tint only
+//   light on | off                now, not saved
 //
 // `keys` command (the board's push buttons, keypad task):
 //   keys [info]          per button: GPIO, raw and debounced level, held time; queue

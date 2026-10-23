@@ -22,7 +22,7 @@ Firmware: C/C++ on **ESP-IDF**.
   green breathing when ready, blue while typing, yellow
   blinking for the FIDO2 button); TOTP codes on the console (`totp`); buttons (Left, Right, Power) in one
   keypad task: click xN / long events, `keys`; frontlight (cool/warm PWM,
-  `light`); battery: CW2017 gauge (voltage, level) and
+  off at boot, Power x2 toggles, `light`); battery: CW2017 gauge (voltage, level) and
   charger STAT on a leased I2C bus (`battery`, BLE Battery Level); microSD
   (SDMMC, FAT at `/sdcard`, read-only `sd`), the store files in
   `/sdcard/.authenticator` on the X4 Pro (no card: no stores); LVGL 9 library (no display driver);

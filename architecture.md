@@ -42,7 +42,7 @@ Reference ESP-IDF + LVGL project: `../../ai-remote/approver-esp32` ([GitHub](htt
 | `lib/` | third-party git submodules (`lionkey`: our fork, see FIDO2) |
 | `host_test/` | host tests (Unity, MSVC), no board: see Tests |
 | `utils/` | host-side Python tools over the USB console (`device.py`: console session; `spiffs.py`: ls/info/rm/get/put; `ble.py`: ble commands, `kb` text quoting) |
-| `devices/` | hardware drivers, one component per device (`hardware`: SoC info, eFuse, USB host connected; `spiffs_fs`: SPIFFS on `spiffs` at `/spiffs`, never formatted, it holds stock data on the X4 Pro; `ble`, `ble_kb`, `ble_fido`: see BLE; `wifi`: the radio (`wifi::Radio`), no decisions, stores nothing; `buttons`: GPIO buttons, polled, debounced 25 ms (`button_logic.h`, pure: debounce, short/long press from approver-esp32; single/double/... press: `MultiPress`, 400 ms gap; `key_events.h`, pure: one `KeyTracker` per button: pressed / released edges, long at 600 ms (fired while held), click xN 400 ms after the last release, a press is long or a click, never both; a finger down at boot is no press), pins from the board; `keypad`: the one owner of the board's buttons, a task polling every 10 ms, events in a queue (16, full: dropped and counted) for the UI, `Pressed()` / `HeldMs()` for the rest (FIDO2 presence), console `keys`; `crypto`: hardware RNG, SHA-256, AES-256-CBC, AES-256-GCM, HMAC-SHA1 via PSA, HOTP/TOTP (`otp.h`, pure: counter, truncation); `clock`: `rtc::Clock`, see Time; `led`: one WS2812 from UART1, see Boards; `i2c_bus`: the board's I2C bus, leased (from approver-esp32), see Boards; `battery`: CW2017 fuel gauge and charger STAT, see Boards; `sd_card`: microSD over SDMMC, FAT at `/sdcard`, see Boards; `frontlight`: cool and warm LED strings on LEDC, see Boards; `boards`: board classes, see Boards). `devices/config.h`: the board the firmware is built for |
+| `devices/` | hardware drivers, one component per device (`hardware`: SoC info, eFuse, USB host connected; `spiffs_fs`: SPIFFS on `spiffs` at `/spiffs`, never formatted, it holds stock data on the X4 Pro; `ble`, `ble_kb`, `ble_fido`: see BLE; `wifi`: the radio (`wifi::Radio`), no decisions, stores nothing; `buttons`: GPIO buttons, polled, debounced 25 ms (`button_logic.h`, pure: debounce, short/long press from approver-esp32; single/double/... press: `MultiPress`, 400 ms gap; `key_events.h`, pure: one `KeyTracker` per button: pressed / released edges, long at 600 ms (fired while held), click xN 400 ms after the last release, a press is long or a click, never both; a finger down at boot is no press), pins from the board; `keypad`: the one owner of the board's buttons, a task polling every 10 ms, events in a queue (16, full: dropped and counted) for the UI, listeners called from the task (bindings), `Pressed()` / `HeldMs()` for the rest (FIDO2 presence), console `keys`; `crypto`: hardware RNG, SHA-256, AES-256-CBC, AES-256-GCM, HMAC-SHA1 via PSA, HOTP/TOTP (`otp.h`, pure: counter, truncation); `clock`: `rtc::Clock`, see Time; `led`: one WS2812 from UART1, see Boards; `i2c_bus`: the board's I2C bus, leased (from approver-esp32), see Boards; `battery`: CW2017 fuel gauge and charger STAT, see Boards; `sd_card`: microSD over SDMMC, FAT at `/sdcard`, see Boards; `frontlight`: cool and warm LED strings on LEDC, see Boards; `boards`: board classes, see Boards). `devices/config.h`: the board the firmware is built for |
 
 ## Config
 
@@ -92,7 +92,7 @@ Reference ESP-IDF + LVGL project: `../../ai-remote/approver-esp32` ([GitHub](htt
   "web": {"mode": "auto", "write": true, "user": "", "password": ""},
   "time": {"zone": "UTC", "server": "pool.ntp.org", "syncHours": 6},
   "led": {"brightness": 15, "idleBrightness": 7},
-  "frontlight": {"brightness": 0, "warmth": 50},
+  "frontlight": {"brightness": 20, "warmth": 50},
   "pin": {"lockMinutes": 10, "wipe": "", "complexity": true},
   "test": {"pin": ""}
 }
@@ -177,8 +177,10 @@ active high, LEDC 25 kHz / 10 bits (stock 7.x), LEDC channels 0 and 1.
 table (1 % = 1 LSB, every percent distinct), warmth splits that total
 between the strings (the sum stays the same; at warmth 50 each string gets
 half, full power per string only at 0 or 100). Changes fade over 250 ms.
-`config.json` `frontlight` {brightness 0 (off), warmth 50}, applied at
-boot; console `light` (saved).
+`config.json` `frontlight` {brightness 1..100 (default 20), warmth 50}: the
+level `On()` lights; the on/off state is not kept, the light starts off.
+Power x2 (`click x2`, a keypad listener in `main.cpp`) toggles it; console
+`light <level>` (saved, lights it), `light on|off` (now only).
 
 SD card (`devices/sd_card`): native SDMMC, 1-bit, FAT at `/sdcard`, mounted
 once at boot (`sd_card::Init()` after `battery::Init()`). Sequence from

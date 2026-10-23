@@ -32,6 +32,9 @@ uint8_t queue_buffer[kQueueDepth * sizeof(buttons::KeyEvent)];
 QueueHandle_t queue = nullptr;
 uint32_t dropped = 0;
 
+Listener listeners[kMaxListeners] = {};
+unsigned listener_count = 0;
+
 StaticTask_t task_storage;
 StackType_t task_stack[kTaskStackBytes / sizeof(StackType_t)];
 bool started = false;
@@ -51,6 +54,9 @@ void Task(void *) {
             const buttons::KeyEvents events = k.tracker.Update(raw, now);
             portEXIT_CRITICAL(&lock);
             for (uint8_t i = 0; i < events.size; ++i) {
+                for (unsigned l = 0; l < listener_count; ++l) {
+                    listeners[l](events.items[i]);
+                }
                 if (xQueueSend(queue, &events.items[i], 0) != pdTRUE) {
                     ++dropped;
                 }
@@ -99,6 +105,17 @@ esp_err_t Start() {
         return ESP_FAIL;
     }
     started = true;
+    return ESP_OK;
+}
+
+esp_err_t AddListener(Listener listener) {
+    if (started) {
+        return ESP_ERR_INVALID_STATE;  // the task reads the list unlocked
+    }
+    if (listener == nullptr || listener_count >= kMaxListeners) {
+        return ESP_ERR_NO_MEM;
+    }
+    listeners[listener_count++] = listener;
     return ESP_OK;
 }
 

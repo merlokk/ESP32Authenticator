@@ -5,6 +5,8 @@
 #include "board.h"
 #include "driver/ledc.h"
 #include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "frontlight_logic.h"
 
 namespace frontlight {
@@ -18,9 +20,15 @@ constexpr ledc_channel_t kCool = LEDC_CHANNEL_0;
 constexpr ledc_channel_t kWarm = LEDC_CHANNEL_1;
 
 bool ready = false;
-uint8_t brightness = 0;
+bool lit = false;
+uint8_t brightness = 20;
 uint8_t warmth = 50;
 Duties duties = {0, 0};
+// Console and the keypad task (a double press of Power) both switch it: the
+// state under the spinlock, the fades under the mutex.
+portMUX_TYPE lock = portMUX_INITIALIZER_UNLOCKED;
+StaticSemaphore_t fade_mutex_storage;
+SemaphoreHandle_t fade_mutex = nullptr;
 
 esp_err_t Channel(ledc_channel_t channel, int8_t gpio) {
     ledc_channel_config_t c = {};
@@ -39,6 +47,27 @@ esp_err_t FadeTo(ledc_channel_t channel, uint32_t duty) {
     esp_err_t err = ledc_set_fade_with_time(kMode, channel, duty, static_cast<int>(kFadeMs));
     if (err == ESP_OK) {
         err = ledc_fade_start(kMode, channel, LEDC_FADE_NO_WAIT);
+    }
+    return err;
+}
+
+// Both strings to the level (on) or to dark, one caller at a time: the fades
+// are not to be interleaved.
+esp_err_t Apply(bool on) {
+    xSemaphoreTake(fade_mutex, portMAX_DELAY);
+    portENTER_CRITICAL(&lock);
+    const Duties target = on ? Mix(brightness, warmth) : Duties{0, 0};
+    duties = target;
+    lit = on;
+    portEXIT_CRITICAL(&lock);
+    esp_err_t err = FadeTo(kCool, target.cool);
+    const esp_err_t warm_err = FadeTo(kWarm, target.warm);
+    xSemaphoreGive(fade_mutex);
+    if (err == ESP_OK) {
+        err = warm_err;
+    }
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "fade: %s", esp_err_to_name(err));
     }
     return err;
 }
@@ -66,6 +95,9 @@ esp_err_t Init() {
     if (err == ESP_OK) {
         err = ledc_fade_func_install(0);
     }
+    if (err == ESP_OK) {
+        fade_mutex = xSemaphoreCreateMutexStatic(&fade_mutex_storage);
+    }
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "ledc: %s", esp_err_to_name(err));
         return err;
@@ -76,23 +108,33 @@ esp_err_t Init() {
 
 bool Present() { return ready; }
 
-esp_err_t Set(uint8_t new_brightness, uint8_t new_warmth) {
+esp_err_t SetLevel(uint8_t new_brightness, uint8_t new_warmth) {
     if (!ready) {
         return ESP_ERR_NOT_SUPPORTED;
     }
-    brightness = new_brightness > 100 ? 100 : new_brightness;
+    portENTER_CRITICAL(&lock);
+    brightness = new_brightness == 0 ? 1 : new_brightness > 100 ? 100 : new_brightness;
     warmth = new_warmth > 100 ? 100 : new_warmth;
-    duties = Mix(brightness, warmth);
-    esp_err_t err = FadeTo(kCool, duties.cool);
-    const esp_err_t warm_err = FadeTo(kWarm, duties.warm);
-    if (err == ESP_OK) {
-        err = warm_err;
-    }
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "fade: %s", esp_err_to_name(err));
-    }
-    return err;
+    const bool now_lit = lit;
+    portEXIT_CRITICAL(&lock);
+    return now_lit ? Apply(true) : ESP_OK;
 }
+
+esp_err_t On() { return ready ? Apply(true) : ESP_ERR_NOT_SUPPORTED; }
+
+esp_err_t Off() { return ready ? Apply(false) : ESP_ERR_NOT_SUPPORTED; }
+
+esp_err_t Toggle() {
+    if (!ready) {
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+    portENTER_CRITICAL(&lock);
+    const bool was_lit = lit;
+    portEXIT_CRITICAL(&lock);
+    return Apply(!was_lit);
+}
+
+bool IsOn() { return lit; }
 
 uint8_t Brightness() { return brightness; }
 
@@ -108,8 +150,8 @@ void PrintInfo() {
         printf("light      not running (LEDC did not come up)\n");
         return;
     }
-    printf("light      %s, brightness %u%%, warmth %u%%\n", brightness == 0 ? "off" : "on",
-           static_cast<unsigned>(brightness), static_cast<unsigned>(warmth));
+    printf("light      %s; level: brightness %u%%, warmth %u%% (off at boot; Power x2 toggles)\n",
+           lit ? "on" : "off", static_cast<unsigned>(brightness), static_cast<unsigned>(warmth));
     printf("pwm        %u kHz, %u bits; cool GPIO%d duty %u, warm GPIO%d duty %u (of %u)\n",
            static_cast<unsigned>(kPwmHz / 1000), static_cast<unsigned>(kResolutionBits),
            b.frontlight_pins.cool, static_cast<unsigned>(duties.cool), b.frontlight_pins.warm,

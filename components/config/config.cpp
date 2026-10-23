@@ -53,7 +53,7 @@ const char kDefaultJson[] = R"json({
     "idleBrightness": 7
   },
   "frontlight": {
-    "brightness": 0,
+    "brightness": 20,
     "warmth": 50
   },
   "pin": {
@@ -249,7 +249,7 @@ bool ParseTime(const cJSON *section, Time *out, char *error, size_t size) {
 bool ParseFrontlight(const cJSON *section, Frontlight *out, char *error, size_t size) {
     uint32_t brightness = out->brightness;
     uint32_t warmth = out->warmth;
-    if (!GetUint(section, "brightness", 0, 100, &brightness, "frontlight", error, size) ||
+    if (!GetUint(section, "brightness", 1, 100, &brightness, "frontlight", error, size) ||
         !GetUint(section, "warmth", 0, 100, &warmth, "frontlight", error, size)) {
         return false;
     }

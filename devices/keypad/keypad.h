@@ -33,6 +33,13 @@ bool Next(buttons::KeyEvent *out, uint32_t timeout_ms);
 // Empties the queue (a reader that starts now wants new events only).
 void Flush();
 
+// Called for every event from the keypad task, before the queue, whether
+// anybody reads the queue or not (bindings: Power x2 toggles the frontlight).
+// Keep it short: the next poll waits for it. Up to kMaxListeners, before Start.
+inline constexpr unsigned kMaxListeners = 4;
+using Listener = void (*)(const buttons::KeyEvent &event);
+esp_err_t AddListener(Listener listener);
+
 // Console `keys`: per button its GPIO, raw and debounced level, held time.
 void PrintInfo();
 

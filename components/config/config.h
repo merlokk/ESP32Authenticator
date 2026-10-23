@@ -127,7 +127,7 @@ struct Led {
 };
 
 struct Frontlight {
-    uint8_t brightness;  // 0..100, 0: off; applied at boot
+    uint8_t brightness;  // 1..100, the level On() lights (off at boot)
     uint8_t warmth;      // 0..100: 0 all cool, 100 all warm
 };
 

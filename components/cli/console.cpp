@@ -318,8 +318,9 @@ const esp_console_cmd_t kCommands[] = {
     },
     {
         .command = "light",
-        .help = "Frontlight (saved): [info] | <0..100> [warmth 0..100] | warmth <0..100> | off",
-        .hint = "[info | <0..100> [warmth] | warmth <0..100> | off]",
+        .help = "Frontlight: [info] | <1..100> [warmth 0..100] | warmth <0..100> (level, saved) | "
+                "on | off (now; off at boot, Power x2 toggles)",
+        .hint = "[info | <1..100> [warmth] | warmth <0..100> | on | off]",
         .func = &CmdLight,
         .argtable = nullptr,
         .func_w_context = nullptr,

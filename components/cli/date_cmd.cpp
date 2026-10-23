@@ -385,26 +385,32 @@ int CmdLight(int argc, char **argv) {
         printf("this board has no frontlight\n");
         return 1;
     }
+    // on / off: the state now, not saved (the light starts off).
+    if (argc == 2 && (strcmp(argv[1], "on") == 0 || strcmp(argv[1], "off") == 0)) {
+        const esp_err_t err =
+            strcmp(argv[1], "on") == 0 ? frontlight::On() : frontlight::Off();
+        frontlight::PrintInfo();
+        return err == ESP_OK ? 0 : 1;
+    }
+    // A level: saved, and lit.
     config::Frontlight &cfg = config::Get().frontlight;
     uint8_t brightness = cfg.brightness;
     uint8_t warmth = cfg.warmth;
     bool ok = argc <= 3;
-    if (ok && strcmp(argv[1], "off") == 0) {
-        ok = argc == 2;
-        brightness = 0;
-    } else if (ok && strcmp(argv[1], "warmth") == 0) {
+    if (ok && strcmp(argv[1], "warmth") == 0) {
         ok = argc == 3 && ParsePercent(argv[2], &warmth);
     } else if (ok) {
-        ok = ParsePercent(argv[1], &brightness) && (argc == 2 || ParsePercent(argv[2], &warmth));
+        ok = ParsePercent(argv[1], &brightness) && brightness > 0 &&
+             (argc == 2 || ParsePercent(argv[2], &warmth));
     }
     if (!ok) {
-        printf("usage: light [info] | light <0..100> [warmth 0..100] | light warmth <0..100> |"
-               " light off\n");
+        printf("usage: light [info] | light <1..100> [warmth 0..100] | light warmth <0..100> |"
+               " light on | light off\n");
         return 1;
     }
     cfg.brightness = brightness;
     cfg.warmth = warmth;
-    if (frontlight::Set(brightness, warmth) != ESP_OK) {
+    if (frontlight::SetLevel(brightness, warmth) != ESP_OK || frontlight::On() != ESP_OK) {
         return 1;
     }
     frontlight::PrintInfo();

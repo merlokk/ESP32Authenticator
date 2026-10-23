@@ -147,12 +147,21 @@ void InitVault(const char *dir) {
     }
 }
 
+// Button bindings, from the keypad task. Power x2: the frontlight on / off.
+void OnKey(const buttons::KeyEvent &e) {
+    if (e.key == static_cast<uint8_t>(boards::ButtonId::kPower) &&
+        e.kind == buttons::Kind::kClick && e.count == 2) {
+        frontlight::Toggle();
+    }
+}
+
 }  // namespace
 
 extern "C" void app_main() {
     boards::Init();  // LED red; the board's clock seeds the system clock (UTC)
     battery::Init();  // not fatal: `battery` reports a missing gauge
     sd_card::Init();  // not fatal: `sd` says why it is not mounted
+    keypad::AddListener(OnKey);  // bindings first: the task reads the list unlocked
     keypad::Start();  // the buttons: events, and Left for FIDO2 presence
     ConfirmRunningApp();
     InitNvs();
@@ -167,8 +176,9 @@ extern "C" void app_main() {
         snprintf(ble_cfg.name, sizeof ble_cfg.name, "%s", boards::kBoard.ble_name);
     }
     ble::SetName(ble_cfg.name);
-    if (frontlight::Init() == ESP_OK) {  // dark until config.json says otherwise
-        frontlight::Set(config::Get().frontlight.brightness, config::Get().frontlight.warmth);
+    // Off at boot; config.json keeps the level a double press of Power lights.
+    if (frontlight::Init() == ESP_OK) {
+        frontlight::SetLevel(config::Get().frontlight.brightness, config::Get().frontlight.warmth);
     }
     boards::SetLedBrightness(config::Get().led.percent, config::Get().led.idle_percent);
 
