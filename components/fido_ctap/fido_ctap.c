@@ -407,6 +407,7 @@ esp_err_t fido_ctap_info(fido_ctap_info_t *out) {
     out->store_used = ctx->mem.write_index;
     out->store_size = ctx->mem.memory_size;
     out->max_credentials = ctx->max_credentials;
+    out->path = ctx->path;
     out->persistent = ctx->path != NULL;
     out->encrypted = ctx->path != NULL && ctx->has_key;
     struct stat st;

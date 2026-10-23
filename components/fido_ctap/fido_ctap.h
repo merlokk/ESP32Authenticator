@@ -103,7 +103,8 @@ size_t fido_ctap_request(const uint8_t *msg, size_t len, uint8_t *out, size_t ou
 typedef struct {
     size_t store_used;      // bytes in the RAM log (deleted items freed at boot)
     size_t store_size;      // capacity of the RAM log
-    size_t file_size;       // the store file on SPIFFS, 0 if none
+    const char *path;       // the store file (SD card or SPIFFS), NULL: RAM only
+    size_t file_size;       // the store file's size, 0 if none
     size_t credentials;     // stored credentials
     size_t discoverable;    // of which discoverable (resident keys)
     size_t max_credentials;
