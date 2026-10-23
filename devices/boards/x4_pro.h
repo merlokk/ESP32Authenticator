@@ -12,6 +12,7 @@ class X4Pro final : public Board {
 public:
     constexpr X4Pro() {
         name = "XTEINK X4 Pro";
+        ble_name = "ESP32 Auth X4Pro";
         hw_clock = HwClockType::kBm8563;
         display = DisplayType::kEink800x480;
         touch = TouchType::kGt911;

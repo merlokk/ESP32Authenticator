@@ -107,7 +107,7 @@ constexpr const char *kFullJson = R"json({
       {"ssid": "Office WiFi", "password": ""}
     ]
   },
-  "ble": {"active": true},
+  "ble": {"active": true, "name": "Desk key"},
   "web": {"mode": "on", "write": false, "user": "admin", "password": "a:b c"}
 })json";
 
@@ -328,6 +328,8 @@ void test_parse_rejects_wrong_types() {
     AssertParseFails(R"({"wifi": {"networks": {}}})", "wifi.networks: expected an array");
     AssertParseFails(R"({"wifi": {"networks": ["Home"]}})", "wifi.networks[0]: expected an object");
     AssertParseFails(R"({"ble": {"active": 1}})", "ble.active");
+    AssertParseFails(R"({"ble": {"name": 5}})", "ble.name: expected a string");
+    AssertParseFails(R"({"ble": {"name": "a name of thirty bytes, too lo"}})", "ble.name");
 }
 
 void test_parse_rejects_bad_ssid() {
@@ -473,6 +475,25 @@ void test_valid_host() {
     TEST_ASSERT_FALSE(config::ValidHost("http://ntp.org"));
 }
 
+void test_valid_ble_name() {
+    TEST_ASSERT_TRUE(config::ValidBleName(""));  // the board's name
+    TEST_ASSERT_TRUE(config::ValidBleName("ESP32 Auth X4Pro"));
+    TEST_ASSERT_TRUE(config::ValidBleName("a name of 29 bytes, just fits"));
+    TEST_ASSERT_FALSE(config::ValidBleName("a name of thirty bytes, too lo"));
+    // UTF-8: 14 Cyrillic letters (28 bytes) + 1 fits, 15 (30 bytes) does not.
+    TEST_ASSERT_TRUE(config::ValidBleName(
+        "\xd0\x9a\xd0\xbb\xd1\x8e\xd1\x87\xd0\xba\xd0\xbb\xd1\x8e\xd1\x87"
+        "\xd0\xba\xd0\xbb\xd1\x8e\xd1\x87\xd0\xba\xd0\xbb!"));
+    TEST_ASSERT_FALSE(config::ValidBleName(
+        "\xd0\x9a\xd0\xbb\xd1\x8e\xd1\x87\xd0\xba\xd0\xbb\xd1\x8e\xd1\x87"
+        "\xd0\xba\xd0\xbb\xd1\x8e\xd1\x87\xd0\xba\xd0\xbb\xd1\x8e"));
+    TEST_ASSERT_FALSE(config::ValidBleName("tab\there"));
+    TEST_ASSERT_FALSE(config::ValidBleName("del\x7f"));
+    TEST_ASSERT_FALSE(config::ValidBleName("cut \xd0"));      // a lead byte, then the end
+    TEST_ASSERT_FALSE(config::ValidBleName("bad \x80 byte"));  // a lone continuation
+    TEST_ASSERT_FALSE(config::ValidBleName("\xd0" "A"));       // lead + ASCII
+}
+
 // --- Serialize -------------------------------------------------------------------
 
 void test_serialize_round_trip() {
@@ -495,6 +516,7 @@ void test_serialize_round_trip() {
         TEST_ASSERT_EQUAL_STRING(in.wifi.networks[i].password, out.wifi.networks[i].password);
     }
     TEST_ASSERT_EQUAL(in.ble.active, out.ble.active);
+    TEST_ASSERT_EQUAL_STRING(in.ble.name, out.ble.name);
     TEST_ASSERT_EQUAL(static_cast<int>(in.wifi.mode), static_cast<int>(out.wifi.mode));
     TEST_ASSERT_EQUAL_UINT8(in.wifi.rounds, out.wifi.rounds);
     TEST_ASSERT_EQUAL_UINT16(in.wifi.ap_window_seconds, out.wifi.ap_window_seconds);
@@ -760,4 +782,5 @@ void RegisterConfigTests(void) {
     RUN_TEST(test_init_finishes_interrupted_write);
     RUN_TEST(test_init_drops_stale_temp);
     RUN_TEST(test_reload_failure_keeps_values);
+    RUN_TEST(test_valid_ble_name);
 }

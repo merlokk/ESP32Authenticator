@@ -19,6 +19,8 @@
 //   ble kb <text>              type text on the host (US layout). The console drops
 //                              single-backslash escapes, so type \\n (Enter),
 //                              \\t (Tab), \\\\ (backslash); quote to keep spaces
+//   ble name [<name>]          show / set the device name (1..29 bytes, words
+//                              joined with spaces; saved to config.json `ble.name`)
 
 namespace console {
 

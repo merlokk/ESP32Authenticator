@@ -285,6 +285,8 @@ esp_err_t StatusApi(httpd_req_t *request) {
                                                     : "pending";
     char zone[2 * config::kZoneSize + 8];
     Escape(config::Get().time.zone, zone, sizeof zone);
+    char ble_name[2 * config::kBleNameSize + 8];
+    Escape(ble::Name(), ble_name, sizeof ble_name);
 
     char ssid[2 * wifi::kSsidSize + 8];
     char ap_ssid[2 * wifi::kSsidSize + 8];
@@ -314,7 +316,7 @@ esp_err_t StatusApi(httpd_req_t *request) {
         ",\"fido_used\":%u,\"fido_size\":%u,\"fido_pin\":%s,\"fido_pin_retries\":%u"
         ",\"fido_counter\":%" PRIu32 ",\"fido_version\":%" PRIu32 ",\"fido_modified\":%lld"
         ",\"time_utc\":%lld,\"time_offset\":%d,\"time_zone\":\"%s\",\"time_sync\":\"%s\""
-        ",\"time_sync_ago_s\":%ld}",
+        ",\"time_sync_ago_s\":%ld,\"ble_name\":\"%s\"}",
         app->version, app->idf_ver, static_cast<uint32_t>(esp_timer_get_time() / 1000000),
         static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL)),
         static_cast<unsigned>(heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL)),
@@ -334,7 +336,8 @@ esp_err_t StatusApi(httpd_req_t *request) {
         store.sign_count, store.file_version, static_cast<long long>(store.modified_utc),
         time_set ? static_cast<long long>(now) : 0LL,
         time_set ? tz::OffsetSeconds(now) : 0, zone, sync_state,
-        sync.since_last_ms == timesync::kNever ? -1L : static_cast<long>(sync.since_last_ms / 1000));
+        sync.since_last_ms == timesync::kNever ? -1L : static_cast<long>(sync.since_last_ms / 1000),
+        ble_name);
     return SendJson(request, nullptr, g_json);
 }
 
@@ -453,8 +456,11 @@ esp_err_t SettingsGet(httpd_req_t *request) {
             now.auth_failed[i] ? "true" : "false", ip.enabled ? "true" : "false", ip.address,
             ip.netmask, ip.gateway, ip.dns1, ip.dns2);
     }
-    if (written > 0 && written < kSize - 4) {
-        std::snprintf(g_body + written, sizeof g_body - static_cast<size_t>(written), "]}}");
+    if (written > 0 && written < kSize - 4 - 2 * static_cast<int>(config::kBleNameSize) - 24) {
+        char ble_name[2 * config::kBleNameSize + 8];
+        Escape(config::Get().ble.name, ble_name, sizeof ble_name);
+        std::snprintf(g_body + written, sizeof g_body - static_cast<size_t>(written),
+                      "]},\"ble\":{\"name\":\"%s\"}}", ble_name);
     }
     return SendJson(request, nullptr, g_body);
 }
@@ -551,6 +557,9 @@ esp_err_t SettingsPost(httpd_req_t *request) {
         std::snprintf(g_json, sizeof g_json, "{\"ok\":false,\"error\":\"%s\",\"detail\":\"%s\"}",
                       WriteResultText(outcome.result), detail);
         return SendJson(request, "400 Bad Request", g_json);
+    }
+    if (outcome.ble_changed) {
+        ble::SetName(config::Get().ble.name);
     }
     ESP_LOGI(TAG, "settings written over http (memory only until saved)");
     return SendJson(request, nullptr, "{\"ok\":true,\"saved\":false}");

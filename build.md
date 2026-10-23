@@ -184,6 +184,7 @@ Opening the port with RTS asserted resets the chip.
 | `ble use <#>` / `<addr>` / `any` | switch hosts: all keys released on the current host, link dropped, advertising filtered to the target bond (kept in NVS) so only it reconnects; `any` lifts the filter. A pairing window advertises to all; a newly paired host becomes the target |
 | `ble disconnect` | drop the link (keys released first); the host may reconnect |
 | `ble unpair <#>` / `<addr>` / `all` | delete a bond by number from `ble bonds`, by address, or all; a connected host is disconnected |
+| `ble name [<name>]` | show / set the BLE name (1..29 bytes, words joined with spaces), applied at once and saved (`ble.name`) |
 | `ble kb <text>` | type text on the connected host (US layout). esp_console drops single-backslash escapes: type `\\n` (Enter), `\\t` (Tab), `\\\\`; quote to keep spaces |
 | `wifi on` / `wifi off` | radio on in the configured mode / off (saved) |
 | `wifi mode client\|ap\|apsta` | set the mode and switch the radio on (saved) |

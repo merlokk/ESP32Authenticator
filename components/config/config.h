@@ -41,6 +41,8 @@ constexpr size_t kWipeSize = 98;     // "<32 hex salt>:<64 hex SHA-256>" + NUL
 constexpr uint16_t kMaxLockMinutes = 1440;
 constexpr size_t kZoneSize = 41;     // zone name or POSIX rule (tz::kMaxPosixLength)
 constexpr size_t kHostSize = 64;     // SNTP server: host name or IPv4
+// BLE device name: 29 bytes fill the scan response (31 - length - type).
+constexpr size_t kBleNameSize = 30;
 constexpr uint8_t kMaxSyncHours = 168;
 
 // A fixed address for one network (per network: home DHCP, office static).
@@ -94,7 +96,8 @@ struct InternetCheck {
 };
 
 struct Ble {
-    bool active;  // start BLE at boot
+    bool active;                // start BLE at boot
+    char name[kBleNameSize];    // advertised and GAP name; "": the board's
 };
 
 enum class WebMode : uint8_t {
@@ -187,6 +190,7 @@ bool ValidTestPin(const char *pin);          // empty or 6 digits
 bool ValidWipe(const char *wipe);            // empty or "<32 hex>:<64 hex>"
 bool ValidZone(const char *zone);            // a known zone name or a POSIX rule
 bool ValidHost(const char *host);            // empty, or a host name / IPv4: a-z 0-9 '-' '.'
+bool ValidBleName(const char *name);        // empty, or 1..29 bytes of UTF-8, no control chars
 
 // Dotted quad to esp_netif's form (first octet in the low byte). Strict:
 // four decimal octets 0..255, no leading zeros ("010" is octal elsewhere),

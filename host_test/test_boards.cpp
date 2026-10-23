@@ -90,6 +90,18 @@ void test_boards_catch_a_device_without_pins(void) {
     sd_without_pins.has_sd_card = true;
     TEST_ASSERT_NOT_NULL(boards::CheckPins(sd_without_pins));
 
+    Edited no_ble_name;
+    no_ble_name.ble_name = "";
+    TEST_ASSERT_NOT_NULL(boards::CheckPins(no_ble_name));
+    Edited long_ble_name;
+    long_ble_name.ble_name = "a name of thirty bytes, too lo";
+    TEST_ASSERT_NOT_NULL(boards::CheckPins(long_ble_name));
+    Edited longest_ble_name;
+    longest_ble_name.ble_name = "a name of 29 bytes, just fits";
+    TEST_ASSERT_NULL(boards::CheckPins(longest_ble_name));
+    TEST_ASSERT_EQUAL_STRING("ESP32 Auth", kDev.ble_name);
+    TEST_ASSERT_EQUAL_STRING("ESP32 Auth X4Pro", kX4.ble_name);
+
     Edited no_fido;
     no_fido.fido_max_credentials = 0;
     TEST_ASSERT_NOT_NULL(boards::CheckPins(no_fido));

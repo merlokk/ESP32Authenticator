@@ -88,7 +88,7 @@ Reference ESP-IDF + LVGL project: `../../ai-remote/approver-esp32` ([GitHub](htt
   },
   "internet": {"check": true, "intervalSeconds": 60, "timeoutMs": 2000, "failures": 2,
                "targets": ["8.8.8.8", "1.1.1.1", "9.9.9.9"]},
-  "ble": {"active": false},
+  "ble": {"active": false, "name": ""},
   "web": {"mode": "auto", "write": true, "user": "", "password": ""},
   "time": {"zone": "UTC", "server": "pool.ntp.org", "syncHours": 6},
   "led": {"brightness": 15, "idleBrightness": 7},
@@ -97,7 +97,11 @@ Reference ESP-IDF + LVGL project: `../../ai-remote/approver-esp32` ([GitHub](htt
 }
 ```
 
-`wifi.active` / `ble.active` start the radio at boot. Up to 4 networks, tried
+`wifi.active` / `ble.active` start the radio at boot. `ble.name`: the
+advertised and GAP name, 1..29 bytes of UTF-8 (the scan response); empty:
+the board's (`ble_name`: `ESP32 Auth`, X4 Pro `ESP32 Auth X4Pro`), put into
+the config at boot so a save keeps it. Applied at once (`ble name`, the
+site); a paired host may show the old name until it reconnects. Up to 4 networks, tried
 in order. Password: empty (open), 8..63 chars, or 64 hex digits. AP password:
 empty (open) or 8..63 chars; `rounds` 1..10, `apWindowSeconds` 30..3600,
 channel 1..13. Change the default AP password. `ip` (optional, per network):
@@ -283,7 +287,7 @@ and never starts without lwIP (an assert).
 | `GET /api/status` | firmware, heap, SPIFFS, Wi-Fi (IP, MAC, internet), AP, BLE, FIDO (readiness, requests, credentials stored of max, store bytes, PIN set and attempts, signature counter, file version and modification time; `fido_store` false while a request holds the store, `fido_off` why FIDO2 is off). No secrets |
 | `GET /api/devstatus` | the console's `devstatus` dump (stdout swapped for the request) |
 | `GET /api/hwinfo` | the console's `hwinfo` dump, the same way (eFuse key purposes and flags only, no NVS values) |
-| `GET /api/settings`, `POST /api/settings` | Wi-Fi mode, AP, networks (with `ip`; absent `ip` keeps the current one). Whitelist; passwords write-only (absent/null keeps, `""` clears); all-or-nothing; memory only |
+| `GET /api/settings`, `POST /api/settings` | Wi-Fi mode, AP, networks (with `ip`; absent `ip` keeps the current one), `ble.name` (applied to the radio at once; the front page sets and saves it). Whitelist; passwords write-only (absent/null keeps, `""` clears); all-or-nothing; memory only |
 | `GET /api/wifi/scan` | access points (hidden/duplicate names dropped) |
 | `POST /api/action?do=save\|reload\|retry` | save config.json / reload it / put Wi-Fi settings on the radio |
 | `POST /api/reboot?confirm=reboot` | restart |

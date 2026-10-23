@@ -162,6 +162,12 @@ extern "C" void app_main() {
     // TODO: look on the microSD card first.
     config::Init(spiffs_fs::kBasePath);
     tz::ApplyZone(config::Get().time.zone);
+    // No name in config.json: the board's, put into the config so a save keeps it.
+    config::Ble &ble_cfg = config::Get().ble;
+    if (ble_cfg.name[0] == '\0') {
+        snprintf(ble_cfg.name, sizeof ble_cfg.name, "%s", boards::kBoard.ble_name);
+    }
+    ble::SetName(ble_cfg.name);
     boards::SetLedBrightness(config::Get().led.percent, config::Get().led.idle_percent);
 
     ui::Init();  // LVGL; no display driver yet

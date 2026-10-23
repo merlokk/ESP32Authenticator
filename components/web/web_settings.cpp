@@ -242,6 +242,31 @@ bool ReadWifi(const cJSON *wifi, const config::Wifi &before, config::Data *into,
     return true;
 }
 
+// `ble`: {"name": "..."}, nothing else.
+bool ReadBle(const cJSON *ble, config::Data *into, WriteOutcome *out) {
+    if (!cJSON_IsObject(ble)) {
+        Say(out, WriteResult::kBadValue, "ble");
+        return false;
+    }
+    for (const cJSON *item = ble->child; item != nullptr; item = item->next) {
+        const char *key = item->string != nullptr ? item->string : "";
+        if (std::strcmp(key, "name") != 0) {
+            char detail[sizeof out->detail];
+            std::snprintf(detail, sizeof detail, "ble.%s", key);
+            Say(out, WriteResult::kUnknownField, detail);
+            return false;
+        }
+        if (!cJSON_IsString(item) || item->valuestring == nullptr ||
+            item->valuestring[0] == '\0' || !config::ValidBleName(item->valuestring)) {
+            Say(out, WriteResult::kBadValue, "ble.name");
+            return false;
+        }
+        std::snprintf(into->ble.name, sizeof into->ble.name, "%s", item->valuestring);
+        out->ble_changed = true;
+    }
+    return true;
+}
+
 }  // namespace
 
 WriteOutcome ApplySettings(const char *body, size_t length, config::Data *into) {
@@ -279,6 +304,8 @@ WriteOutcome ApplySettings(const char *body, size_t length, config::Data *into) 
         const char *key = section->string != nullptr ? section->string : "";
         if (std::strcmp(key, "wifi") == 0) {
             ok = ReadWifi(section, into->wifi, &staged, &out);
+        } else if (std::strcmp(key, "ble") == 0) {
+            ok = ReadBle(section, &staged, &out);
         } else {
             Say(&out, WriteResult::kUnknownField, key);
             ok = false;
@@ -291,6 +318,7 @@ WriteOutcome ApplySettings(const char *body, size_t length, config::Data *into) 
     free(staging);
     if (!ok) {
         out.wifi_changed = false;
+        out.ble_changed = false;
         return out;
     }
     out.result = WriteResult::kOk;

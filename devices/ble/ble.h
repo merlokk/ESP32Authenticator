@@ -24,7 +24,10 @@
 
 namespace ble {
 
-constexpr const char *kDeviceName = "ESP32 Auth";
+// The advertised and GAP device name, 1..29 bytes (config.json `ble.name`,
+// else the board's). Applied at once while on: advertising restarts.
+void SetName(const char *name);
+const char *Name();
 
 // Registers a GATT service table (kept by pointer, must stay alive).
 // Call before On(); takes effect on the next On().

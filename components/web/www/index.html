@@ -68,6 +68,12 @@ body{padding:0 16px 40px}</style>
   <tr><th>counter</th><td id="fido-counter">&hellip;</td></tr>
   <tr><th>file</th><td id="fido-file">&hellip;</td></tr>
 </table>
+<div class="field">
+  <label for="ble-name">name</label>
+  <input id="ble-name" autocomplete="off" spellcheck="false" maxlength="29">
+  <button class="btn small" type="button" id="ble-name-set">Set</button>
+</div>
+<div class="notice" id="said" hidden></div>
 
 <h2>Device</h2>
 <table>

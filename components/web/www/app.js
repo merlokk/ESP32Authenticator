@@ -208,6 +208,11 @@
 
       text(by("ble"), d.ble + (d.ble === "connected" ? (d.ble_secure ? ", secure" : ", not secure") : ""),
            d.ble === "connected" && d.ble_secure ? "ok" : "");
+      // The name field follows the device until somebody types in it.
+      var nameInput = by("ble-name");
+      if (nameInput && !nameEdited && document.activeElement !== nameInput) {
+        nameInput.value = d.ble_name || "";
+      }
       text(by("kb"), d.kb_ready ? "ready" : "not subscribed", d.kb_ready ? "ok" : "faint");
       text(by("fido"), (d.fido_ready ? "ready" : "not subscribed") + ", " + d.fido_requests +
            " request(s), " + d.fido_errors + " error(s)", d.fido_ready ? "ok" : "faint");
@@ -262,6 +267,24 @@
     }
 
     function refresh() { getJson("/api/status", paint, failed); }
+
+    // BLE name: config.json ble.name, applied to the radio at once, then saved.
+    var nameEdited = false;
+    by("ble-name").addEventListener("input", function () { nameEdited = true; });
+    by("ble-name-set").addEventListener("click", function () {
+      var name = by("ble-name").value.trim();
+      if (!name) { said("a name is 1..29 bytes", "bad"); return; }
+      said("applying…");
+      post("/api/settings", { ble: { name: name } }, function () {
+        post("/api/action?do=save", null, function () {
+          nameEdited = false;
+          said("name set and saved to config.json; a paired host may show the old one " +
+               "until it reconnects", "ok");
+          refresh();
+        }, function (why) { said("set, but not saved: " + why, "bad"); });
+      }, function (why) { said(why, "bad"); });
+    });
+
     refresh();
     setInterval(refresh, 5000);
     // A click on the lamp reads the status now, without waiting for the timer.

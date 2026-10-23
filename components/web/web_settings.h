@@ -7,7 +7,8 @@
 //   {ssid, password, channel}, `wifi.networks[]` {ssid, password, ip {static,
 //   address, netmask, gateway, dns1, dns2}}. Anything else is refused by name
 //   (web.* included: the site cannot unlock itself). An absent `ip` keeps the
-//   network's current one (matched by SSID).
+//   network's current one (matched by SSID). `ble.name`: 1..29 bytes
+//   (config::ValidBleName, not empty).
 // - Passwords are write-only: GET never returns one. In a POST an absent or
 //   null password keeps the current one (networks matched by SSID), "" clears.
 // - All or nothing: any refusal leaves `into` untouched.
@@ -37,6 +38,7 @@ struct WriteOutcome {
     WriteResult result = WriteResult::kOk;
     char detail[48] = {};
     bool wifi_changed = false;
+    bool ble_changed = false;  // ble.name: apply it to the radio
 };
 
 WriteOutcome ApplySettings(const char *body, size_t length, config::Data *into);

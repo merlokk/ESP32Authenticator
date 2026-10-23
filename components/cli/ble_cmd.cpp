@@ -6,6 +6,7 @@
 #include <cstring>
 
 #include "ble.h"
+#include "config.h"
 #include "ble_fido.h"
 #include "ble_kb.h"
 #include "host/ble_hs.h"
@@ -36,7 +37,7 @@ bool RequireOn() {
 int CmdOn(int, char **) {
     const int rc = Result(ble::On(), "ble on");
     if (rc == 0) {
-        printf("ble on, advertising as '%s'\n", ble::kDeviceName);
+        printf("ble on, advertising as '%s'\n", ble::Name());
     }
     return rc;
 }
@@ -81,7 +82,7 @@ int CmdPair(int argc, char **argv) {
         printf("current host disconnected: one connection at a time\n");
     }
     ble::StartPairing(seconds);
-    printf("pairing open for %" PRIu32 " s: add '%s' on the host\n", seconds, ble::kDeviceName);
+    printf("pairing open for %" PRIu32 " s: add '%s' on the host\n", seconds, ble::Name());
     if (background) {
         return 0;  // the passkey goes to the log only
     }
@@ -213,11 +214,51 @@ int CmdKb(int argc, char **argv) {
     return rc;
 }
 
+// Words joined with spaces, so quotes are optional: ble name My key.
+int CmdName(int argc, char **argv) {
+    if (argc == 1) {
+        printf("name       %s\n", ble::Name());
+        return 0;
+    }
+    static char name[config::kBleNameSize];  // a longer one does not fit: refused
+    size_t n = 0;
+    bool fits = true;
+    for (int i = 1; i < argc && fits; ++i) {
+        const size_t len = strlen(argv[i]);
+        fits = n + len + (i > 1 ? 1 : 0) < sizeof name;
+        if (fits) {
+            if (i > 1) {
+                name[n++] = ' ';
+            }
+            memcpy(name + n, argv[i], len);
+            n += len;
+        }
+    }
+    name[fits ? n : 0] = '\0';
+    if (!fits || name[0] == '\0' || !config::ValidBleName(name)) {
+        printf("a name is 1..29 bytes of UTF-8, no control characters\n");
+        return 1;
+    }
+    config::Data &cfg = config::Get();
+    snprintf(cfg.ble.name, sizeof cfg.ble.name, "%s", name);
+    ble::SetName(cfg.ble.name);
+    printf("name       %s%s\n", ble::Name(),
+           ble::IsOn() ? " (applied; a paired host may show the old one until it reconnects)"
+                       : "");
+    const esp_err_t err = config::Save();
+    if (err != ESP_OK) {
+        printf("applied, but config.json not saved: %s\n", esp_err_to_name(err));
+        return 1;
+    }
+    printf("saved %s\n", config::Path());
+    return 0;
+}
+
 constexpr Subcommand kSubcommands[] = {
     {"on", &CmdOn},         {"off", &CmdOff},       {"info", &CmdInfo},
     {"pair", &CmdPair},     {"bonds", &CmdBonds},   {"conns", &CmdConns},
     {"use", &CmdUse},       {"disconnect", &CmdDisconnect},
-    {"unpair", &CmdUnpair}, {"kb", &CmdKb},
+    {"unpair", &CmdUnpair}, {"kb", &CmdKb},         {"name", &CmdName},
 };
 
 }  // namespace
@@ -225,7 +266,7 @@ constexpr Subcommand kSubcommands[] = {
 int CmdBle(int argc, char **argv) {
     return Dispatch(kSubcommands, argc, argv,
                     "ble on | off | info | pair [seconds [bg]|stop] | bonds | conns |"
-                    " use <#|addr|any> | disconnect | unpair <#|addr|all> | kb <text>");
+                    " use <#|addr|any> | disconnect | unpair <#|addr|all> | kb <text> | name [<name>]");
 }
 
 }  // namespace console

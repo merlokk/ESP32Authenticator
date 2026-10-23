@@ -167,7 +167,7 @@ void test_anything_off_the_whitelist_is_refused_by_name(void) {
     AssertRefused(R"({"web":{"user":"attacker","password":"x"}})", WriteResult::kUnknownField,
                   "web");
     AssertRefused(R"({"web":{"write":true}})", WriteResult::kUnknownField, "web");
-    AssertRefused(R"({"ble":{"active":true}})", WriteResult::kUnknownField, "ble");
+    AssertRefused(R"({"ble":{"active":true}})", WriteResult::kUnknownField, "ble.active");
     AssertRefused(R"({"wifi":{"hostname":"x"}})", WriteResult::kUnknownField, "hostname");
     AssertRefused(R"({"wifi":{"active":true}})", WriteResult::kUnknownField, "active");
     AssertRefused(R"({"wifi":{"ap":{"hidden":true}}})", WriteResult::kUnknownField, "hidden");
@@ -205,6 +205,27 @@ void test_actions(void) {
                           static_cast<int>(web::ActionFromUri(nullptr)));
 }
 
+void test_ble_name(void) {
+    config::Data d = Base();
+    web::WriteOutcome out = Apply(R"({"ble": {"name": "ESP32 Auth X4Pro"}})", &d);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(WriteResult::kOk), static_cast<int>(out.result));
+    TEST_ASSERT_TRUE(out.ble_changed);
+    TEST_ASSERT_FALSE(out.wifi_changed);
+    TEST_ASSERT_EQUAL_STRING("ESP32 Auth X4Pro", d.ble.name);
+    // Only the name: the site cannot switch the radio or anything else here.
+    AssertRefused(R"({"ble": {"active": true}})", WriteResult::kUnknownField, "ble.active");
+    AssertRefused(R"({"ble": {"name": ""}})", WriteResult::kBadValue, "ble.name");
+    AssertRefused(R"({"ble": {"name": 5}})", WriteResult::kBadValue, "ble.name");
+    AssertRefused(R"({"ble": {"name": "a name of thirty bytes, too lo"}})", WriteResult::kBadValue,
+                  "ble.name");
+    AssertRefused(R"({"ble": "x"})", WriteResult::kBadValue, "ble");
+    // A refusal elsewhere drops the name too.
+    d = Base();
+    out = Apply(R"({"ble": {"name": "New"}, "web": {}})", &d);
+    TEST_ASSERT_FALSE(out.ble_changed);
+    TEST_ASSERT_EQUAL_STRING("", d.ble.name);
+}
+
 }  // namespace
 
 void RegisterWebSettingsTests(void) {
@@ -221,4 +242,5 @@ void RegisterWebSettingsTests(void) {
     RUN_TEST(test_one_bad_field_refuses_the_whole_document);
     RUN_TEST(test_not_a_document);
     RUN_TEST(test_actions);
+    RUN_TEST(test_ble_name);
 }

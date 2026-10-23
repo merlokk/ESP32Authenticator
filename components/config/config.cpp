@@ -34,7 +34,8 @@ const char kDefaultJson[] = R"json({
     "targets": ["8.8.8.8", "1.1.1.1", "9.9.9.9"]
   },
   "ble": {
-    "active": false
+    "active": false,
+    "name": ""
   },
   "web": {
     "mode": "auto",
@@ -473,7 +474,10 @@ bool ParseSections(const cJSON *root, Data *staged, char *error, size_t size) {
             SetError(error, size, "ble: expected an object");
             return false;
         }
-        if (!GetBool(ble, "active", &parsed.ble.active, "ble", error, size)) {
+        if (!GetBool(ble, "active", &parsed.ble.active, "ble", error, size) ||
+            !GetString(ble, "name", parsed.ble.name, sizeof parsed.ble.name, ValidBleName,
+                       "empty or 1..29 bytes of UTF-8, no control characters", "ble", error,
+                       size)) {
             return false;
         }
     }
@@ -640,6 +644,7 @@ size_t Serialize(const Data &d, char *out, size_t size) {
     }
     cJSON *ble = cJSON_AddObjectToObject(root, "ble");
     cJSON_AddBoolToObject(ble, "active", d.ble.active);
+    cJSON_AddStringToObject(ble, "name", d.ble.name);
     cJSON *web = cJSON_AddObjectToObject(root, "web");
     cJSON_AddStringToObject(web, "mode", Name(d.web.mode));
     cJSON_AddBoolToObject(web, "write", d.web.write);
@@ -764,6 +769,40 @@ bool ValidZone(const char *zone) {
 }
 
 // Labels of letters, digits and '-', joined by single dots.
+bool ValidBleName(const char *name) {
+    const size_t n = strlen(name);
+    if (n >= kBleNameSize) {
+        return false;
+    }
+    // Well-formed UTF-8 (no overlongs or surrogates checked: a name, not a
+    // security boundary), no control characters.
+    for (size_t i = 0; i < n;) {
+        const auto c = static_cast<unsigned char>(name[i]);
+        size_t more = 0;
+        if (c < 0x20 || c == 0x7F) {
+            return false;
+        } else if (c < 0x80) {
+            more = 0;
+        } else if ((c & 0xE0) == 0xC0) {
+            more = 1;
+        } else if ((c & 0xF0) == 0xE0) {
+            more = 2;
+        } else if ((c & 0xF8) == 0xF0) {
+            more = 3;
+        } else {
+            return false;
+        }
+        // A cut sequence meets the NUL, which is no continuation byte.
+        for (size_t k = 1; k <= more; ++k) {
+            if ((static_cast<unsigned char>(name[i + k]) & 0xC0) != 0x80) {
+                return false;
+            }
+        }
+        i += more + 1;
+    }
+    return true;
+}
+
 bool ValidHost(const char *host) {
     const size_t n = strlen(host);
     if (n == 0) {

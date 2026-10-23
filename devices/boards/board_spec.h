@@ -100,6 +100,10 @@ public:
     bool has_sd_card = false;
     bool has_frontlight = false;
 
+    // The BLE name when config.json `ble.name` is empty (1..29 bytes: the
+    // scan response).
+    const char *ble_name = "ESP32 Auth";
+
     // Store files (fido.bin, vault.bin) live on the SD card when the board has
     // one, else on SPIFFS (80 KB, shared with the stock data on the X4 Pro;
     // a save needs room for a second copy).
@@ -152,6 +156,9 @@ inline constexpr uint16_t kMaxRecords = 1000;
 inline constexpr uint16_t kMaxFidoResetWindowS = 3600;
 
 // nullptr when the board is consistent, else what is wrong.
+// The scan response holds the name: 31 bytes - length - type.
+inline constexpr size_t kMaxBleName = 29;
+
 constexpr const char *CheckPins(const Board &b) {
     const int8_t pins[] = {
         b.buttons[0].gpio,          b.buttons[1].gpio,       b.buttons[2].gpio,
@@ -188,6 +195,13 @@ constexpr const char *CheckPins(const Board &b) {
     }
     if (b.name == nullptr || b.name[0] == '\0') {
         return "no name";
+    }
+    size_t ble_name_length = 0;
+    while (b.ble_name != nullptr && b.ble_name[ble_name_length] != '\0') {
+        ++ble_name_length;
+    }
+    if (ble_name_length < 1 || ble_name_length > kMaxBleName) {
+        return "ble_name out of 1..29 bytes";
     }
     if (!b.HasButton(ButtonId::kLeft)) {
         return "no Left button (FIDO2 user presence)";

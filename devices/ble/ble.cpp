@@ -49,6 +49,18 @@ size_t drop_listener_count = 0;
 
 bool on = false;
 bool synced = false;
+
+// 29 bytes + NUL: the scan response. Copied under the lock: the host task
+// advertises while the console renames.
+constexpr size_t kNameSize = 30;
+char device_name[kNameSize] = "ESP32 Auth";
+portMUX_TYPE name_lock = portMUX_INITIALIZER_UNLOCKED;
+
+void CopyName(char (&out)[kNameSize]) {
+    portENTER_CRITICAL(&name_lock);
+    memcpy(out, device_name, kNameSize);
+    portEXIT_CRITICAL(&name_lock);
+}
 SemaphoreHandle_t synced_sem = nullptr;
 uint8_t own_addr_type = 0;
 uint16_t conn_handle = BLE_HS_CONN_HANDLE_NONE;
@@ -363,9 +375,11 @@ void Advertise() {
         return;
     }
 
+    static char name[kNameSize];  // the host keeps no pointer, but no stack either
+    CopyName(name);
     ble_hs_adv_fields rsp = {};
-    rsp.name = reinterpret_cast<const uint8_t *>(kDeviceName);
-    rsp.name_len = strlen(kDeviceName);
+    rsp.name = reinterpret_cast<const uint8_t *>(name);
+    rsp.name_len = strlen(name);
     rsp.name_is_complete = 1;
     rc = ble_gap_adv_rsp_set_fields(&rsp);
     if (rc != 0) {
@@ -626,7 +640,9 @@ esp_err_t On() {
 
     ble_svc_gap_init();
     ble_svc_gatt_init();
-    ble_svc_gap_device_name_set(kDeviceName);
+    char name[kNameSize];
+    CopyName(name);
+    ble_svc_gap_device_name_set(name);
     ble_svc_gap_device_appearance_set(kAppearanceKeyboard);
 
     int rc = ble_gatts_count_cfg(kCoreServices);
@@ -832,9 +848,32 @@ bool LinkSecure() {
 
 uint16_t NotifyPayload() { return mtu - 3; }
 
+void SetName(const char *name) {
+    if (name == nullptr || name[0] == '\0') {
+        return;
+    }
+    portENTER_CRITICAL(&name_lock);
+    // Cut at a byte count, but never inside a UTF-8 sequence.
+    size_t n = strlen(name) < kNameSize - 1 ? strlen(name) : kNameSize - 1;
+    while (n > 0 && n < strlen(name) && (static_cast<unsigned char>(name[n]) & 0xC0) == 0x80) {
+        --n;
+    }
+    memcpy(device_name, name, n);
+    device_name[n] = '\0';
+    portEXIT_CRITICAL(&name_lock);
+    if (on && synced) {
+        char copy[kNameSize];
+        CopyName(copy);
+        ble_svc_gap_device_name_set(copy);
+        RestartAdvertising();
+    }
+}
+
+const char *Name() { return device_name; }
+
 void PrintInfo() {
     printf("state      %s\n", on ? (synced ? "on" : "on (not synced)") : "off");
-    printf("name       %s\n", kDeviceName);
+    printf("name       %s\n", Name());
     if (!on) {
         return;
     }
