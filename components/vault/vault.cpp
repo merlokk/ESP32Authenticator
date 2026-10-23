@@ -677,6 +677,8 @@ Error MakeWipe(const char *pin, char out[kWipeTextSize]) {
     return Error::kOk;
 }
 
+State GetState() { return g_state; }
+
 Info GetInfo() {
     Info info = {};
     info.state = g_state;

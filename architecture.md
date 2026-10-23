@@ -15,7 +15,7 @@ Target and status. Screen design and the open questions: [x4-design.md](x4-desig
 | Store file header (version, modification time) and rollback check (highest version in NVS) | done (`storefile`) |
 | Encrypted stores: `vault.bin` and `fido.bin`, AES-256-GCM with a key from the PIN (the same on every device with the PIN and the files), loaded whole into PSRAM | done |
 | Sync over the internet, the later modification time wins | not yet; service not chosen |
-| X4 Pro screen: status bar, credential list, pages, settings | not yet (LVGL on the panel, portrait; boot screen only) |
+| X4 Pro screen: status bar, credential list, pages, settings | not yet (LVGL on the panel, portrait; boot screen and the PIN pad) |
 | Settings: frontlight, Wi-Fi | Wi-Fi on the console and the site; frontlight not yet |
 | Time: SNTP, zones, clock | done |
 | Battery: voltage, level, charging | done (CW2017 + charger STAT, console `battery`, BLE Battery Level); screen not yet |
@@ -27,7 +27,7 @@ Target and status. Screen design and the open questions: [x4-design.md](x4-desig
 | Layer | Choice |
 |---|---|
 | Framework | ESP-IDF (C/C++) |
-| UI | LVGL 9 (`components/ui`: 480x800 portrait on the e-ink panel, boot screen; GT911 touch as the pointer; today: USB console + web site) |
+| UI | LVGL 9 (`components/ui`: 480x800 portrait on the e-ink panel, boot screen, PIN pad; GT911 touch as the pointer; today: USB console + web site) |
 | Host link | BLE HID keyboard (types credentials), BLE FIDO2 (CTAP2) |
 | Network | Wi-Fi (client / AP / AP+client) and a configuration web site |
 | Storage | `config.json` on SPIFFS; store files (`vault.bin`, `fido.bin`, encrypted) in `/sdcard/.authenticator` when the board has a card slot (no card: no stores, never a second set on SPIFFS), else SPIFFS |
@@ -268,13 +268,26 @@ Display: 480x800 portrait, I1, one screen buffer in PSRAM, DIRECT mode (LVGL
 redraws dirty areas in place). On the last flushed area `ui_logic.h` (pure,
 host-tested) turns the screen 90 degrees clockwise into the 800x480 panel
 frame (portrait top = frame left, as held as a book; the bezel insets carry
-over) and `epd::Refresh` draws it: fast, every 20th full. `ui` task (8 KB
-stack, priority 3) runs `lv_timer_handler`; other tasks touch widgets only
+over) into a pending frame; the `ui_push` task (4 KB) draws the latest one
+with `epd::Refresh` (fast, every 20th full; a frame equal to the glass is
+dropped), so the ui task keeps reading the touch through the second a
+refresh takes (no tap lost). `ui::HoldPanel` keeps frames off the panel (a
+wallpaper on it). `ui` task (8 KB stack, priority 3) runs `lv_timer_handler`; other tasks touch widgets only
 inside `ui::Lock` / `ui::Unlock`. Measured on the X4 Pro (UC8179): turn 61 ms,
 full refresh 1.9 s, stack used ~3.4 KB. The GT911 is LVGL's pointer, read
 every 20 ms (the default 200 ms misses short taps); its coordinates are the
 portrait screen's as they are (`TouchToScreen`, checked by eye: no swap or
 flip). Until the real screens the boot screen marks the last press.
+
+PIN pad (`pin_pad.cpp`, `pin_pad_logic.h` pure): shown while the vault is
+locked (polled each second with `vault::GetState`, no lock): at boot unless
+`power.keepPinHours` kept the key, after `pin lock`; gone when the vault
+opens, from the pad or the console. Six dots and a 3x4 pad (clear, 0,
+backspace); the sixth digit is checked by `vault::Unlock` in a task of its
+own (the derivation holds the vault for a second or more). No store yet: a
+new PIN typed twice. Under the dots: tries left, the lock's minutes (redrawn
+each minute), too simple. Keys have no pressed look (no refresh for it). The
+wipe PIN works here as on the console. Only with the touch.
 Console `ui`; version in `version`.
 
 Power-off (`components/power`): the X4 Pro has no power switch, so "off" is

@@ -2,6 +2,7 @@
 
 #include <cinttypes>
 #include <cstdio>
+#include <cstring>
 
 #include "epd.h"
 #include "esp_app_desc.h"
@@ -16,6 +17,8 @@
 #include "ui_logic.h"
 
 namespace ui {
+
+void StartPinPad();  // pin_pad.cpp
 
 namespace {
 
@@ -43,12 +46,28 @@ StaticTask_t task_storage;
 TaskHandle_t task = nullptr;
 
 lv_display_t *display = nullptr;
-uint8_t *screen = nullptr;  // LVGL's portrait buffer (PSRAM)
-uint8_t *frame = nullptr;   // the same, turned for the panel (PSRAM)
+uint8_t *screen = nullptr;   // LVGL's portrait buffer (PSRAM)
+uint8_t *pending = nullptr;  // the last flush, turned for the panel (PSRAM)
+uint8_t *frame = nullptr;    // the one on the glass, or going there (PSRAM)
 RefreshPlan plan;
 uint32_t refreshes = 0;
+uint32_t skipped = 0;  // flushes that changed no pixel
 uint32_t last_rotate_us = 0;
 esp_err_t last_err = ESP_OK;
+
+// The panel takes a second a frame: a task of its own draws the latest flush,
+// so the ui task keeps reading the touch meanwhile (a tap is not lost).
+constexpr uint32_t kPushStackBytes = 4096;
+StackType_t push_stack[kPushStackBytes];
+StaticTask_t push_storage;
+TaskHandle_t push_task = nullptr;
+SemaphoreHandle_t pending_mutex = nullptr;  // `pending` and the flags below
+StaticSemaphore_t pending_storage;
+SemaphoreHandle_t panel_mutex = nullptr;    // held for a refresh; HoldPanel waits on it
+StaticSemaphore_t panel_storage;
+bool have_pending = false;
+bool frame_on_glass = false;  // `frame` is what the panel shows
+volatile bool held = false;   // HoldPanel: frames stay off the panel
 
 lv_indev_t *pointer = nullptr;
 ScreenPoint last_point = {};  // LVGL wants a point on release too
@@ -61,19 +80,45 @@ lv_obj_t *touch_label = nullptr;
 uint32_t TickMs() { return static_cast<uint32_t>(esp_timer_get_time() / 1000); }
 
 // DIRECT mode: LVGL redraws the dirty areas in place; the panel takes whole
-// frames, so only the last area of a refresh goes out.
+// frames, so only the last area of a refresh goes out, to `pending`.
 void Flush(lv_display_t *disp, const lv_area_t *, uint8_t *px_map) {
     if (lv_display_flush_is_last(disp)) {
+        xSemaphoreTake(pending_mutex, portMAX_DELAY);
         const int64_t start = esp_timer_get_time();
-        ToPanel(px_map + kPaletteBytes, frame);
+        ToPanel(px_map + kPaletteBytes, pending);
         last_rotate_us = static_cast<uint32_t>(esp_timer_get_time() - start);
-        last_err = epd::Refresh(frame, plan.NextIsFull() ? epd::Mode::kFull : epd::Mode::kFast);
-        ++refreshes;
-        if (last_err != ESP_OK) {
-            ESP_LOGE(TAG, "refresh: %s", esp_err_to_name(last_err));
-        }
+        have_pending = true;
+        xSemaphoreGive(pending_mutex);
+        xTaskNotifyGive(push_task);
     }
     lv_display_flush_ready(disp);
+}
+
+// Draws the latest pending frame; one that changes nothing on the glass is
+// dropped (a pressed key that looks the same makes one).
+void PushTask(void *) {
+    for (;;) {
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        xSemaphoreTake(panel_mutex, portMAX_DELAY);
+        xSemaphoreTake(pending_mutex, portMAX_DELAY);
+        bool draw = have_pending && !held;
+        if (draw) {
+            draw = !frame_on_glass || memcmp(pending, frame, epd::kFrameBytes) != 0;
+            skipped += draw ? 0 : 1;
+            memcpy(frame, pending, epd::kFrameBytes);
+            have_pending = false;
+        }
+        xSemaphoreGive(pending_mutex);
+        if (draw) {
+            last_err = epd::Refresh(frame, plan.NextIsFull() ? epd::Mode::kFull : epd::Mode::kFast);
+            frame_on_glass = last_err == ESP_OK;
+            ++refreshes;
+            if (last_err != ESP_OK) {
+                ESP_LOGE(TAG, "refresh: %s", esp_err_to_name(last_err));
+            }
+        }
+        xSemaphoreGive(panel_mutex);
+    }
 }
 
 // The GT911 as LVGL's pointer, read in the ui task (lv_timer_handler).
@@ -171,9 +216,17 @@ void Task(void *) {
 esp_err_t StartDisplay() {
     screen = static_cast<uint8_t *>(heap_caps_aligned_alloc(LV_DRAW_BUF_ALIGN, kBufBytes,
                                                              MALLOC_CAP_SPIRAM));
+    pending = static_cast<uint8_t *>(heap_caps_malloc(epd::kFrameBytes, MALLOC_CAP_SPIRAM));
     frame = static_cast<uint8_t *>(heap_caps_malloc(epd::kFrameBytes, MALLOC_CAP_SPIRAM));
-    if (screen == nullptr || frame == nullptr) {
+    if (screen == nullptr || pending == nullptr || frame == nullptr) {
         return ESP_ERR_NO_MEM;
+    }
+    pending_mutex = xSemaphoreCreateMutexStatic(&pending_storage);
+    panel_mutex = xSemaphoreCreateMutexStatic(&panel_storage);
+    push_task = xTaskCreateStatic(&PushTask, "ui_push", kPushStackBytes, nullptr, kPriority,
+                                  push_stack, &push_storage);
+    if (push_task == nullptr) {
+        return ESP_FAIL;
     }
     display = lv_display_create(kWidth, kHeight);
     if (display == nullptr) {
@@ -185,6 +238,7 @@ esp_err_t StartDisplay() {
     BootScreen();
     if (touch::Present()) {
         StartTouch();
+        StartPinPad();  // typed on the touch: no touch, no pad (the console's `pin`)
     }
     // ESP-IDF counts the stack depth in bytes.
     task = xTaskCreateStatic(&Task, "ui", kStackBytes, nullptr, kPriority, task_stack,
@@ -222,6 +276,24 @@ bool HasDisplay() { return task != nullptr; }
 
 void SetPressHook(void (*hook)()) { press_hook = hook; }
 
+void HoldPanel(bool hold) {
+    if (push_task == nullptr) {
+        return;
+    }
+    if (hold) {
+        held = true;
+        // A refresh under way finishes first.
+        xSemaphoreTake(panel_mutex, portMAX_DELAY);
+        xSemaphoreGive(panel_mutex);
+        return;
+    }
+    xSemaphoreTake(pending_mutex, portMAX_DELAY);
+    held = false;
+    have_pending = false;    // the next LVGL change draws it all again
+    frame_on_glass = false;  // the glass shows something else now
+    xSemaphoreGive(pending_mutex);
+}
+
 void Lock() { xSemaphoreTakeRecursive(mutex, portMAX_DELAY); }
 
 void Unlock() { xSemaphoreGiveRecursive(mutex); }
@@ -239,10 +311,12 @@ void PrintInfo() {
         printf("ui: no display\n");
         return;
     }
-    printf("ui: %ux%u portrait, %" PRIu32 " refreshes (full every %u), last %s, turn %" PRIu32
-           " us, stack free %u B\n",
-           kWidth, kHeight, refreshes, RefreshPlan::kFullEvery, esp_err_to_name(last_err),
-           last_rotate_us, static_cast<unsigned>(uxTaskGetStackHighWaterMark(task)));
+    printf("ui: %ux%u portrait, %" PRIu32 " refreshes (full every %u), %" PRIu32
+           " unchanged dropped, last %s, turn %" PRIu32 " us, stack free %u B (push %u B)%s\n",
+           kWidth, kHeight, refreshes, RefreshPlan::kFullEvery, skipped, esp_err_to_name(last_err),
+           last_rotate_us, static_cast<unsigned>(uxTaskGetStackHighWaterMark(task)),
+           static_cast<unsigned>(uxTaskGetStackHighWaterMark(push_task)),
+           held ? ", panel held" : "");
     if (pointer == nullptr) {
         printf("ui: no touch\n");
         return;

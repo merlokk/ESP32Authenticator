@@ -26,6 +26,10 @@ void Unlock();
 // blocks for seconds. The caller holds Lock, or the ui task may draw over it.
 // ESP_ERR_NOT_FOUND: no folder or no PNG in it.
 esp_err_t ShowWallpaper(bool grey = true);
+// LVGL's frames kept off the panel (a wallpaper on it) or let through again;
+// holding waits for a refresh under way. ShowWallpaper holds (power-off
+// never lets go); the next LVGL change after a release redraws it all.
+void HoldPanel(bool hold);
 // Console `ui wallpaper`: ShowWallpaper in a task of its own (under Lock),
 // waits for it; `shown` is the file. The device stays on; the next LVGL
 // change draws over it.

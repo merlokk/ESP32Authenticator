@@ -46,7 +46,8 @@ Portrait, 480x800. The panel scans landscape (hardware.md): `ui_logic.h` turns t
   TOTP code.
 - **Pages**: pages of the credential list; switcher at the bottom, 4 pages
   for now, the Left / Right buttons flip them as well.
-- **Lock screen**: PIN pad (touch), shown at boot and after an idle timeout.
+- **Lock screen**: PIN pad (touch), shown while the vault is locked (at boot,
+  `pin lock`); done (`pin_pad.cpp`).
   See PIN below.
 - **Settings**: frontlight, Wi-Fi.
 

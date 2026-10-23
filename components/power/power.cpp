@@ -167,6 +167,7 @@ bool TakeKept(void *data, size_t size) {
 void Off(bool lock, uint32_t wake_seconds) {
     ESP_LOGI(TAG, "powering off%s", lock ? ", locked" : "");
     ui::Lock();  // never given back: the ui task draws nothing more
+    ui::HoldPanel(true);  // nor its last frame, wallpaper or not
     frontlight::Off();
     if (ble::IsOn()) {
         ble::Off();  // the host sees the link closed, not lost

@@ -36,6 +36,7 @@ bool preview_grey = true;
 void PreviewTask(void *) {
     Lock();
     preview_err = ShowWallpaper(preview_grey);
+    HoldPanel(false);
     Unlock();
     xSemaphoreGive(preview_done);
     vTaskDelete(nullptr);
@@ -100,6 +101,7 @@ esp_err_t ShowWallpaper(bool grey) {
     if (!Pick()) {
         return ESP_ERR_NOT_FOUND;
     }
+    HoldPanel(true);  // LVGL's frames stay off it now
     size_t size = 0;
     uint8_t *png = ReadFile(&size);
     if (png == nullptr) {

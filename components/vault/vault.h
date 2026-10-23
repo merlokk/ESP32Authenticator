@@ -117,6 +117,9 @@ Error ChangePin(const char *old_pin, const char *new_pin);
 Error MakeWipe(const char *pin, char out[kWipeTextSize]);
 
 Info GetInfo();
+// The state alone, without the lock (Unlock holds it for the key derivation,
+// a second or more): for a screen that polls.
+State GetState();
 
 // A copy of the record at list position `index` (sorted by site, user). It
 // holds the password: wipe it (vault::Wipe) after use.
