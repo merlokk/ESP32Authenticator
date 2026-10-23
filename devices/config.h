@@ -16,6 +16,6 @@ enum class BoardId : uint8_t {
     kX4Pro,  // XTEINK X4 Pro (boards/x4_pro.h)
 };
 
-inline constexpr BoardId kBoardId = BoardId::kDev;
+inline constexpr BoardId kBoardId = BoardId::kX4Pro;
 
 }  // namespace boards
