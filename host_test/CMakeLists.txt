@@ -40,6 +40,7 @@ add_executable(host_test
     test_web_settings.cpp
     test_web_admin.cpp
     test_clock.cpp
+    test_rtc.cpp
     test_boards.cpp
     test_timesync.cpp
     test_timezone.cpp

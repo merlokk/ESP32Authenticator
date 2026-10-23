@@ -2,7 +2,8 @@
 
 // Clock on the chip's RTC timer (esp_rtc_get_time_us): no hardware needed.
 // Keeps the time across software resets (reboot, OTA, panic), loses it at
-// power-on. Used until a board has a battery-backed RTC.
+// power-on. Used on a board without a battery-backed RTC, or when it is
+// not found.
 
 #include "clock.h"
 

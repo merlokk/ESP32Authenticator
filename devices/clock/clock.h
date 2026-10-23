@@ -5,7 +5,7 @@
 // time is set (SNTP, `date set`).
 //
 // Implementations: TimerClock (the chip's RTC timer, survives software resets
-// only). A battery-backed chip (the X4 Pro's BM8563) is a second one later.
+// only) and Bm8563Clock (the X4 Pro's battery-backed RTC).
 
 #include <cstdint>
 

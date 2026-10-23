@@ -117,7 +117,8 @@ cannot link on Windows), Unity from ESP-IDF, cJSON from `managed_components/`
 Pattern from approver-esp32. Suites: `config`, `wifi_policy`, `reachability`,
 `web_auth`, `web_paths` (paths + server policy), `web_settings`, `clock`,
 `boards`, `timesync`, `timezone`, `led`, `buttons` (debounce, short/long,
-single/double press), `battery` (CW2017 VCELL, profile check, init decision), `pin_policy`, `totp` (truncation against the RFC 4226
+single/double press), `battery` (CW2017 VCELL, profile check, init decision),
+`rtc` (BM8563 BCD, counters <-> UTC, VL, write plan), `pin_policy`, `totp` (truncation against the RFC 4226
 HMAC values; the HMAC itself is checked on the board by `totp test`); only code with
 no hardware (pure headers) is under test.
 
@@ -148,7 +149,7 @@ has its pins) is a `static_assert` and a host test.
 | `X4Pro` (`x4_pro.h`) | XTEINK X4 Pro, pins from [hardware.md](hardware.md) |
 
 `board_devices.h` carries it out: `boards::Init()` (LED, peripheral rail
-high, I2C bus, the clock), `I2c()`, `Clock()`, `Button(id)`, `PrintInfo()`
+high, I2C bus, the clock: BM8563 if found, else the timer), `I2c()`, `Clock()`, `Button(id)`, `PrintInfo()`
 (`board`), `BootDone()`. No display, touch or SD driver yet.
 
 I2C (`devices/i2c_bus`, from approver-esp32): one `i2cbus::Bus` owned by the
@@ -183,14 +184,16 @@ The clock is UTC; a zone is presentation only.
 
 | Part | Role |
 |---|---|
-| `devices/clock` | `rtc::Clock` interface: carries UTC to the next boot (`Read`/`Write`, `KeepsTimeWhenOff`). `TimerClock`: the chip's RTC timer + state in RTC no-init memory, kept by software resets, lost at power-off. `clock_math.h` (pure): date <-> Unix, believable range 2024..2099, the timer state (magic + FNV check) |
+| `devices/clock` | `rtc::Clock` interface: carries UTC to the next boot (`Read`/`Write`, `KeepsTimeWhenOff`). `TimerClock`: the chip's RTC timer + state in RTC no-init memory, kept by software resets, lost at power-off. `Bm8563Clock`: the X4 Pro's battery-backed RTC on the leased I2C bus; `Read` waits for the next tick (up to 1 s) for millisecond precision, `Write` stops the chip, writes the counters and starts it on a second boundary (first tick 1.000 s after STOP clears, measured). `clock_math.h` (pure): date <-> Unix, believable range 2024..2099, the timer state (magic + FNV check). `bm8563_logic.h` (pure): BCD, counters <-> UTC, VL (time lost), the write plan |
 | `components/timesync` | SNTP (`esp_netif_sntp`), one task, 1 s tick. `sync_policy.h` (pure, from approver-esp32): sync at boot / when the internet appears / every `syncHours`; no re-sync within 5 min of a good one (flapping link); failure retry 1 min doubling to 15 min. Internet = a client link with an address not reported offline by the check. An answer outside 2024..2099 is refused. The result goes to the board clock |
 | `components/timezone` | `zones.h` (pure): 72 named zones -> POSIX rules, aliases (Europe/Kiev, GMT), a raw rule accepted; `timezone.h`: `TZ` + `tzset`, offset, DST |
 
 Boot: `boards::Init()` sets the system clock from the board clock (if it has a
 believable time), `config::Init`, then the zone; `timesync::Init` after the
-Wi-Fi manager. A battery-backed RTC (X4 Pro BM8563) is a second `Clock`
-later; until then the X4 Pro uses the timer clock too.
+Wi-Fi manager. The X4 Pro uses the BM8563 (UTC, as the stock firmware keeps
+it); not found: the timer clock. Measured: after `date set` the RTC and the
+system clock agree within 1 ms; after a reboot the system clock is within
+10 ms of the PC's.
 
 ## UI
 

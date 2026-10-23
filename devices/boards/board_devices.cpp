@@ -4,6 +4,7 @@
 
 #include <cinttypes>
 
+#include "bm8563_clock.h"
 #include "clock_math.h"
 #include "driver/gpio.h"
 #include "esp_log.h"
@@ -27,6 +28,7 @@ constexpr uint32_t kUserWaitLedMs = 35000;
 
 i2cbus::Bus i2c_bus;
 rtc::TimerClock timer_clock;
+rtc::Bm8563Clock bm8563_clock(i2c_bus);
 rtc::Clock *active_clock = &timer_clock;
 
 void PrintPin(const char *label, int8_t gpio) {
@@ -63,14 +65,22 @@ esp_err_t Init() {
         i2c_bus.Init(static_cast<gpio_num_t>(kBoard.i2c.scl),
                      static_cast<gpio_num_t>(kBoard.i2c.sda));
     }
-    if (kBoard.hw_clock != HwClockType::kNone) {
-        // TODO: BM8563 driver; until then the time is lost at power-off.
-        ESP_LOGW(TAG, "no %s driver yet, using the %s", Name(kBoard.hw_clock), timer_clock.Name());
+    if (kBoard.hw_clock == HwClockType::kBm8563) {
+        const esp_err_t rtc_err = bm8563_clock.Init();
+        if (rtc_err == ESP_OK) {
+            active_clock = &bm8563_clock;
+        } else {
+            // The time is lost at power-off, but the board still works.
+            ESP_LOGE(TAG, "%s: %s, using the %s", bm8563_clock.Name(), esp_err_to_name(rtc_err),
+                     timer_clock.Name());
+        }
     }
-    const esp_err_t err = active_clock->Init();
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "%s: %s", active_clock->Name(), esp_err_to_name(err));
-        return err;
+    if (active_clock == &timer_clock) {
+        const esp_err_t err = timer_clock.Init();
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "%s: %s", timer_clock.Name(), esp_err_to_name(err));
+            return err;
+        }
     }
     rtc::SetSystemTimeFrom(*active_clock);
     return ESP_OK;
@@ -126,8 +136,15 @@ buttons::Button Button(ButtonId id) {
 
 void PrintClock() {
     printf("[clock]\n");
-    printf("hw rtc     %s%s\n", Name(kBoard.hw_clock),
-           kBoard.hw_clock != HwClockType::kNone ? " (no driver yet)" : "");
+    printf("hw rtc     %s", Name(kBoard.hw_clock));
+    if (kBoard.hw_clock == HwClockType::kBm8563) {
+        if (active_clock == &bm8563_clock) {
+            printf(" at 0x51");
+        } else {
+            printf(" (not found)");
+        }
+    }
+    printf("\n");
     printf("source     %s, %s\n", active_clock->Name(),
            active_clock->KeepsTimeWhenOff() ? "keeps time when off" : "lost at power-off");
     const uint64_t timer_us = esp_rtc_get_time_us();
@@ -140,7 +157,9 @@ void PrintClock() {
     if (err != ESP_OK) {
         printf("clock      read failed: %s\n", esp_err_to_name(err));
     } else if (!valid) {
-        printf("clock      no time\n");
+        printf("clock      no time%s%s%s\n", active_clock == &bm8563_clock ? " (" : "",
+               active_clock == &bm8563_clock ? bm8563_clock.State() : "",
+               active_clock == &bm8563_clock ? ")" : "");
     } else {
         PrintUtc("clock", clock_us);
     }

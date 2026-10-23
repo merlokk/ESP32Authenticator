@@ -17,8 +17,8 @@ Firmware: C/C++ on **ESP-IDF**.
   bonding and host switching; FIDO2 credential management on the console
   (`fido2 info|list|delete|reset`) and the store on the web front page; Wi-Fi
   client / AP / AP+client with static IPs and an internet check; configuration
-  web site; USB console; `config.json`; time (SNTP, time zones, `rtc::Clock`
-  on the CPU timer); board classes chosen in `devices/config.h`; WS2812 LED (red at boot,
+  web site; USB console; `config.json`; time (SNTP, time zones, `rtc::Clock`:
+  BM8563 RTC on the X4 Pro, else the CPU timer); board classes chosen in `devices/config.h`; WS2812 LED (red at boot,
   green breathing when ready, blue while typing, yellow
   blinking for the FIDO2 button); TOTP codes on the console (`totp`); battery: CW2017 gauge (voltage, level) and
   charger STAT on a leased I2C bus (`battery`, BLE Battery Level); LVGL 9 library (no display driver);
@@ -34,7 +34,7 @@ Firmware: C/C++ on **ESP-IDF**.
   hmac-secret-mc, pcmr, attestation formats, encIdentifier, built-in UV
   plumbing (`uv: false`); see
   lionkey-update-plan.md.
-- Not yet: BM8563 RTC driver, e-ink UI (LVGL), eFuse-bound key, sync over Wi-Fi, SD card driver.
+- Not yet: e-ink UI (LVGL), eFuse-bound key, sync over Wi-Fi, SD card driver.
 
 ## Architecture
 
