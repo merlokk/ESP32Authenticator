@@ -214,6 +214,16 @@ int CmdKb(int argc, char **argv) {
     return rc;
 }
 
+int SaveConfig() {
+    const esp_err_t err = config::Save();
+    if (err != ESP_OK) {
+        printf("applied, but config.json not saved: %s\n", esp_err_to_name(err));
+        return 1;
+    }
+    printf("saved %s\n", config::Path());
+    return 0;
+}
+
 // Words joined with spaces, so quotes are optional: ble name My key.
 int CmdName(int argc, char **argv) {
     if (argc == 1) {
@@ -245,13 +255,20 @@ int CmdName(int argc, char **argv) {
     printf("name       %s%s\n", ble::Name(),
            ble::IsOn() ? " (applied; a paired host may show the old one until it reconnects)"
                        : "");
-    const esp_err_t err = config::Save();
-    if (err != ESP_OK) {
-        printf("applied, but config.json not saved: %s\n", esp_err_to_name(err));
+    return SaveConfig();
+}
+
+// config.json `ble.active`: start BLE at boot. Not now: `ble on` / `ble off`.
+int CmdBoot(int argc, char **argv) {
+    config::Ble &cfg = config::Get().ble;
+    if (argc == 2 && (strcmp(argv[1], "on") == 0 || strcmp(argv[1], "off") == 0)) {
+        cfg.active = strcmp(argv[1], "on") == 0;
+    } else if (argc != 1) {
+        printf("usage: ble boot [on | off]\n");
         return 1;
     }
-    printf("saved %s\n", config::Path());
-    return 0;
+    printf("at boot    %s\n", cfg.active ? "on" : "off");
+    return argc == 1 ? 0 : SaveConfig();
 }
 
 constexpr Subcommand kSubcommands[] = {
@@ -259,6 +276,7 @@ constexpr Subcommand kSubcommands[] = {
     {"pair", &CmdPair},     {"bonds", &CmdBonds},   {"conns", &CmdConns},
     {"use", &CmdUse},       {"disconnect", &CmdDisconnect},
     {"unpair", &CmdUnpair}, {"kb", &CmdKb},         {"name", &CmdName},
+    {"boot", &CmdBoot},
 };
 
 }  // namespace
@@ -266,7 +284,8 @@ constexpr Subcommand kSubcommands[] = {
 int CmdBle(int argc, char **argv) {
     return Dispatch(kSubcommands, argc, argv,
                     "ble on | off | info | pair [seconds [bg]|stop] | bonds | conns |"
-                    " use <#|addr|any> | disconnect | unpair <#|addr|all> | kb <text> | name [<name>]");
+                    " use <#|addr|any> | disconnect | unpair <#|addr|all> | kb <text> | name [<name>] |"
+                    " boot [on|off]");
 }
 
 }  // namespace console

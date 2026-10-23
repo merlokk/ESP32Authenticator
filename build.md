@@ -175,7 +175,7 @@ Opening the port with RTS asserted resets the chip.
 | `spiffs write <file> [<length> <crc32>]` | prints `ready`, receives one base64 line (Enter ends the file), checks length/CRC32 (zlib), removes the file on error. Flow control: a `.` after every 192 base64 chars; send the next block only after it |
 | `spiffs rm <file>` | delete a file |
 | `spiffs format confirm` | erase the partition and create an empty fs (destroys stock data on the X4 Pro) |
-| `ble on` / `ble off` | start / stop the BLE stack (off at boot) |
+| `ble on` / `ble off` | start / stop the BLE stack now (at boot: `ble boot`) |
 | `ble info` | state, address, advertising, pairing window, connection (MTU, security), bonds, keyboard/FIDO readiness |
 | `ble pair [seconds]` | open the pairing window (default 60 s) and wait: prints `passkey nnnnnn`, returns `paired with <addr>` or an error when the window closes |
 | `ble pair <seconds> bg` / `ble pair stop` | open the window and return (passkey only in the log) / close it |
@@ -184,6 +184,7 @@ Opening the port with RTS asserted resets the chip.
 | `ble use <#>` / `<addr>` / `any` | switch hosts: all keys released on the current host, link dropped, advertising filtered to the target bond (kept in NVS) so only it reconnects; `any` lifts the filter. A pairing window advertises to all; a newly paired host becomes the target |
 | `ble disconnect` | drop the link (keys released first); the host may reconnect |
 | `ble unpair <#>` / `<addr>` / `all` | delete a bond by number from `ble bonds`, by address, or all; a connected host is disconnected |
+| `ble boot [on\|off]` | show / set starting BLE at boot (`ble.active`, saved); `ble on`/`off` act now |
 | `ble name [<name>]` | show / set the BLE name (1..29 bytes, words joined with spaces), applied at once and saved (`ble.name`) |
 | `ble kb <text>` | type text on the connected host (US layout). esp_console drops single-backslash escapes: type `\\n` (Enter), `\\t` (Tab), `\\\\`; quote to keep spaces |
 | `wifi on` / `wifi off` | radio on in the configured mode / off (saved) |
