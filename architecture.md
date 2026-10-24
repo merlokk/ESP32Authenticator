@@ -300,8 +300,9 @@ at most 4: the row scrolls with the page, arrows where pages are hidden.
 Left / Right pressed flip the pages (round), Home: page 1 (`ui::Navigate`,
 queued from the keypad task; nothing under the PIN pad or while FIDO2
 waits). The touch reports the finger's moves too: a swipe down from the top
-quarter opens Settings, up from the bottom quarter the FIDO2 list (both
-stubs), the opposite swipe or Home closes them (`nav::Classify`; a slid tap
+quarter opens Settings, up from the bottom quarter the U2F / FIDO2 list
+(both stubs, a back arrow and the name over them), the arrow (the list at
+its page), the opposite swipe or Home closes them (`nav::Classify`; a slid tap
 is no tap). FIDO2 presence: Left allows, Right refuses (OPERATION_DENIED,
 `deny_pressed` hook).
 

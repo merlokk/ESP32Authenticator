@@ -4,8 +4,8 @@
 // the bottom (at most kTabs shown; with more pages the row scrolls so the
 // current one is in it). Left / Right flip the pages (round). A swipe down
 // from the top quarter opens Settings, a swipe up from the bottom quarter the
-// FIDO2 list; the opposite swipe or Home closes them. Home on the list: its
-// first page. Pure (host-tested); the PIN pad stands over all of it while
+// FIDO2 list; the opposite swipe, their back arrow or Home closes them.
+// Home on the list: its first page. Pure (host-tested); the PIN pad stands over all of it while
 // the vault is locked.
 
 #include <cstddef>
@@ -111,6 +111,14 @@ class Nav {
                                     : static_cast<uint8_t>((page_ + pages_ - 1) % pages_);
         Follow();
         return true;
+    }
+
+    // The back arrow of Settings / FIDO2: the list, at the page it was on.
+    // True when the mode changed.
+    constexpr bool Back() {
+        const bool changed = mode_ != Mode::kList;
+        mode_ = Mode::kList;
+        return changed;
     }
 
     // A swipe. True when the mode changed.

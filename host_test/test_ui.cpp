@@ -300,6 +300,13 @@ void test_nav_swipes(void) {
     TEST_ASSERT_TRUE(n.mode() == Mode::kFido);
     TEST_ASSERT_TRUE(n.Swipe(Gesture::kDown));
     TEST_ASSERT_TRUE(n.mode() == Mode::kList);
+    // The back arrow: the list at its page.
+    n.Apply(ui::nav::Input::kRight);
+    n.Swipe(Gesture::kDownFromTop);
+    TEST_ASSERT_TRUE(n.Back());
+    TEST_ASSERT_TRUE(n.mode() == Mode::kList);
+    TEST_ASSERT_EQUAL_UINT8(1, n.page());
+    TEST_ASSERT_FALSE(n.Back());
     // Home closes them too.
     n.Swipe(Gesture::kUpFromBottom);
     TEST_ASSERT_TRUE(n.Apply(ui::nav::Input::kHome));

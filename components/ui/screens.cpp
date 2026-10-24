@@ -75,6 +75,7 @@ lv_obj_t *toast = nullptr;
 uint32_t toast_at = 0;
 uint32_t looked_at = 0;
 int tapped_tab = -1;  // OnTab: for Poll (the matrix is not changed in its own event)
+bool back_tapped = false;  // OnBack: for Poll (the arrow is deleted with the page)
 char tab_text[nav::kTabs][16];
 const char *tab_map[nav::kTabs + 1];
 
@@ -360,15 +361,49 @@ void AddHints() {
     }
 }
 
-void Stub(const char *title, const char *what) {
-    lv_obj_t *t = Label(content, &lv_font_montserrat_32);
-    lv_label_set_text(t, title);
-    lv_obj_align(t, LV_ALIGN_TOP_LEFT, 24, 20);
+void Stub(const char *title, const char *what, int32_t top = 0) {
+    if (title != nullptr) {
+        lv_obj_t *t = Label(content, &lv_font_montserrat_32);
+        lv_label_set_text(t, title);
+        lv_obj_align(t, LV_ALIGN_TOP_LEFT, 24, 20);
+        top = 80;
+    }
     lv_obj_t *l = Label(content, &lv_font_montserrat_24);
     lv_label_set_long_mode(l, LV_LABEL_LONG_MODE_WRAP);
     lv_obj_set_width(l, kRowWidth - 48);
     lv_label_set_text(l, what);
-    lv_obj_align(l, LV_ALIGN_TOP_LEFT, 24, 80);
+    lv_obj_align(l, LV_ALIGN_TOP_LEFT, 24, top);
+}
+
+void OnBack(lv_event_t *) {
+    if (LastWasTap()) {
+        back_tapped = true;
+    }
+}
+
+// Settings / FIDO2: a back arrow and the screen's name over the page.
+constexpr int32_t kTitleHeight = 56;
+
+void TitleBar(const char *title) {
+    lv_obj_t *head = lv_obj_create(content);
+    lv_obj_remove_style_all(head);
+    lv_obj_remove_flag(head, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_size(head, kRowWidth, kTitleHeight);
+    lv_obj_set_style_border_side(head, LV_BORDER_SIDE_BOTTOM, 0);
+    lv_obj_set_style_border_width(head, 2, 0);
+    lv_obj_set_style_border_color(head, lv_color_black(), 0);
+    // The arrow's tap area: the left quarter, the bar's height.
+    lv_obj_t *back = lv_obj_create(head);
+    lv_obj_remove_style_all(back);
+    lv_obj_add_flag(back, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_size(back, kQuarter, kTitleHeight);
+    lv_obj_add_event_cb(back, OnBack, LV_EVENT_CLICKED, nullptr);
+    lv_obj_t *arrow = Label(back, &lv_font_montserrat_28);
+    lv_label_set_text(arrow, LV_SYMBOL_LEFT);
+    lv_obj_align(arrow, LV_ALIGN_LEFT_MID, 16, 0);
+    lv_obj_t *name = Label(head, &lv_font_montserrat_28);
+    lv_label_set_text(name, title);
+    lv_obj_align(name, LV_ALIGN_LEFT_MID, 60, 0);
 }
 
 // A tab per page, at most nav::kTabs; arrows where more pages are hidden.
@@ -438,15 +473,19 @@ void Show() {
             ShowList();
             break;
         case nav::Mode::kSettings:
+            TitleBar("Settings");
             snprintf(text, sizeof text,
                      "Frontlight, Wi-Fi and Bluetooth come here.\n\nfirmware %s\nLVGL %s\n\n"
-                     "Swipe up or Home: back to the passwords.",
+                     "Back: the arrow, a swipe up or Home.",
                      esp_app_get_description()->version, LvglVersion());
-            Stub("Settings", text);
+            Stub(nullptr, text, kTitleHeight + 24);
             break;
         case nav::Mode::kFido:
-            Stub("FIDO2", "The keys sites made on this device come here.\n\n"
-                          "Swipe down or Home: back to the passwords.");
+            TitleBar("U2F / FIDO2");
+            Stub(nullptr,
+                 "The keys sites made on this device come here.\n\n"
+                 "Back: the arrow, a swipe down or Home.",
+                 kTitleHeight + 24);
             break;
     }
     ShowTabs();
@@ -558,6 +597,10 @@ void Poll(lv_timer_t *) {
         if (HomeShown()) {  // under the PIN pad the buttons do nothing here
             changed |= nav_state.Apply(static_cast<nav::Input>(in));
         }
+    }
+    if (back_tapped) {
+        changed |= nav_state.Back();
+        back_tapped = false;
     }
     if (tapped_tab >= 0) {
         changed |= nav_state.Tab(static_cast<uint8_t>(tapped_tab));
