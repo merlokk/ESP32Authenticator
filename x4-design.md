@@ -26,7 +26,7 @@ Portrait, 480x800. The panel scans landscape (hardware.md): `ui_logic.h` turns t
 
 ```
 +------------------------------+
-| WiFi BT SD        12:34 bat  |  status bar (FIDO2: <- yes -> no)
+| WiFi BT SD        12:34 bat  |  status bar
 |  user | pass | show | TOTP   |  what a tap in each quarter does
 +------------------------------+
 | github.com           123 456 |  a record: tap a quarter to type the

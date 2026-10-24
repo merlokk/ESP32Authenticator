@@ -15,8 +15,6 @@ inline constexpr const char *kWifi = "\xEF\x87\xAB";
 inline constexpr const char *kBluetooth = "\xEF\x8A\x93";
 inline constexpr const char *kSdCard = "\xEF\x9F\x82";
 inline constexpr const char *kCharge = "\xEF\x83\xA7";
-inline constexpr const char *kArrowLeft = "\xEF\x81\x93";
-inline constexpr const char *kArrowRight = "\xEF\x81\x94";
 // Empty, 1, 2, 3, full.
 inline constexpr const char *kBattery[5] = {"\xEF\x89\x84", "\xEF\x89\x83", "\xEF\x89\x82",
                                             "\xEF\x89\x81", "\xEF\x89\x80"};
@@ -111,13 +109,9 @@ class Text {
 inline constexpr const char *kGap = "   ";
 
 // Left: "<wifi> [state]   <bt> [state]   <sd>"; what is off is left out.
-// While FIDO2 waits, the buttons' meaning instead: "FIDO2  <- yes  -> no".
+// (While FIDO2 waits, its prompt window says what the buttons do.)
 constexpr void Left(const Status &s, char *out, size_t size) {
     Text t(out, size);
-    if (s.fido_wait) {
-        t.Add("FIDO2   ").Add(kArrowLeft).Add(" yes   ").Add(kArrowRight).Add(" no");
-        return;
-    }
     auto add = [&t](const char *icon, const char *state) {
         if (t.size() > 0) {
             t.Add(kGap);

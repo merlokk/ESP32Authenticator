@@ -283,7 +283,7 @@ pure): the status bar on LVGL's top layer (over every screen and the PIN
 pad): Wi-Fi (off: none; "..." trying, "!" no internet, "AP"), Bluetooth
 ("..." no host, "pair"), the microSD, the local time (once believable) and
 the battery (icon by 25 %, charging mark, percent; moves by 2 % or more);
-while FIDO2 waits, "FIDO2 <- yes -> no" instead of the left half. `main.cpp`
+while FIDO2 waits, its prompt window covers the page (the bar stays). `main.cpp`
 fills it (`ui::SetStatusSource`, every 0.5 s; the gauge every 30 s); a label
 is set only when its text changed (each change is a fast refresh). The list:
 the vault's records in the user's order, 6 a page; a row shows the site

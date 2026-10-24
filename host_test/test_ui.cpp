@@ -1009,9 +1009,8 @@ void test_status_fido_prompt(void) {
     s.fido_wait = true;
     char t[st::kTextSize];
     st::Left(s, t, sizeof t);
-    const std::string want = std::string("FIDO2   ") + st::kArrowLeft + " yes   " +
-                             st::kArrowRight + " no";
-    TEST_ASSERT_EQUAL_STRING(want.c_str(), t);
+    // The bar stays as it is: the prompt window says what the buttons do.
+    TEST_ASSERT_EQUAL_STRING(st::kWifi, t);
 }
 
 }  // namespace
