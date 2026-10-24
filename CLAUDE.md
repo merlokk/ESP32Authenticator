@@ -22,7 +22,7 @@ Firmware: C/C++ on **ESP-IDF**.
   green breathing when ready, blue while typing, yellow
   blinking for the FIDO2 button); TOTP codes on the console (`totp`); buttons (Left, Right, Power, Home on the
   GT911) in one keypad task: click xN / long events, `keys`; frontlight (cool/warm PWM,
-  off at boot, Power x2 toggles, `light`); e-ink panel driver (UC8179 /
+  off at boot, Power x2 toggles, off when idle and on at a touch, `light`); e-ink panel driver (UC8179 /
   UC8279 / SSD1677 detected, full and fast refresh, `epd`); battery: CW2017 gauge (voltage, level) and
   charger STAT on a leased I2C bus (`battery`, BLE Battery Level); microSD
   (SDMMC, FAT at `/sdcard`, `sd` read-only but wallpapers), the store files in

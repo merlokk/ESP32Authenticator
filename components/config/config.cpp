@@ -54,7 +54,9 @@ const char kDefaultJson[] = R"json({
   },
   "frontlight": {
     "brightness": 20,
-    "warmth": 50
+    "warmth": 50,
+    "offMinutes": 2,
+    "offMinutesUsb": 0
   },
   "display": {
     "wallpaper": "grey",
@@ -62,6 +64,7 @@ const char kDefaultJson[] = R"json({
   },
   "power": {
     "idleMinutes": 10,
+    "idleMinutesUsb": 0,
     "keepPinHours": 0,
     "holdRail": true
   },
@@ -301,13 +304,16 @@ bool ParseDisplay(const cJSON *section, Display *out, char *error, size_t size) 
 
 bool ParsePower(const cJSON *section, Power *out, char *error, size_t size) {
     uint32_t idle = out->idle_minutes;
+    uint32_t idle_usb = out->idle_minutes_usb;
     uint32_t keep = out->keep_pin_hours;
     if (!GetUint(section, "idleMinutes", 0, kMaxIdleMinutes, &idle, "power", error, size) ||
+        !GetUint(section, "idleMinutesUsb", 0, kMaxIdleMinutes, &idle_usb, "power", error, size) ||
         !GetUint(section, "keepPinHours", 0, kMaxKeepPinHours, &keep, "power", error, size) ||
         !GetBool(section, "holdRail", &out->hold_rail, "power", error, size)) {
         return false;
     }
     out->idle_minutes = static_cast<uint16_t>(idle);
+    out->idle_minutes_usb = static_cast<uint16_t>(idle_usb);
     out->keep_pin_hours = static_cast<uint8_t>(keep);
     return true;
 }
@@ -315,12 +321,19 @@ bool ParsePower(const cJSON *section, Power *out, char *error, size_t size) {
 bool ParseFrontlight(const cJSON *section, Frontlight *out, char *error, size_t size) {
     uint32_t brightness = out->brightness;
     uint32_t warmth = out->warmth;
+    uint32_t off = out->off_minutes;
+    uint32_t off_usb = out->off_minutes_usb;
     if (!GetUint(section, "brightness", 1, 100, &brightness, "frontlight", error, size) ||
-        !GetUint(section, "warmth", 0, 100, &warmth, "frontlight", error, size)) {
+        !GetUint(section, "warmth", 0, 100, &warmth, "frontlight", error, size) ||
+        !GetUint(section, "offMinutes", 0, kMaxIdleMinutes, &off, "frontlight", error, size) ||
+        !GetUint(section, "offMinutesUsb", 0, kMaxIdleMinutes, &off_usb, "frontlight", error,
+                 size)) {
         return false;
     }
     out->brightness = static_cast<uint8_t>(brightness);
     out->warmth = static_cast<uint8_t>(warmth);
+    out->off_minutes = static_cast<uint16_t>(off);
+    out->off_minutes_usb = static_cast<uint16_t>(off_usb);
     return true;
 }
 
@@ -772,6 +785,8 @@ size_t Serialize(const Data &d, char *out, size_t size) {
     cJSON *light = cJSON_AddObjectToObject(root, "frontlight");
     cJSON_AddNumberToObject(light, "brightness", d.frontlight.brightness);
     cJSON_AddNumberToObject(light, "warmth", d.frontlight.warmth);
+    cJSON_AddNumberToObject(light, "offMinutes", d.frontlight.off_minutes);
+    cJSON_AddNumberToObject(light, "offMinutesUsb", d.frontlight.off_minutes_usb);
     cJSON *display = cJSON_AddObjectToObject(root, "display");
     cJSON_AddStringToObject(display, "wallpaper", Name(d.display.wallpaper));
     cJSON *touch = cJSON_AddObjectToObject(display, "touch");
@@ -781,6 +796,7 @@ size_t Serialize(const Data &d, char *out, size_t size) {
     cJSON_AddNumberToObject(touch, "yOffset", d.display.touch.y_offset);
     cJSON *power = cJSON_AddObjectToObject(root, "power");
     cJSON_AddNumberToObject(power, "idleMinutes", d.power.idle_minutes);
+    cJSON_AddNumberToObject(power, "idleMinutesUsb", d.power.idle_minutes_usb);
     cJSON_AddNumberToObject(power, "keepPinHours", d.power.keep_pin_hours);
     cJSON_AddBoolToObject(power, "holdRail", d.power.hold_rail);
     cJSON *pin = cJSON_AddObjectToObject(root, "pin");

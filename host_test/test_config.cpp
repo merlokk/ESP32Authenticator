@@ -526,6 +526,32 @@ void test_parse_display() {
     AssertParseFails(R"({"display": {"touch": {"xOffset": 1.5}}})", "display.touch.xOffset");
 }
 
+void test_parse_power_usb() {
+    config::Data d;
+    config::FillDefaults(&d);
+    TEST_ASSERT_EQUAL_UINT16(0, d.power.idle_minutes_usb);  // never, by default
+    char error[config::kErrorSize] = {};
+    TEST_ASSERT_TRUE_MESSAGE(ParseText(R"({"power": {"idleMinutesUsb": 30}})", &d, error, sizeof error),
+                             error);
+    TEST_ASSERT_EQUAL_UINT16(30, d.power.idle_minutes_usb);
+    char json[config::kMaxFileSize];
+    TEST_ASSERT_GREATER_THAN(0, config::Serialize(d, json, sizeof json));
+    config::Data out;
+    config::FillDefaults(&out);
+    TEST_ASSERT_TRUE_MESSAGE(ParseText(json, &out, error, sizeof error), error);
+    TEST_ASSERT_EQUAL_UINT16(30, out.power.idle_minutes_usb);
+    AssertParseFails(R"({"power": {"idleMinutesUsb": 1441}})", "power.idleMinutesUsb");
+    // The frontlight's idle off: 2 min on the battery, never on USB, by default.
+    TEST_ASSERT_EQUAL_UINT16(2, out.frontlight.off_minutes);
+    TEST_ASSERT_EQUAL_UINT16(0, out.frontlight.off_minutes_usb);
+    TEST_ASSERT_TRUE_MESSAGE(
+        ParseText(R"({"frontlight": {"offMinutes": 5, "offMinutesUsb": 30}})", &d, error, sizeof error),
+        error);
+    TEST_ASSERT_EQUAL_UINT16(5, d.frontlight.off_minutes);
+    TEST_ASSERT_EQUAL_UINT16(30, d.frontlight.off_minutes_usb);
+    AssertParseFails(R"({"frontlight": {"offMinutes": -1}})", "frontlight.offMinutes");
+}
+
 void test_parse_power() {
     config::Data d;
     config::FillDefaults(&d);
@@ -850,6 +876,7 @@ void RegisterConfigTests(void) {
     RUN_TEST(test_parse_led);
     RUN_TEST(test_parse_frontlight);
     RUN_TEST(test_parse_display);
+    RUN_TEST(test_parse_power_usb);
     RUN_TEST(test_parse_power);
     RUN_TEST(test_parse_ipv4);
     RUN_TEST(test_parse_static_ip);

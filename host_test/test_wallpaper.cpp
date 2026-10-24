@@ -177,6 +177,23 @@ void test_power_idle_off(void) {
     // Minutes beyond 32-bit milliseconds: an uptime of 60 days.
     constexpr uint64_t day = 24ull * 3600 * 1000;
     TEST_ASSERT_TRUE(power::IdleOff(60 * day, 60 * day - 1440ull * 60000, 1440, false));
+    // On USB power its own minutes (never by default), else the battery's.
+    TEST_ASSERT_EQUAL_UINT16(0, power::IdleMinutes(true, 10, 0));
+    TEST_ASSERT_EQUAL_UINT16(10, power::IdleMinutes(false, 10, 0));
+    TEST_ASSERT_EQUAL_UINT16(60, power::IdleMinutes(true, 10, 60));
+}
+
+void test_power_light_idle(void) {
+    using power::Light;
+    using power::LightStep;
+    constexpr uint64_t min = 60000;
+    TEST_ASSERT_TRUE(LightStep(true, false, 0, 2 * min, 0, 2) == Light::kOff);
+    TEST_ASSERT_TRUE(LightStep(true, false, 0, 2 * min - 1, 0, 2) == Light::kKeep);
+    TEST_ASSERT_TRUE(LightStep(true, false, 0, 99 * min, 0, 0) == Light::kKeep);  // never
+    TEST_ASSERT_TRUE(LightStep(false, false, 0, 99 * min, 0, 2) == Light::kKeep);  // already off
+    // Put off at 2 min: on again at the next activity, not before.
+    TEST_ASSERT_TRUE(LightStep(false, true, 2 * min, 3 * min, 0, 2) == Light::kKeep);
+    TEST_ASSERT_TRUE(LightStep(false, true, 2 * min, 3 * min, 3 * min - 5, 2) == Light::kWake);
 }
 
 void test_power_kept_secret(void) {
@@ -218,5 +235,6 @@ void RegisterWallpaperTests(void) {
     RUN_TEST(test_epd_grey_tables);
     RUN_TEST(test_power_sleep_holds);
     RUN_TEST(test_power_idle_off);
+    RUN_TEST(test_power_light_idle);
     RUN_TEST(test_power_kept_secret);
 }

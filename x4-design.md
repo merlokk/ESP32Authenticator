@@ -74,7 +74,10 @@ Portrait, 480x800. The panel scans landscape (hardware.md): `ui_logic.h` turns t
   one, a straight line per axis through the raw taps (scale and offset,
   `display.touch` in config.json), Save / Again / Use the default; a fit far
   off (a tap beside a cross) is refused. Display & power: the battery, then
-  Power off after (never .. 1 hour), PIN after sleep (always .. a week),
+  Light off after and On USB, light off after (never .. 30 min; on again at
+  the next touch or button), Power off after and On USB, off after (never ..
+  1 hour; USB power: a host, or the charger charging, as a charger with a
+  full cell is not seen), PIN after sleep (always .. a week),
   Wallpaper (grey / black & white), Power in sleep (kept / off:
   `power.holdRail`, off loses the kept PIN): a tap lists the choices with a check at
   the one in use, a tap keeps one (config.json); what the Power button does;

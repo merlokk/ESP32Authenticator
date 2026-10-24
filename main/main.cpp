@@ -868,6 +868,9 @@ void DisplayView(ui::display_view::View *out) {
     for (uint8_t i = 0; i < dv::kSettingCount; ++i) {
         switch (dv::kSettings[i]) {
             case dv::Setting::kIdle: out->value[i] = c.power.idle_minutes; break;
+            case dv::Setting::kIdleUsb: out->value[i] = c.power.idle_minutes_usb; break;
+            case dv::Setting::kLightOff: out->value[i] = c.frontlight.off_minutes; break;
+            case dv::Setting::kLightOffUsb: out->value[i] = c.frontlight.off_minutes_usb; break;
             case dv::Setting::kKeepPin: out->value[i] = c.power.keep_pin_hours; break;
             case dv::Setting::kWallpaper:
                 out->value[i] = c.display.wallpaper == config::WallpaperMode::kBw ? 1 : 0;
@@ -883,6 +886,9 @@ const char *DisplaySet(ui::display_view::Setting setting, uint16_t value) {
     config::Data &c = config::Get();
     switch (setting) {
         case dv::Setting::kIdle: c.power.idle_minutes = value; break;
+        case dv::Setting::kIdleUsb: c.power.idle_minutes_usb = value; break;
+        case dv::Setting::kLightOff: c.frontlight.off_minutes = value; break;
+        case dv::Setting::kLightOffUsb: c.frontlight.off_minutes_usb = value; break;
         case dv::Setting::kKeepPin: c.power.keep_pin_hours = static_cast<uint8_t>(value); break;
         case dv::Setting::kWallpaper:
             c.display.wallpaper = value == 1 ? config::WallpaperMode::kBw : config::WallpaperMode::kGrey;

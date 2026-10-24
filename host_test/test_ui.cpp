@@ -730,7 +730,7 @@ void test_display_view(void) {
     for (const dv::Option &o : dv::kKeepPin) {
         TEST_ASSERT_TRUE(o.value <= 168);
     }
-    dv::View a = {50, false, {10, 8, 0, 1}};
+    dv::View a = {50, false, {2, 0, 10, 0, 8, 0, 1}};
     dv::View b = a;
     TEST_ASSERT_TRUE(dv::Equal(a, b));
     b.value[1] = 4;
@@ -1020,8 +1020,12 @@ void test_wifi_settings(void) {
     TEST_ASSERT_NULL(wv::StaticField(ip, wv::Field::kHostname));
 
     namespace dv = ui::display_view;
-    TEST_ASSERT_EQUAL_UINT8(4, dv::kSettingCount);
     char text[24];
+    TEST_ASSERT_EQUAL_UINT8(7, dv::kSettingCount);
+    dv::Label(dv::Setting::kLightOff, 2, text, sizeof text);
+    TEST_ASSERT_EQUAL_STRING("2 min", text);
+    dv::Label(dv::Setting::kIdleUsb, 0, text, sizeof text);
+    TEST_ASSERT_EQUAL_STRING("Never", text);
     dv::Label(dv::Setting::kHoldRail, 1, text, sizeof text);
     TEST_ASSERT_EQUAL_STRING("Kept", text);
     TEST_ASSERT_EQUAL_STRING("Power in sleep", dv::Title(dv::Setting::kHoldRail));

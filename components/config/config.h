@@ -131,6 +131,8 @@ struct Led {
 struct Frontlight {
     uint8_t brightness;  // 1..100, the level On() lights (off at boot)
     uint8_t warmth;      // 0..100: 0 all cool, 100 all warm
+    uint16_t off_minutes;      // 0..1440: off after this long idle (on again at a touch); 0: never
+    uint16_t off_minutes_usb;  // the same on USB power; 0: never
 };
 
 // The power-off wallpaper: 4 grey levels (on a panel that has them, epd
@@ -157,6 +159,7 @@ struct Display {
 // Power-off on its own, and the PIN through a sleep (components/power).
 struct Power {
     uint16_t idle_minutes;   // 0..1440: off after this long with nothing done; 0: never
+    uint16_t idle_minutes_usb;  // the same on USB power (a host, or charging); 0: never
     uint8_t keep_pin_hours;  // 0..168: a wake this soon after the sleep needs no PIN; 0: always
     bool hold_rail;          // the peripheral rail on through the sleep; off: on the battery
                              // the board's power drops (no drain, the kept PIN lost)

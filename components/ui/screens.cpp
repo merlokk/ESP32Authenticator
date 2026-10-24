@@ -2242,10 +2242,12 @@ void ShowDisplay() {
     lv_label_set_text(b, text);
     lv_obj_align(b, LV_ALIGN_RIGHT_MID, -12, 0);
     y += 56 + 16;
-    for (uint8_t i = 0; i < display_view::kSettingCount; ++i, y += kNetRow) {
+    constexpr int32_t kRow = 54;  // seven rows
+    for (uint8_t i = 0; i < display_view::kSettingCount; ++i, y += kRow) {
         const display_view::Setting s = display_view::kSettings[i];
         display_view::Label(s, v.value[i], text, sizeof text);
-        ChoiceRow(y, display_view::Title(s), text, false, OnSettingRow, i);
+        lv_obj_t *row = ChoiceRow(y, display_view::Title(s), text, false, OnSettingRow, i);
+        lv_obj_set_height(row, kRow);
     }
     lv_obj_t *help = Label(content, &lv_font_montserrat_20);
     lv_label_set_long_mode(help, LV_LABEL_LONG_MODE_WRAP);

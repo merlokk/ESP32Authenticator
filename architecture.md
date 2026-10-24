@@ -95,9 +95,9 @@ Reference ESP-IDF + LVGL project: `../../ai-remote/approver-esp32` ([GitHub](htt
   "web": {"mode": "auto", "write": true, "user": "", "password": ""},
   "time": {"zone": "UTC", "server": "pool.ntp.org", "syncHours": 6},
   "led": {"brightness": 15, "idleBrightness": 7},
-  "frontlight": {"brightness": 20, "warmth": 50},
+  "frontlight": {"brightness": 20, "warmth": 50, "offMinutes": 2, "offMinutesUsb": 0},
   "display": {"wallpaper": "grey", "touch": {"xScale": 1000, "xOffset": 0, "yScale": 1000, "yOffset": 0}},
-  "power": {"idleMinutes": 10, "keepPinHours": 0, "holdRail": true},
+  "power": {"idleMinutes": 10, "idleMinutesUsb": 0, "keepPinHours": 0, "holdRail": true},
   "pin": {"lockMinutes": 10, "wipe": "", "complexity": true},
   "test": {"pin": "", "autoPresence": false}
 }

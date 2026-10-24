@@ -4,6 +4,7 @@
 #include <cstring>
 #include <ctime>
 
+#include "battery.h"
 #include "ble.h"
 #include "board.h"
 #include "clock_math.h"
@@ -68,22 +69,49 @@ gpio_num_t PowerPin() {
 
 void Task(void *) { Off(request_lock, request_wake_s); }
 
-// A USB host (the console, a PC) or the pairing window keeps it on, and
-// counts as activity: the idle time starts when it ends.
-bool Held() {
-    return usb_serial_jtag_is_connected() || ble::PairingSecondsLeft() > 0;
+// The pairing window keeps it on, and counts as activity: the idle time
+// starts when it ends.
+bool Held() { return ble::PairingSecondsLeft() > 0; }
+
+// USB power: a host (the console, a PC), or the charger charging. A charger
+// with a full cell looks like the battery (no VBUS line to read).
+bool OnUsb() {
+    return usb_serial_jtag_is_connected() || battery::ChargeState() == battery::Charge::kCharging;
 }
 
 void IdleTask(void *) {
+    bool was_usb = false;
+    bool dimmed = false;  // the light put off for idling: on again at a touch
+    uint64_t dimmed_at = 0;
     for (;;) {
         vTaskDelay(pdMS_TO_TICKS(kIdlePollMs));
         const bool held = Held();
-        if (held) {
-            NoteActivity();
+        const bool usb = OnUsb();
+        if (held || (was_usb && !usb)) {
+            NoteActivity();  // unplugged: the battery's idle time starts now
         }
-        const uint16_t minutes = config::Get().power.idle_minutes;
+        was_usb = usb;
+        const config::Frontlight &light = config::Get().frontlight;
+        switch (LightStep(frontlight::IsOn(), dimmed, dimmed_at, NowMs(), last_activity_ms.load(),
+                          IdleMinutes(usb, light.off_minutes, light.off_minutes_usb))) {
+            case Light::kOff:
+                frontlight::Off();
+                dimmed = true;
+                dimmed_at = NowMs();
+                break;
+            case Light::kWake:
+                if (!frontlight::IsOn()) {
+                    frontlight::On();
+                }
+                dimmed = false;
+                break;
+            case Light::kKeep:
+                break;
+        }
+        const config::Power &cfg = config::Get().power;
+        const uint16_t minutes = IdleMinutes(usb, cfg.idle_minutes, cfg.idle_minutes_usb);
         if (IdleOff(NowMs(), last_activity_ms.load(), minutes, held)) {
-            ESP_LOGI(TAG, "idle for %u min", static_cast<unsigned>(minutes));
+            ESP_LOGI(TAG, "idle for %u min%s", static_cast<unsigned>(minutes), usb ? " (USB)" : "");
             RequestOff();
         }
     }

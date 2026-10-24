@@ -14,12 +14,16 @@ namespace ui::display_view {
 
 enum class Setting : uint8_t {
     kIdle,       // power.idleMinutes: off after this long idle, 0 never
+    kIdleUsb,    // power.idleMinutesUsb: the same on USB power, 0 never
     kKeepPin,    // power.keepPinHours: no PIN after a sleep this short, 0 always
     kWallpaper,  // display.wallpaper: 0 grey, 1 black & white
     kHoldRail,   // power.holdRail: 1 the peripherals' power kept through a sleep
+    kLightOff,     // frontlight.offMinutes: the light off after this long idle, 0 never
+    kLightOffUsb,  // frontlight.offMinutesUsb: the same on USB power
 };
 
-inline constexpr Setting kSettings[] = {Setting::kIdle, Setting::kKeepPin, Setting::kWallpaper,
+inline constexpr Setting kSettings[] = {Setting::kLightOff, Setting::kLightOffUsb, Setting::kIdle,
+                                        Setting::kIdleUsb,  Setting::kKeepPin,     Setting::kWallpaper,
                                         Setting::kHoldRail};
 inline constexpr uint8_t kSettingCount = sizeof kSettings / sizeof kSettings[0];
 
@@ -34,15 +38,20 @@ inline constexpr Option kKeepPin[] = {{0, "Always"},    {1, "After 1 hour"},  {4
                                       {8, "After 8 hours"}, {24, "After a day"}, {72, "After 3 days"},
                                       {168, "After a week"}};
 inline constexpr Option kWallpaper[] = {{0, "Grey"}, {1, "Black & white"}};
+inline constexpr Option kLight[] = {{0, "Never"},  {1, "1 min"},   {2, "2 min"},
+                                    {5, "5 min"},  {10, "10 min"}, {30, "30 min"}};
 // Off: no drain while asleep, but the PIN kept through a sleep is lost.
 inline constexpr Option kHoldRail[] = {{1, "Kept"}, {0, "Off"}};
 
 constexpr const Option *Options(Setting s, size_t *count) {
     switch (s) {
-        case Setting::kIdle: *count = sizeof kIdle / sizeof kIdle[0]; return kIdle;
+        case Setting::kIdle:
+        case Setting::kIdleUsb: *count = sizeof kIdle / sizeof kIdle[0]; return kIdle;
         case Setting::kKeepPin: *count = sizeof kKeepPin / sizeof kKeepPin[0]; return kKeepPin;
         case Setting::kWallpaper: *count = sizeof kWallpaper / sizeof kWallpaper[0]; return kWallpaper;
         case Setting::kHoldRail: *count = sizeof kHoldRail / sizeof kHoldRail[0]; return kHoldRail;
+        case Setting::kLightOff:
+        case Setting::kLightOffUsb: *count = sizeof kLight / sizeof kLight[0]; return kLight;
     }
     *count = 0;
     return nullptr;
@@ -50,8 +59,11 @@ constexpr const Option *Options(Setting s, size_t *count) {
 
 constexpr const char *Title(Setting s) {
     return s == Setting::kIdle       ? "Power off after"
+           : s == Setting::kIdleUsb  ? "On USB, off after"
            : s == Setting::kKeepPin  ? "PIN after sleep"
            : s == Setting::kWallpaper ? "Wallpaper"
+           : s == Setting::kLightOff  ? "Light off after"
+           : s == Setting::kLightOffUsb ? "On USB, light off after"
                                      : "Power in sleep";
 }
 
@@ -75,7 +87,8 @@ constexpr void Label(Setting s, uint16_t value, char *out, size_t size) {
     const int i = Index(s, value);
     if (i >= 0) {
         t.Add(o[i].label);
-    } else if (s == Setting::kIdle) {
+    } else if (s == Setting::kIdle || s == Setting::kIdleUsb || s == Setting::kLightOff ||
+               s == Setting::kLightOffUsb) {
         t.Number(value).Add(" min");
     } else if (s == Setting::kKeepPin) {
         t.Add("After ").Number(value).Add(" hours");

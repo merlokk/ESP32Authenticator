@@ -52,6 +52,32 @@ constexpr Holds SleepHolds(const boards::Board &b, bool hold_rail = true) {
     return out;
 }
 
+// The idle minutes in force: on USB power (a host, or the charger charging)
+// its own (default never), else the battery's.
+constexpr uint16_t IdleMinutes(bool on_usb, uint16_t on_battery, uint16_t on_usb_power) {
+    return on_usb ? on_usb_power : on_battery;
+}
+
+// The frontlight on idle: off after `minutes` with nothing done (0: never),
+// and on again at the next activity if it was this that put it off
+// (`dimmed`, at `dimmed_at`).
+enum class Light : uint8_t {
+    kKeep,
+    kOff,    // idle long enough: off (remember dimmed)
+    kWake,   // activity after the idle off: on again (if still off), not dimmed
+};
+
+constexpr Light LightStep(bool lit, bool dimmed, uint64_t dimmed_at, uint64_t now_ms,
+                          uint64_t last_activity_ms, uint16_t minutes) {
+    if (dimmed) {
+        return last_activity_ms > dimmed_at ? Light::kWake : Light::kKeep;
+    }
+    return lit && minutes != 0 && now_ms >= last_activity_ms &&
+                   now_ms - last_activity_ms >= static_cast<uint64_t>(minutes) * 60000
+               ? Light::kOff
+               : Light::kKeep;
+}
+
 // Off after `idle_minutes` with nothing done (0: never); `held`: something
 // keeps it on (a USB host, the pairing window).
 constexpr bool IdleOff(uint64_t now_ms, uint64_t last_activity_ms, uint16_t idle_minutes,
