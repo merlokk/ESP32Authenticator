@@ -384,11 +384,25 @@ constexpr Subcommand kSubcommands[] = {
 
 }  // namespace
 
+// A line at a time, whole (a log line from another task falls between lines,
+// not inside one).
 void PrintBase64Lines(const uint8_t *data, size_t len) {
     constexpr size_t kLineBytes = 57;
+    char line[kLineBytes / 3 * 4 + 2];
     for (size_t i = 0; i < len; i += kLineBytes) {
-        PrintBase64(data + i, len - i < kLineBytes ? len - i : kLineBytes);
-        fputc('\n', stdout);
+        const size_t n = len - i < kLineBytes ? len - i : kLineBytes;
+        size_t k = 0;
+        for (size_t j = 0; j < n; j += 3) {
+            const uint8_t *p = data + i + j;
+            const size_t left = n - j;
+            const uint32_t v = (p[0] << 16) | (left > 1 ? p[1] << 8 : 0) | (left > 2 ? p[2] : 0);
+            line[k++] = kBase64[(v >> 18) & 0x3f];
+            line[k++] = kBase64[(v >> 12) & 0x3f];
+            line[k++] = left > 1 ? kBase64[(v >> 6) & 0x3f] : '=';
+            line[k++] = left > 2 ? kBase64[v & 0x3f] : '=';
+        }
+        line[k++] = '\n';
+        fwrite(line, 1, k, stdout);
     }
 }
 
