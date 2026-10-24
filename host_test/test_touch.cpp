@@ -70,6 +70,37 @@ void test_touch_stale_contacts(void) {
     TEST_ASSERT_FALSE(gt::Touching(1, gt::kStaleMs + 1));  // lift frame lost
 }
 
+void test_touch_edges_keep_every_tap(void) {
+    gt::Edges e;
+    gt::Edge out = {};
+    TEST_ASSERT_FALSE(e.Pop(&out));
+    // Two quick taps between two reads: four edges, in order.
+    e.Update(true, 10, 20);
+    e.Update(true, 11, 21);  // still down: nothing new
+    e.Update(false, 0, 0);
+    e.Update(true, 30, 40);
+    e.Update(false, 0, 0);
+    TEST_ASSERT_EQUAL_UINT8(4, e.Pending());
+    TEST_ASSERT_TRUE(e.Pop(&out));
+    TEST_ASSERT_TRUE(out.down);
+    TEST_ASSERT_EQUAL_UINT16(10, out.x);
+    TEST_ASSERT_EQUAL_UINT16(20, out.y);
+    TEST_ASSERT_TRUE(e.Pop(&out));
+    TEST_ASSERT_FALSE(out.down);
+    TEST_ASSERT_EQUAL_UINT16(10, out.x);  // the lift where the finger went down
+    TEST_ASSERT_TRUE(e.Pop(&out));
+    TEST_ASSERT_EQUAL_UINT16(30, out.x);
+    TEST_ASSERT_TRUE(e.Pop(&out));
+    TEST_ASSERT_FALSE(out.down);
+    TEST_ASSERT_FALSE(e.Pop(&out));
+    // Nobody reading: full, the rest counted and dropped.
+    for (int i = 0; i < gt::Edges::kSize + 4; ++i) {
+        e.Update(i % 2 == 0, 1, 1);
+    }
+    TEST_ASSERT_EQUAL_UINT8(gt::Edges::kSize, e.Pending());
+    TEST_ASSERT_EQUAL_UINT32(4, e.Dropped());
+}
+
 }  // namespace
 
 void RegisterTouchTests(void) {
@@ -79,4 +110,5 @@ void RegisterTouchTests(void) {
     RUN_TEST(test_touch_config_head);
     RUN_TEST(test_touch_point);
     RUN_TEST(test_touch_stale_contacts);
+    RUN_TEST(test_touch_edges_keep_every_tap);
 }

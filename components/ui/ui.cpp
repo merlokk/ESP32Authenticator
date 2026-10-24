@@ -139,20 +139,24 @@ void PushTask(void *) {
     }
 }
 
-// The GT911 as LVGL's pointer, read in the ui task (lv_timer_handler).
+// The GT911 as LVGL's pointer, read in the ui task (lv_timer_handler): the
+// edges the keypad task recorded, one per read (continue_reading for the
+// rest), so a tap shorter than a busy ui task is still a press and a release.
 void ReadTouch(lv_indev_t *, lv_indev_data_t *data) {
-    touch::gt911::Point p = {};
-    const bool down = touch::Contact(&p);
-    if (down) {
-        last_point = TouchToScreen(p.x, p.y);
-        if (!last_down) {
+    touch::gt911::Edge e = {};
+    uint8_t more = 0;
+    if (touch::NextEdge(&e, &more)) {
+        if (e.down) {
+            last_point = TouchToScreen(e.x, e.y);
             ++presses;
             if (press_hook != nullptr) {
                 press_hook();
             }
         }
+        last_down = e.down;
+        data->continue_reading = more > 0;
     }
-    last_down = down;
+    const bool down = last_down;
     data->point.x = last_point.x;
     data->point.y = last_point.y;
     data->state = down ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;

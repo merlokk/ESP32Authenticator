@@ -25,6 +25,7 @@ gt::Info info = {};
 gt::ConfigHead config = {};
 bool have_config = false;
 Snapshot snapshot = {};
+gt::Edges edges;  // under `lock`
 // The keypad task writes the snapshot, the console reads it.
 portMUX_TYPE lock = portMUX_INITIALIZER_UNLOCKED;
 
@@ -142,6 +143,7 @@ esp_err_t Poll() {
             }
         }
     }
+    const uint32_t now = static_cast<uint32_t>(esp_timer_get_time() / 1000);
     portENTER_CRITICAL(&lock);
     if (err != ESP_OK) {
         ++snapshot.errors;
@@ -156,6 +158,10 @@ esp_err_t Poll() {
             memcpy(snapshot.raw, points, count * gt::kPointSize);
         }
     }
+    // Every poll, a failed read too: a lost lift frame still ends the touch.
+    const bool down = gt::Touching(snapshot.count, now - snapshot.at_ms);
+    const gt::Point p = down ? gt::DecodePoint(snapshot.raw) : gt::Point{};
+    edges.Update(down, p.x, p.y);
     portEXIT_CRITICAL(&lock);
     return err;
 }
@@ -171,6 +177,16 @@ bool Contact(gt::Point *out) {
     }
     portEXIT_CRITICAL(&lock);
     return down;
+}
+
+bool NextEdge(gt::Edge *out, uint8_t *more) {
+    portENTER_CRITICAL(&lock);
+    const bool got = edges.Pop(out);
+    if (more != nullptr) {
+        *more = edges.Pending();
+    }
+    portEXIT_CRITICAL(&lock);
+    return got;
 }
 
 Snapshot GetSnapshot() {

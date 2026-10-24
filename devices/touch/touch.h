@@ -40,6 +40,10 @@ Snapshot GetSnapshot();
 // coordinates; false when no finger is down. Any task.
 bool Contact(gt911::Point *out);
 
+// The next finger down / up since the last call (gt911::Edges, raw
+// coordinates; recorded at every Poll), and how many more wait. Any task.
+bool NextEdge(gt911::Edge *out, uint8_t *more = nullptr);
+
 // Console `touch`: address, product, firmware, resolution, vendor, config head.
 void PrintInfo();
 

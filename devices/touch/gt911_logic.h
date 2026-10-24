@@ -118,4 +118,59 @@ constexpr bool Touching(uint8_t contacts, uint32_t age_ms) {
     return contacts > 0 && age_ms <= kStaleMs;
 }
 
+// A finger going down or up, where. LVGL reads the panel when its task is
+// free, not every poll: a quick tap fell between two reads and was lost
+// (six digits in 1.5 s). The poller records every edge here, LVGL takes them
+// one by one.
+struct Edge {
+    bool down;
+    uint16_t x;
+    uint16_t y;
+};
+
+class Edges {
+   public:
+    static constexpr uint8_t kSize = 32;  // 16 taps
+
+    // After every poll: whether a finger is down now, and where.
+    constexpr void Update(bool touching, uint16_t x, uint16_t y) {
+        if (touching == down_) {
+            return;
+        }
+        down_ = touching;
+        if (touching) {
+            x_ = x;
+            y_ = y;
+        }
+        if (count_ == kSize) {
+            ++dropped_;  // nobody reads: the oldest stay
+            return;
+        }
+        items_[static_cast<uint8_t>((head_ + count_) % kSize)] = {touching, x_, y_};
+        ++count_;
+    }
+
+    constexpr bool Pop(Edge *out) {
+        if (count_ == 0) {
+            return false;
+        }
+        *out = items_[head_];
+        head_ = static_cast<uint8_t>((head_ + 1) % kSize);
+        --count_;
+        return true;
+    }
+
+    constexpr uint8_t Pending() const { return count_; }
+    constexpr uint32_t Dropped() const { return dropped_; }
+
+   private:
+    Edge items_[kSize] = {};
+    uint8_t head_ = 0;
+    uint8_t count_ = 0;
+    bool down_ = false;
+    uint16_t x_ = 0;
+    uint16_t y_ = 0;
+    uint32_t dropped_ = 0;
+};
+
 }  // namespace touch::gt911
