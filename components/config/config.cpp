@@ -61,7 +61,8 @@ const char kDefaultJson[] = R"json({
   },
   "power": {
     "idleMinutes": 10,
-    "keepPinHours": 0
+    "keepPinHours": 0,
+    "holdRail": true
   },
   "pin": {
     "lockMinutes": 10,
@@ -262,7 +263,8 @@ bool ParsePower(const cJSON *section, Power *out, char *error, size_t size) {
     uint32_t idle = out->idle_minutes;
     uint32_t keep = out->keep_pin_hours;
     if (!GetUint(section, "idleMinutes", 0, kMaxIdleMinutes, &idle, "power", error, size) ||
-        !GetUint(section, "keepPinHours", 0, kMaxKeepPinHours, &keep, "power", error, size)) {
+        !GetUint(section, "keepPinHours", 0, kMaxKeepPinHours, &keep, "power", error, size) ||
+        !GetBool(section, "holdRail", &out->hold_rail, "power", error, size)) {
         return false;
     }
     out->idle_minutes = static_cast<uint16_t>(idle);
@@ -735,6 +737,7 @@ size_t Serialize(const Data &d, char *out, size_t size) {
     cJSON *power = cJSON_AddObjectToObject(root, "power");
     cJSON_AddNumberToObject(power, "idleMinutes", d.power.idle_minutes);
     cJSON_AddNumberToObject(power, "keepPinHours", d.power.keep_pin_hours);
+    cJSON_AddBoolToObject(power, "holdRail", d.power.hold_rail);
     cJSON *pin = cJSON_AddObjectToObject(root, "pin");
     cJSON_AddNumberToObject(pin, "lockMinutes", d.pin.lock_minutes);
     cJSON_AddStringToObject(pin, "wipe", d.pin.wipe);

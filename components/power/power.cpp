@@ -192,7 +192,7 @@ void Off(bool lock, uint32_t wake_seconds) {
         sleep_hook(lock);
     }
     const gpio_num_t power = PowerPin();
-    const Holds holds = SleepHolds(boards::kBoard);
+    const Holds holds = SleepHolds(boards::kBoard, config::Get().power.hold_rail);
     for (size_t i = 0; i < holds.size; ++i) {
         const auto pin = static_cast<gpio_num_t>(holds.items[i].pin);
         gpio_hold_dis(pin);

@@ -92,6 +92,7 @@ void AssertDefaults(const config::Data &d) {
     TEST_ASSERT_EQUAL_UINT16(10, d.pin.lock_minutes);
     TEST_ASSERT_EQUAL_UINT16(10, d.power.idle_minutes);
     TEST_ASSERT_EQUAL_UINT8(0, d.power.keep_pin_hours);
+    TEST_ASSERT_TRUE(d.power.hold_rail);
     TEST_ASSERT_TRUE(d.pin.complexity);
     TEST_ASSERT_EQUAL_STRING("", d.pin.wipe);
 }
@@ -510,10 +511,11 @@ void test_parse_power() {
     config::FillDefaults(&d);
     char error[config::kErrorSize] = {};
     TEST_ASSERT_TRUE_MESSAGE(
-        ParseText(R"({"power": {"idleMinutes": 0, "keepPinHours": 168}})", &d, error, sizeof error),
+        ParseText(R"({"power": {"idleMinutes": 0, "keepPinHours": 168, "holdRail": false}})", &d, error, sizeof error),
         error);
     TEST_ASSERT_EQUAL_UINT16(0, d.power.idle_minutes);
     TEST_ASSERT_EQUAL_UINT8(168, d.power.keep_pin_hours);
+    TEST_ASSERT_FALSE(d.power.hold_rail);
     char json[config::kMaxFileSize];
     TEST_ASSERT_GREATER_THAN(0, config::Serialize(d, json, sizeof json));
     config::Data out;
@@ -521,9 +523,11 @@ void test_parse_power() {
     TEST_ASSERT_TRUE_MESSAGE(ParseText(json, &out, error, sizeof error), error);
     TEST_ASSERT_EQUAL_UINT16(0, out.power.idle_minutes);
     TEST_ASSERT_EQUAL_UINT8(168, out.power.keep_pin_hours);
+    TEST_ASSERT_FALSE(out.power.hold_rail);
     AssertParseFails(R"({"power": 1})", "power: expected an object");
     AssertParseFails(R"({"power": {"idleMinutes": 1441}})", "power.idleMinutes");
     AssertParseFails(R"({"power": {"keepPinHours": 169}})", "power.keepPinHours");
+    AssertParseFails(R"({"power": {"holdRail": 1}})", "power.holdRail");
 }
 
 void test_valid_host() {

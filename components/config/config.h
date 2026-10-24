@@ -148,6 +148,8 @@ struct Display {
 struct Power {
     uint16_t idle_minutes;   // 0..1440: off after this long with nothing done; 0: never
     uint8_t keep_pin_hours;  // 0..168: a wake this soon after the sleep needs no PIN; 0: always
+    bool hold_rail;          // the peripheral rail on through the sleep; off: on the battery
+                             // the board's power drops (no drain, the kept PIN lost)
 };
 
 // The vault PIN (x4-design.md): the lock after 10 wrong PINs, and the wipe

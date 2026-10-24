@@ -591,9 +591,11 @@ int CmdWallpaper(int argc, char **argv) {
     return argc == 2 ? CmdSave(0, nullptr) : 0;
 }
 
-//   config power [idle <0..1440 min>] [keep <0..168 h>]  (saved)
+//   config power [idle <0..1440 min>] [keep <0..168 h>] [rail on|off]  (saved)
 //     idle: off after this long with nothing done (0: never)
 //     keep: a wake this soon after the sleep needs no PIN (0: always the PIN)
+//     rail: the peripheral rail held through the sleep (off: on the battery
+//           the power drops, the kept PIN with it)
 int CmdPower(int argc, char **argv) {
     config::Power &p = config::Get().power;
     config::Power next = p;
@@ -605,8 +607,11 @@ int CmdPower(int argc, char **argv) {
             next.idle_minutes = static_cast<uint16_t>(v);
         } else if (number && strcmp(argv[i], "keep") == 0 && v <= config::kMaxKeepPinHours) {
             next.keep_pin_hours = static_cast<uint8_t>(v);
+        } else if (i + 1 < argc && strcmp(argv[i], "rail") == 0 &&
+                   (strcmp(argv[i + 1], "on") == 0 || strcmp(argv[i + 1], "off") == 0)) {
+            next.hold_rail = strcmp(argv[i + 1], "on") == 0;
         } else {
-            printf("usage: config power [idle <0..%u min>] [keep <0..%u h>]\n",
+            printf("usage: config power [idle <0..%u min>] [keep <0..%u h>] [rail on|off]\n",
                    static_cast<unsigned>(config::kMaxIdleMinutes),
                    static_cast<unsigned>(config::kMaxKeepPinHours));
             return 1;
@@ -625,6 +630,10 @@ int CmdPower(int argc, char **argv) {
     } else {
         printf("keep PIN   off: the PIN after every wake\n");
     }
+    printf("rail       %s\n", p.hold_rail
+                                  ? "on through the sleep: the battery stays connected"
+                                  : "off in the sleep: on the battery the power drops "
+                                    "(no drain, the PIN after every wake)");
     return argc > 1 ? CmdSave(0, nullptr) : 0;
 }
 
@@ -658,7 +667,7 @@ int CmdConfig(int argc, char **argv) {
     return Dispatch(kConfigSubcommands, argc, argv,
                     "config show | info | reload | save | "
                     "test [pin <6 digits>|off | presence on|off] | wallpaper [grey|bw] | "
-                    "power [idle <minutes>] [keep <hours>]");
+                    "power [idle <minutes>] [keep <hours>] [rail on|off]");
 }
 
 void PrintWifiInfo() { CmdInfo(0, nullptr); }

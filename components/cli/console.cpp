@@ -473,7 +473,7 @@ const esp_console_cmd_t kCommands[] = {
         .help = "config.json: show (passwords masked) | info | reload | save | "
                 "test [pin <6 digits>|off | presence on|off] (development, saved) | "
                 "wallpaper [grey|bw] (power-off wallpaper tones, saved) | "
-                "power [idle <minutes>] [keep <hours>] (off when idle, the PIN kept through a "
+                "power [idle <minutes>] [keep <hours>] [rail on|off] (off when idle, the PIN kept through a "
                 "sleep; saved)",
         .hint = "<show|info|reload|save|test|wallpaper>",
         .func = &CmdConfig,

@@ -255,7 +255,7 @@ entry for `pin.lockMinutes` (config.json), also across a reboot.
 | `config show` | current config as JSON, passwords masked (networks, AP, web) |
 | `config info` | file path, source (file / built-in defaults), why the file was not used |
 | `config test [pin <6 digits>\|off \| presence on\|off]` | development: `test.pin` (the vault unlocks at boot) and `test.autoPresence` (FIDO2 without the button), saved; the PIN is never shown. For test runs (`tests/fido2` with reboots, the fill test); turn both off after |
-| `config power [idle <0..1440 min>] [keep <0..168 h>]` | off when idle (0: never; never on USB) / a wake this soon after the sleep needs no PIN (0: always), saved |
+| `config power [idle <0..1440 min>] [keep <0..168 h>] [rail on\|off]` | off when idle (0: never; never on USB) / a wake this soon after the sleep needs no PIN (0: always) / GPIO1 held through the sleep (off: on the battery the power drops), saved |
 | `config wallpaper [grey\|bw]` | the power-off wallpaper: 4 grey levels (where the panel has them) or black and white (`display.wallpaper`), saved |
 | `config reload` / `config save` | re-read config.json (keeps values on error) and apply Wi-Fi (incl. internet check), web, time and LED settings / write current values |
 | `efuse` | every eFuse field (list generated at build time from IDF `esp_efuse_table.csv`) and raw blocks BLK0..BLK10 |

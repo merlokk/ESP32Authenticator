@@ -64,7 +64,9 @@ Reference ESP-IDF + LVGL project: `../../ai-remote/approver-esp32` ([GitHub](htt
   `pin_policy.h` (no repeats, runs or common PINs).
 - `power`: `idleMinutes` (0..1440, default 10, 0: never) off with nothing
   done; `keepPinHours` (0..168, default 0: the PIN after every wake) how
-  long after a sleep a wake needs no PIN.
+  long after a sleep a wake needs no PIN; `holdRail` (default true): GPIO1
+  held high through the sleep (false: on the battery the power drops, no
+  drain, the kept PIN lost).
 - `test`: development aids. `test.pin` (empty or 6 digits) unlocks the vault
   at boot; masked by `config show`, never on the site. `test.autoPresence`
   (default false): FIDO2 / U2F user presence is confirmed without the button
@@ -98,7 +100,7 @@ Reference ESP-IDF + LVGL project: `../../ai-remote/approver-esp32` ([GitHub](htt
   "led": {"brightness": 15, "idleBrightness": 7},
   "frontlight": {"brightness": 20, "warmth": 50},
   "display": {"wallpaper": "grey"},
-  "power": {"idleMinutes": 10, "keepPinHours": 0},
+  "power": {"idleMinutes": 10, "keepPinHours": 0, "holdRail": true},
   "pin": {"lockMinutes": 10, "wipe": "", "complexity": true},
   "test": {"pin": ""}
 }
@@ -299,7 +301,7 @@ PNG from `/sdcard/wallpapers` (the stock firmware's folder) on the panel
 RTC ext1 wake on Power (low, RTC pull-up) and deep sleep. Held through sleep
 (`power_logic.h`, as FreeInk's PowerManager): EPD RST high, SD and touch
 power off, the frontlight's PWM pins low, and (unlike FreeInk) GPIO1, the
-peripheral rail, high: on the battery the board's power drops without it (a
+peripheral rail, high (`power.holdRail`): on the battery the board's power drops without it (a
 cold boot, RTC memory lost); `power::Boot()` drives them to the same levels
 and releases them first thing at boot. A sleep
 the chip refuses (`esp_deep_sleep_try_to_start` returns): a restart, not a

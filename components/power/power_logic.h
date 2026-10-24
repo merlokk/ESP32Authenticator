@@ -6,8 +6,8 @@
 // enables are active-low: held high), the panel's RST held high so the
 // controller stays in its deep sleep; the frontlight's PWM pins held low
 // (isolated, they would float). Unlike FreeInk, the peripheral rail (GPIO1)
-// held high: on the battery the board's power drops without it, a cold boot
-// that loses RTC memory (measured). Boot releases the same pins (driven to
+// held high (`hold_rail`, config power.holdRail): on the battery the board's
+// power drops without it, a cold boot that loses RTC memory (measured). Boot releases the same pins (driven to
 // the same levels first) before any driver touches them. Wake: the Power
 // button (RTC ext1, low).
 //
@@ -39,9 +39,11 @@ struct Holds {
     }
 };
 
-constexpr Holds SleepHolds(const boards::Board &b) {
+constexpr Holds SleepHolds(const boards::Board &b, bool hold_rail = true) {
     Holds out;
-    out.Add(b.power_pins.peripheral_rail, 1);
+    if (hold_rail) {
+        out.Add(b.power_pins.peripheral_rail, 1);
+    }
     out.Add(b.display_pins.reset, 1);
     out.Add(b.sd_pins.power_enable, 1);
     out.Add(b.touch_pins.power_enable, 1);

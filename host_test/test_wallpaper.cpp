@@ -161,6 +161,9 @@ void test_power_sleep_holds(void) {
     TEST_ASSERT_EQUAL_UINT8(0, h.items[4].level);
     TEST_ASSERT_EQUAL_INT8(9, h.items[5].pin);   // frontlight warm low
     TEST_ASSERT_EQUAL_UINT8(0, h.items[5].level);
+    constexpr power::Holds off = power::SleepHolds(b, false);  // power.holdRail false
+    TEST_ASSERT_EQUAL_size_t(5, off.size);
+    TEST_ASSERT_EQUAL_INT8(14, off.items[0].pin);
     constexpr boards::DevBoard none;  // no panel, SD or touch
     TEST_ASSERT_EQUAL_size_t(0, power::SleepHolds(none).size);
 }
