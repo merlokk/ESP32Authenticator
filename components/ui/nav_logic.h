@@ -5,7 +5,8 @@
 // current one is in it). Left / Right flip the pages (round). A swipe down
 // from the top quarter opens Settings, a swipe up from the bottom quarter the
 // FIDO2 list (in pages of its own, Left / Right flip them too); the opposite
-// swipe, their back arrow or Home closes them. Home: the list's first page. Pure (host-tested); the PIN pad stands over all of it while
+// swipe, their back arrow or Home closes them (Settings' pages: the arrow
+// goes back to Settings). Home: the list's first page. Pure (host-tested); the PIN pad stands over all of it while
 // the vault is locked.
 
 #include <cstddef>
@@ -78,6 +79,17 @@ class Nav {
     constexpr uint8_t tabs() const { return pages_ < kTabs ? pages_ : kTabs; }
     constexpr uint8_t fido_page() const { return fido_page_; }
     constexpr uint8_t fido_pages() const { return fido_pages_; }
+    // Settings' page (settings_logic.h Page; 0 the main one).
+    constexpr uint8_t settings_page() const { return settings_page_; }
+
+    // A row of the main Settings page: its page. True when it changed.
+    constexpr bool OpenSettings(uint8_t page) {
+        if (mode_ != Mode::kSettings || settings_page_ == page) {
+            return false;
+        }
+        settings_page_ = page;
+        return true;
+    }
 
     // The list's page count (records added or gone); the page stays inside.
     // True when the page moved.
@@ -129,6 +141,7 @@ class Nav {
             mode_ = Mode::kList;
             page_ = 0;
             fido_page_ = 0;
+            settings_page_ = 0;
             Follow();
             return changed;
         }
@@ -147,9 +160,13 @@ class Nav {
         return true;
     }
 
-    // The back arrow of Settings / FIDO2: the list, at the page it was on.
-    // True when the mode changed.
+    // The back arrow of Settings / FIDO2: the list, at the page it was on; on
+    // a Settings page, Settings. True when it changed.
     constexpr bool Back() {
+        if (mode_ == Mode::kSettings && settings_page_ != 0) {
+            settings_page_ = 0;
+            return true;
+        }
         const bool changed = mode_ != Mode::kList;
         mode_ = Mode::kList;
         return changed;
@@ -157,8 +174,9 @@ class Nav {
 
     // A screen by name (console `ui show`), pages kept. True when it changed.
     constexpr bool Open(Mode m) {
-        const bool changed = mode_ != m;
+        const bool changed = mode_ != m || settings_page_ != 0;
         mode_ = m;
+        settings_page_ = 0;
         return changed;
     }
 
@@ -180,6 +198,9 @@ class Nav {
         }
         const bool changed = next != mode_;
         mode_ = next;
+        if (changed) {
+            settings_page_ = 0;  // Settings opens at its main page
+        }
         return changed;
     }
 
@@ -209,6 +230,7 @@ class Nav {
     uint8_t first_ = 0;
     uint8_t fido_page_ = 0;
     uint8_t fido_pages_ = 1;
+    uint8_t settings_page_ = 0;
 };
 
 }  // namespace ui::nav

@@ -1,7 +1,7 @@
 // The screens behind the PIN pad (x4-design.md): the status bar on LVGL's top
 // layer (over every screen, the pad's too), the password list in pages with a
-// tab per page at the bottom, Settings pulled down from the top (a stub for
-// now) and the U2F / FIDO2 keys pulled up from the bottom (a swipe left on a
+// tab per page at the bottom, Settings pulled down from the top (the
+// frontlight, then a row per page: SettingsHooks) and the U2F / FIDO2 keys pulled up from the bottom (a swipe left on a
 // key: its trash can). nav_logic.h, list_logic.h, fido_list_logic.h and
 // status_logic.h decide; this draws. Typing runs in a task of its own
 // (ui::SetTypist; a password takes a second over BLE), and so does deleting a
@@ -11,7 +11,6 @@
 #include <cstring>
 #include <ctime>
 
-#include "esp_app_desc.h"
 #include "esp_heap_caps.h"
 #include "fido_ctap.h"
 #include "fido_list_logic.h"
@@ -40,6 +39,7 @@ constexpr uint32_t kPollMs = 30;      // buttons, swipes, the vault, the codes
 constexpr uint32_t kToastMs = 3000;
 constexpr uint32_t kVaultMs = 500;    // the vault's changes, looked at
 constexpr uint32_t kFidoMs = 2000;    // the FIDO2 store's, while its list is shown
+constexpr uint32_t kSettingsMs = 2000;  // Settings' texts, while shown
 constexpr int32_t kBarHeight = 44;
 constexpr int32_t kTabHeight = 72;
 constexpr unsigned kQueueDepth = 8;
@@ -69,6 +69,8 @@ StaticQueue_t inputs_storage;
 uint8_t inputs_buffer[kQueueDepth];
 void (*source)(status::Status *out) = nullptr;
 esp_err_t (*typist)(const char *text) = nullptr;
+const SettingsHooks *settings_hooks = nullptr;
+uint32_t settings_looked_at = 0;
 
 lv_obj_t *home = nullptr;
 lv_obj_t *bar_left = nullptr;
@@ -111,11 +113,20 @@ uint8_t row_count = 0;
 int64_t code_window = -2;
 vault::Record record;  // the ui task's copy, wiped after each use
 
+// The ui's own task: what may take a while (BLE typing, a file written).
+enum class JobKind : uint8_t {
+    kType,       // record `id`'s `zone`
+    kDeleteKey,  // the FIDO2 key `key`
+    kSaveLight,  // the frontlight's level into config.json
+    kAct,        // a Settings page's `action`
+};
+
 struct Job {
+    JobKind kind;
     uint32_t id;
     list::Zone zone;
-    bool fido;  // not typing: the FIDO2 key `key` deleted
     uint8_t key[FIDO_CTAP_CRED_ID_SIZE];
+    settings::Action action;
 };
 QueueHandle_t jobs = nullptr;
 StaticQueue_t jobs_storage;
@@ -296,7 +307,7 @@ void OnRow(lv_event_t *event) {
         Toast("no TOTP for this record");
         return;
     }
-    const Job job = {r.id, zone, false, {}};
+    const Job job = {JobKind::kType, r.id, zone, {}, settings::Action::kNone};
     if (xQueueSend(jobs, &job, 0) != pdTRUE) {
         Toast("busy typing");
     }
@@ -739,7 +750,7 @@ void AskRemove() {
 
 // Yes held long enough: the key goes to the typing task to be deleted.
 void DeleteAsked() {
-    Job job = {0, list::Zone::kTypeUser, true, {}};
+    Job job = {JobKind::kDeleteKey, 0, list::Zone::kTypeUser, {}, settings::Action::kNone};
     memcpy(job.key, asked.id, sizeof job.key);
     Toast(xQueueSend(jobs, &job, 0) == pdTRUE ? "deleting the key..." : "busy typing");
     CloseAsk();
@@ -822,6 +833,273 @@ void ShowFido() {
     for (uint8_t i = 0; i < fido_list::kRowsPerPage && first + i < count; ++i) {
         AddFidoRow(i, fido_keys[fido_order[first + i]]);
         ++fido_rows;
+    }
+}
+
+// --- Settings ----------------------------------------------------------------------
+
+constexpr int32_t kLightRow = 64;
+constexpr int32_t kMenuRow = 72;
+constexpr int32_t kLineHeight = 50;
+constexpr size_t kSettingsText = 512;
+// What the shown page says (describe; the main page: its rows' summaries, a
+// line each), looked at every kSettingsMs: drawn again when it changes.
+char settings_shown[kSettingsText];
+char settings_now[kSettingsText];
+lv_obj_t *light_switch = nullptr;
+lv_obj_t *light_value[2] = {};  // "60%" after the sliders
+bool light_save = false;        // a slider let go: for Poll (the save job)
+int settings_tapped = -1;       // a main page's row: its Page, for Poll
+bool action_tapped = false;     // a page's button, for Poll
+
+void SettingsText(settings::Page page, char *out, size_t size) {
+    out[0] = '\0';
+    if (settings_hooks == nullptr) {
+        return;
+    }
+    if (page != settings::Page::kMain) {
+        settings_hooks->describe(page, false, out, size);
+        return;
+    }
+    size_t used = 0;
+    for (const settings::Page p : settings::kRows) {
+        settings_hooks->describe(p, true, out + used, size - used);
+        used += strlen(out + used);
+        if (used + 2 < size) {
+            out[used++] = '\n';
+            out[used] = '\0';
+        }
+    }
+}
+
+// A finger is on the glass (a slider dragged: no redraw under it).
+bool FingerDown() {
+    lv_indev_t *pointer = lv_indev_get_next(nullptr);
+    return pointer != nullptr && lv_indev_get_state(pointer) == LV_INDEV_STATE_PRESSED;
+}
+
+void ShowPercent(uint8_t which, uint8_t value) {
+    char text[8];
+    snprintf(text, sizeof text, "%u%%", static_cast<unsigned>(value));
+    lv_label_set_text(light_value[which], text);
+}
+
+void OnLightSwitch(lv_event_t *) {
+    bool on = false;
+    uint8_t brightness = 0;
+    uint8_t warmth = 0;
+    settings_hooks->light(&on, &brightness, &warmth);
+    settings_hooks->set_light(lv_obj_has_state(light_switch, LV_STATE_CHECKED), brightness, warmth);
+}
+
+// Brightness (user data 0) or warmth (1): lit at once, saved when let go.
+void OnLightSlider(lv_event_t *event) {
+    if (lv_event_get_code(event) == LV_EVENT_RELEASED) {
+        light_save = true;
+        return;
+    }
+    const auto which = static_cast<uint8_t>(reinterpret_cast<uintptr_t>(lv_event_get_user_data(event)));
+    const int32_t v = lv_slider_get_value(static_cast<lv_obj_t *>(lv_event_get_target(event)));
+    bool on = false;
+    uint8_t brightness = 0;
+    uint8_t warmth = 0;
+    settings_hooks->light(&on, &brightness, &warmth);
+    if (which == 0) {
+        brightness = settings::Brightness(v);
+    } else {
+        warmth = settings::Warmth(v);
+    }
+    settings_hooks->set_light(true, brightness, warmth);  // moved: lit
+    lv_obj_add_state(light_switch, LV_STATE_CHECKED);
+    ShowPercent(which, which == 0 ? brightness : warmth);
+}
+
+// E-ink: black and white, no animation.
+lv_obj_t *Slider(lv_obj_t *parent, int32_t min, int32_t value) {
+    lv_obj_t *s = lv_slider_create(parent);
+    lv_obj_remove_style_all(s);
+    lv_slider_set_range(s, min, 100);
+    lv_slider_set_value(s, value, LV_ANIM_OFF);
+    lv_obj_set_size(s, 250, 14);
+    lv_obj_set_ext_click_area(s, 24);
+    lv_obj_set_style_bg_color(s, lv_color_white(), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(s, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_border_width(s, 2, LV_PART_MAIN);
+    lv_obj_set_style_border_color(s, lv_color_black(), LV_PART_MAIN);
+    lv_obj_set_style_radius(s, 7, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(s, lv_color_black(), LV_PART_INDICATOR);
+    lv_obj_set_style_bg_opa(s, LV_OPA_COVER, LV_PART_INDICATOR);
+    lv_obj_set_style_radius(s, 7, LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(s, lv_color_white(), LV_PART_KNOB);
+    lv_obj_set_style_bg_opa(s, LV_OPA_COVER, LV_PART_KNOB);
+    lv_obj_set_style_border_width(s, 3, LV_PART_KNOB);
+    lv_obj_set_style_border_color(s, lv_color_black(), LV_PART_KNOB);
+    lv_obj_set_style_radius(s, LV_RADIUS_CIRCLE, LV_PART_KNOB);
+    lv_obj_set_style_pad_all(s, 9, LV_PART_KNOB);
+    return s;
+}
+
+lv_obj_t *Switch(lv_obj_t *parent, bool on) {
+    lv_obj_t *s = lv_switch_create(parent);
+    lv_obj_remove_style_all(s);
+    lv_obj_set_size(s, 84, 44);
+    lv_obj_set_style_anim_duration(s, 0, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(s, lv_color_white(), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(s, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_border_width(s, 2, LV_PART_MAIN);
+    lv_obj_set_style_border_color(s, lv_color_black(), LV_PART_MAIN);
+    lv_obj_set_style_radius(s, LV_RADIUS_CIRCLE, LV_PART_MAIN);
+    const auto checked = static_cast<lv_style_selector_t>(LV_PART_INDICATOR) | LV_STATE_CHECKED;
+    lv_obj_set_style_bg_color(s, lv_color_black(), checked);
+    lv_obj_set_style_bg_opa(s, LV_OPA_COVER, checked);
+    lv_obj_set_style_radius(s, LV_RADIUS_CIRCLE, LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(s, lv_color_white(), LV_PART_KNOB);
+    lv_obj_set_style_bg_opa(s, LV_OPA_COVER, LV_PART_KNOB);
+    lv_obj_set_style_border_width(s, 2, LV_PART_KNOB);
+    lv_obj_set_style_border_color(s, lv_color_black(), LV_PART_KNOB);
+    lv_obj_set_style_radius(s, LV_RADIUS_CIRCLE, LV_PART_KNOB);
+    lv_obj_set_style_pad_all(s, -5, LV_PART_KNOB);
+    if (on) {
+        lv_obj_add_state(s, LV_STATE_CHECKED);
+    }
+    return s;
+}
+
+// A plain box on the content: no style, no scrolling, not clickable.
+lv_obj_t *Panel(lv_obj_t *parent, int32_t y, int32_t height) {
+    lv_obj_t *p = lv_obj_create(parent);
+    lv_obj_remove_style_all(p);
+    lv_obj_remove_flag(p, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_remove_flag(p, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_pos(p, 0, y);
+    lv_obj_set_size(p, kRowWidth, height);
+    lv_obj_set_style_border_side(p, LV_BORDER_SIDE_BOTTOM, 0);
+    lv_obj_set_style_border_color(p, lv_color_black(), 0);
+    return p;
+}
+
+// The frontlight: on / off, then brightness and warmth. Its height.
+int32_t AddLight(int32_t y) {
+    bool on = false;
+    uint8_t level[2] = {};
+    const bool has = settings_hooks->light(&on, &level[0], &level[1]);
+    lv_obj_t *block = Panel(content, y, has ? 3 * kLightRow : kLightRow);
+    lv_obj_set_style_border_width(block, 2, 0);
+    lv_obj_t *name = Label(block, &lv_font_montserrat_28);
+    lv_label_set_text(name, "Frontlight");
+    lv_obj_set_pos(name, 12, (kLightRow - 34) / 2);
+    if (!has) {
+        lv_obj_t *none = Label(block, &lv_font_montserrat_20);
+        lv_label_set_text(none, "none on this board");
+        lv_obj_align(none, LV_ALIGN_TOP_RIGHT, -12, (kLightRow - 24) / 2);
+        return kLightRow;
+    }
+    light_switch = Switch(block, on);
+    lv_obj_align(light_switch, LV_ALIGN_TOP_RIGHT, -12, (kLightRow - 44) / 2);
+    lv_obj_add_event_cb(light_switch, OnLightSwitch, LV_EVENT_VALUE_CHANGED, nullptr);
+    static const char *const kNames[2] = {"Level", "Warmth"};
+    for (uint8_t i = 0; i < 2; ++i) {
+        const int32_t row = kLightRow * (1 + i);
+        lv_obj_t *l = Label(block, &lv_font_montserrat_20);
+        lv_label_set_text(l, kNames[i]);
+        lv_obj_set_pos(l, 12, row + (kLightRow - 24) / 2);
+        lv_obj_t *s = Slider(block, i == 0 ? 1 : 0, level[i]);
+        lv_obj_set_pos(s, 112, row + (kLightRow - 14) / 2);
+        void *which = reinterpret_cast<void *>(uintptr_t{i});
+        lv_obj_add_event_cb(s, OnLightSlider, LV_EVENT_VALUE_CHANGED, which);
+        lv_obj_add_event_cb(s, OnLightSlider, LV_EVENT_RELEASED, which);
+        light_value[i] = Label(block, &lv_font_montserrat_20);
+        lv_obj_set_style_text_align(light_value[i], LV_TEXT_ALIGN_RIGHT, 0);
+        lv_obj_set_width(light_value[i], 70);
+        lv_obj_set_pos(light_value[i], kRowWidth - 82, row + (kLightRow - 24) / 2);
+        ShowPercent(i, level[i]);
+    }
+    return 3 * kLightRow;
+}
+
+void OnSettingsRow(lv_event_t *event) {
+    if (LastWasTap()) {
+        settings_tapped = static_cast<int>(reinterpret_cast<uintptr_t>(lv_event_get_user_data(event)));
+    }
+}
+
+void OnAction(lv_event_t *) {
+    if (LastWasTap()) {
+        action_tapped = true;
+    }
+}
+
+// The frontlight, then a row per page: its name, its summary, ">".
+void ShowSettingsMain() {
+    TitleBar("Settings");
+    int32_t y = kTitleHeight + AddLight(kTitleHeight) + 12;
+    char summary[48];
+    char unused[2];
+    for (uint8_t i = 0; i < settings::kRowCount; ++i, y += kMenuRow) {
+        lv_obj_t *row = Panel(content, y, kMenuRow);
+        lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_set_style_border_width(row, 1, 0);
+        lv_obj_add_event_cb(row, OnSettingsRow, LV_EVENT_CLICKED,
+                            reinterpret_cast<void *>(static_cast<uintptr_t>(settings::kRows[i])));
+        lv_obj_t *name = Label(row, &lv_font_montserrat_28);
+        lv_label_set_text(name, settings::Title(settings::kRows[i]));
+        lv_obj_set_pos(name, 12, (kMenuRow - 34) / 2);
+        lv_obj_t *more = Label(row, &lv_font_montserrat_24);
+        lv_label_set_text(more, LV_SYMBOL_RIGHT);
+        lv_obj_align(more, LV_ALIGN_RIGHT_MID, -12, 0);
+        if (!settings::Line(settings_shown, i, summary, sizeof summary, unused, sizeof unused)) {
+            continue;
+        }
+        lv_obj_t *s = Label(row, &lv_font_montserrat_20);
+        lv_label_set_long_mode(s, LV_LABEL_LONG_MODE_DOTS);
+        lv_obj_set_style_text_align(s, LV_TEXT_ALIGN_RIGHT, 0);
+        lv_obj_set_size(s, 190, 26);
+        lv_label_set_text(s, summary);
+        lv_obj_align(s, LV_ALIGN_RIGHT_MID, -44, 0);
+    }
+}
+
+// A page: "label  value" lines, its button at the bottom.
+void ShowSettingsPage(settings::Page page) {
+    TitleBar(settings::Title(page));
+    const settings::Action action = settings::PageAction(page);
+    const int32_t bottom = kScreenBottom - kContentTop - (action != settings::Action::kNone ? 100 : 0);
+    char label[32];
+    char value[64];
+    int32_t y = kTitleHeight + 8;
+    for (uint8_t i = 0; y + kLineHeight <= bottom &&
+                        settings::Line(settings_shown, i, label, sizeof label, value, sizeof value);
+         ++i, y += kLineHeight) {
+        lv_obj_t *l = Label(content, &lv_font_montserrat_24);
+        lv_label_set_text(l, label);
+        lv_obj_set_pos(l, 12, y + (kLineHeight - 30) / 2);
+        lv_obj_t *v = Label(content, &lv_font_montserrat_24);
+        lv_label_set_long_mode(v, LV_LABEL_LONG_MODE_DOTS);
+        lv_obj_set_style_text_align(v, LV_TEXT_ALIGN_RIGHT, 0);
+        lv_obj_set_size(v, 270, 30);
+        lv_label_set_text(v, value);
+        lv_obj_set_pos(v, kRowWidth - 282, y + (kLineHeight - 30) / 2);
+    }
+    if (action != settings::Action::kNone) {
+        lv_obj_t *b = AskButton(content, kRowWidth - 48, settings::ActionText(action));
+        lv_obj_align(b, LV_ALIGN_BOTTOM_MID, 0, -16);
+        lv_obj_add_event_cb(b, OnAction, LV_EVENT_CLICKED, nullptr);
+    }
+}
+
+void ShowSettings() {
+    const auto page = static_cast<settings::Page>(nav_state.settings_page());
+    if (settings_hooks == nullptr) {
+        TitleBar("Settings");
+        Stub(nullptr, "Not on this device.", kTitleHeight + 24);
+        return;
+    }
+    SettingsText(page, settings_shown, sizeof settings_shown);
+    settings_looked_at = lv_tick_get();
+    if (page == settings::Page::kMain) {
+        ShowSettingsMain();
+    } else {
+        ShowSettingsPage(page);
     }
 }
 
@@ -911,22 +1189,17 @@ void Show() {
         remove_state.Clear();
         CloseAsk();
     }
+    light_switch = nullptr;  // deleted with the page
     lv_obj_clean(content);
     lv_obj_set_height(content, (nav_state.mode() == nav::Mode::kSettings ? kScreenBottom
                                                                            : kContentBottom) -
                                    kContentTop);
-    char text[160];
     switch (nav_state.mode()) {
         case nav::Mode::kList:
             ShowList();
             break;
         case nav::Mode::kSettings:
-            TitleBar("Settings");
-            snprintf(text, sizeof text,
-                     "Frontlight, Wi-Fi and Bluetooth come here.\n\nfirmware %s\nLVGL %s\n\n"
-                     "Back: the arrow, a swipe up or Home.",
-                     esp_app_get_description()->version, LvglVersion());
-            Stub(nullptr, text, kTitleHeight + 24);
+            ShowSettings();
             break;
         case nav::Mode::kFido:
             ShowFido();
@@ -1043,11 +1316,28 @@ void TypeTask(void *) {
     for (;;) {
         Job job = {};
         xQueueReceive(jobs, &job, portMAX_DELAY);
-        if (job.fido) {
+        if (job.kind == JobKind::kDeleteKey) {
             const char *said = DeleteJob(job);
             Lock();
             fido_seen.err = ESP_FAIL;  // the list read again at the next look
             fido_looked_at = lv_tick_get() - kFidoMs;
+            Toast(said);
+            Unlock();
+            continue;
+        }
+        if (job.kind == JobKind::kSaveLight) {
+            const esp_err_t err = settings_hooks->save_light();
+            if (err != ESP_OK) {
+                Lock();
+                Toast("the light level is not saved");
+                Unlock();
+            }
+            continue;
+        }
+        if (job.kind == JobKind::kAct) {
+            const char *said = settings_hooks->act(job.action);
+            Lock();
+            settings_looked_at = lv_tick_get() - kSettingsMs;  // shown again soon
             Toast(said);
             Unlock();
             continue;
@@ -1134,6 +1424,42 @@ void Poll(lv_timer_t *) {
         changed |= now.state != seen.state || now.count != seen.count ||
                    now.version != seen.version;
     }
+    if (settings_tapped >= 0) {
+        changed |= nav_state.OpenSettings(static_cast<uint8_t>(settings_tapped));
+        settings_tapped = -1;
+    }
+    if (action_tapped) {
+        action_tapped = false;
+        const Job job = {JobKind::kAct, 0, list::Zone::kTypeUser, {},
+                         settings::PageAction(static_cast<settings::Page>(nav_state.settings_page()))};
+        if (xQueueSend(jobs, &job, 0) != pdTRUE) {
+            Toast("busy typing");
+        }
+    }
+    if (light_save) {
+        light_save = false;
+        const Job job = {JobKind::kSaveLight, 0, list::Zone::kTypeUser, {}, settings::Action::kNone};
+        xQueueSend(jobs, &job, 0);  // full: the next slider let go saves it
+    }
+    // Settings' texts (Wi-Fi joined, the clock); the switch follows Power x2.
+    if (nav_state.mode() == nav::Mode::kSettings && settings_hooks != nullptr && HomeShown() &&
+        !FingerDown() && lv_tick_elaps(settings_looked_at) >= kSettingsMs) {
+        settings_looked_at = lv_tick_get();
+        SettingsText(static_cast<settings::Page>(nav_state.settings_page()), settings_now,
+                     sizeof settings_now);
+        changed |= strcmp(settings_now, settings_shown) != 0;
+        bool on = false;
+        uint8_t brightness = 0;
+        uint8_t warmth = 0;
+        if (light_switch != nullptr && settings_hooks->light(&on, &brightness, &warmth) &&
+            on != lv_obj_has_state(light_switch, LV_STATE_CHECKED)) {
+            if (on) {
+                lv_obj_add_state(light_switch, LV_STATE_CHECKED);
+            } else {
+                lv_obj_remove_state(light_switch, LV_STATE_CHECKED);
+            }
+        }
+    }
     // The store's lock is held while a request waits for the button.
     if (nav_state.mode() == nav::Mode::kFido && !fido_wait && HomeShown() &&
         lv_tick_elaps(fido_looked_at) >= kFidoMs) {
@@ -1204,6 +1530,8 @@ void ShowScreen(nav::Mode mode) {
 }
 
 void SetTypist(esp_err_t (*type)(const char *text)) { typist = type; }
+
+void SetSettingsHooks(const SettingsHooks *hooks) { settings_hooks = hooks; }
 
 void Navigate(nav::Input input) {
     if (inputs != nullptr) {

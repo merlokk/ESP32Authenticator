@@ -18,7 +18,7 @@ the console, the configuration site, the BLE keyboard and `totp` on the console.
 | Password manager | records: site (name), login, password, TOTP secret; typed into the host over the BLE keyboard |
 | Encrypted store | one `.bin` file: records + settings, AES-256-GCM, with a counter and a modification time |
 | Sync | over the internet; service not chosen yet (may be our own). The copy changed last wins (see below) |
-| Settings | frontlight, Wi-Fi; more later |
+| Settings | frontlight, Wi-Fi, Bluetooth, display & power, security, date & time, about |
 
 ## Screen
 
@@ -47,7 +47,12 @@ Portrait, 480x800. The panel scans landscape (hardware.md): `ui_logic.h` turns t
 - **Pages**: a tab per page at the bottom, 4 at most (the row scrolls);
   Left / Right flip them, Home: page 1.
 - **Settings**: a swipe down from the top quarter; its back arrow, a swipe
-  up or Home closes it.
+  up or Home closes it. As on a phone: the frontlight on top (a switch,
+  Level and Warmth sliders: lit at once, saved when let go), then a row per
+  page with its summary and ">": Wi-Fi, Bluetooth, Display & power, Security,
+  Date & time, About. A page lists "label  value" lines (looked at every
+  2 s) and may have one button: Power off, Lock now, Sync the time now; its
+  arrow goes back to Settings. Read-only for now: editing on the site.
 - **U2F / FIDO2 list**: a swipe up from the bottom quarter; the keys by site
   (A to Z), 6 a page: site, user, "made <date>, <alg>, resident / U2F";
   Left / Right or the bar under it (‹, "1 / 2", ›) flip the pages, the title says the count; its
@@ -58,7 +63,6 @@ Portrait, 480x800. The panel scans landscape (hardware.md): `ui_logic.h` turns t
 - **Lock screen**: PIN pad (touch), shown while the vault is locked (at boot,
   `pin lock`); done (`pin_pad.cpp`).
   See PIN below.
-- Settings (frontlight, Wi-Fi) is a stub for now.
 
 E-ink: 1-bit LVGL, redraw at most every 200 ms; partial updates for list and
 status changes, a full refresh now and then against ghosting (driver's choice).

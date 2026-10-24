@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "fido_list_logic.h"
+#include "settings_logic.h"
 #include "list_logic.h"
 #include "nav_logic.h"
 #include "pin_pad_logic.h"
@@ -456,6 +457,62 @@ void test_fido_remove(void) {
     TEST_ASSERT_EQUAL_UINT8(0, r.Fill(0xFFFFF000u));
 }
 
+void test_settings_pages(void) {
+    namespace st = ui::settings;
+    using ui::nav::Gesture;
+    using ui::nav::Mode;
+    ui::nav::Nav n;
+    TEST_ASSERT_FALSE(n.OpenSettings(2));  // not in Settings
+    n.Swipe(Gesture::kDownFromTop);
+    TEST_ASSERT_TRUE(n.OpenSettings(static_cast<uint8_t>(st::Page::kWifi)));
+    TEST_ASSERT_FALSE(n.OpenSettings(static_cast<uint8_t>(st::Page::kWifi)));
+    TEST_ASSERT_TRUE(n.Back());  // the page: back to Settings
+    TEST_ASSERT_TRUE(n.mode() == Mode::kSettings);
+    TEST_ASSERT_EQUAL_UINT8(0, n.settings_page());
+    TEST_ASSERT_TRUE(n.Back());
+    TEST_ASSERT_TRUE(n.mode() == Mode::kList);
+    n.Swipe(Gesture::kDownFromTop);
+    n.OpenSettings(3);
+    TEST_ASSERT_TRUE(n.Swipe(Gesture::kUp));  // closes it all
+    n.Swipe(Gesture::kDownFromTop);
+    TEST_ASSERT_EQUAL_UINT8(0, n.settings_page());  // opens at the main page
+    n.OpenSettings(3);
+    TEST_ASSERT_TRUE(n.Apply(ui::nav::Input::kHome));
+    TEST_ASSERT_EQUAL_UINT8(0, n.settings_page());
+    n.Open(Mode::kSettings);
+    n.OpenSettings(4);
+    TEST_ASSERT_TRUE(n.Open(Mode::kSettings));  // the console: the main page
+    TEST_ASSERT_EQUAL_UINT8(0, n.settings_page());
+
+    TEST_ASSERT_EQUAL_STRING("Wi-Fi", st::Title(st::kRows[0]));
+    TEST_ASSERT_EQUAL_UINT8(6, st::kRowCount);
+    TEST_ASSERT_TRUE(st::PageAction(st::Page::kSecurity) == st::Action::kLockNow);
+    TEST_ASSERT_TRUE(st::PageAction(st::Page::kWifi) == st::Action::kNone);
+    TEST_ASSERT_EQUAL_STRING("Lock now", st::ActionText(st::Action::kLockNow));
+
+    char label[8];
+    char value[8];
+    const char *text = "State\tonline\nIP\t192.168.1.20\nplain line\n";
+    TEST_ASSERT_TRUE(st::Line(text, 0, label, sizeof label, value, sizeof value));
+    TEST_ASSERT_EQUAL_STRING("State", label);
+    TEST_ASSERT_EQUAL_STRING("online", value);
+    TEST_ASSERT_TRUE(st::Line(text, 1, label, sizeof label, value, sizeof value));
+    TEST_ASSERT_EQUAL_STRING("IP", label);
+    TEST_ASSERT_EQUAL_STRING("192.168", value);  // cut
+    TEST_ASSERT_TRUE(st::Line(text, 2, label, sizeof label, value, sizeof value));
+    TEST_ASSERT_EQUAL_STRING("plain l", label);
+    TEST_ASSERT_EQUAL_STRING("", value);
+    TEST_ASSERT_FALSE(st::Line(text, 3, label, sizeof label, value, sizeof value));
+    TEST_ASSERT_FALSE(st::Line("", 0, label, sizeof label, value, sizeof value));
+    TEST_ASSERT_TRUE(st::Line("a\tb", 0, label, sizeof label, value, sizeof value));
+    TEST_ASSERT_EQUAL_STRING("b", value);
+
+    TEST_ASSERT_EQUAL_UINT8(1, st::Brightness(0));
+    TEST_ASSERT_EQUAL_UINT8(100, st::Brightness(130));
+    TEST_ASSERT_EQUAL_UINT8(0, st::Warmth(-5));
+    TEST_ASSERT_EQUAL_UINT8(55, st::Warmth(55));
+}
+
 void test_list_rows(void) {
     using ui::list::Zone;
     TEST_ASSERT_TRUE(ui::list::ZoneAt(0, 472) == Zone::kTypeUser);
@@ -516,6 +573,7 @@ void RegisterUiTests(void) {
     RUN_TEST(test_fido_list_rows);
     RUN_TEST(test_nav_classify);
     RUN_TEST(test_fido_remove);
+    RUN_TEST(test_settings_pages);
     RUN_TEST(test_list_rows);
     RUN_TEST(test_status_fido_prompt);
 }

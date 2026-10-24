@@ -8,6 +8,7 @@
 
 #include "esp_err.h"
 #include "nav_logic.h"
+#include "settings_logic.h"
 #include "status_logic.h"
 
 namespace ui {
@@ -43,6 +44,22 @@ void SetStatusSource(void (*source)(status::Status *out));
 // Types a record's user, password or TOTP code on the host (ble_kb::Type),
 // called from a task of the ui's own. ESP_ERR_INVALID_STATE: no host.
 void SetTypist(esp_err_t (*type)(const char *text));
+
+// What Settings shows and does (settings_logic.h), filled by the device.
+struct SettingsHooks {
+    // The frontlight's state and level; false: no frontlight. ui task.
+    bool (*light)(bool *on, uint8_t *brightness, uint8_t *warmth);
+    // Lit (or not) at this level now, not saved. ui task.
+    void (*set_light)(bool on, uint8_t brightness, uint8_t warmth);
+    // The level into config.json (a slider let go). The ui's own task.
+    esp_err_t (*save_light)();
+    // A page's "label\tvalue\n" lines, or (summary) the short text on its row
+    // in the main page. ui task, every 2 s while shown: keep it quick.
+    void (*describe)(settings::Page page, bool summary, char *out, size_t size);
+    // A page's button (settings::PageAction); what to say. The ui's own task.
+    const char *(*act)(settings::Action action);
+};
+void SetSettingsHooks(const SettingsHooks *hooks);
 // Left / Right / Home (nav_logic.h), from any task: queued for the ui task;
 // nothing while the PIN pad is up.
 void Navigate(nav::Input input);

@@ -15,8 +15,8 @@ Target and status. Screen design and the open questions: [x4-design.md](x4-desig
 | Store file header (version, modification time) and rollback check (highest version in NVS) | done (`storefile`) |
 | Encrypted stores: `vault.bin` and `fido.bin`, AES-256-GCM with a key from the PIN (the same on every device with the PIN and the files), loaded whole into PSRAM | done |
 | Sync over the internet, the later modification time wins | not yet; service not chosen |
-| X4 Pro screen: status bar, credential list, pages, settings | status bar, the password list (pages, typing, TOTP), swipes, PIN pad, the U2F / FIDO2 list done; Settings is a stub |
-| Settings: frontlight, Wi-Fi | Wi-Fi on the console and the site; frontlight not yet |
+| X4 Pro screen: status bar, credential list, pages, settings | status bar, the password list (pages, typing, TOTP), swipes, PIN pad, the U2F / FIDO2 list, Settings (frontlight; the other pages read-only) done |
+| Settings: frontlight, Wi-Fi | frontlight on the screen; Wi-Fi on the console and the site (the screen shows it) |
 | Time: SNTP, zones, clock | done |
 | Battery: voltage, level, charging | done (CW2017 + charger STAT, console `battery`, BLE Battery Level); screen not yet |
 | Wi-Fi, configuration site, console | done |
@@ -297,7 +297,8 @@ at most 4: the row scrolls with the page, arrows where pages are hidden.
 Left / Right pressed flip the pages (round), Home: page 1 (`ui::Navigate`,
 queued from the keypad task; nothing under the PIN pad or while FIDO2
 waits). The touch reports the finger's moves too: a swipe down from the top
-quarter opens Settings (a stub), up from the bottom quarter the U2F / FIDO2
+quarter opens Settings (the frontlight, then pages; `settings_logic.h`, the
+texts and actions from `main.cpp` through `ui::SettingsHooks`), up from the bottom quarter the U2F / FIDO2
 keys (`fido_ctap_list`, by site A to Z, 6 a page: site, user, made / alg /
 kind; its pages flipped by Left / Right or the bar under it (‹, "1 / 2", ›, in the tabs' place); the count in its title; looked at
 each 2 s, not while a request waits; a swipe left on a key: its trash can,
