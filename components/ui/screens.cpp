@@ -329,13 +329,15 @@ void OnRow(lv_event_t *event) {
     lv_area_t a = {};
     lv_obj_get_coords(static_cast<lv_obj_t *>(lv_event_get_target(event)), &a);
     const list::Zone zone = list::ZoneAt(p.x - a.x1, lv_area_get_width(&a));
-    if (zone == list::Zone::kShowPassword) {
-        if (r.shown) {
+    switch (list::OnTap(r.shown, zone)) {
+        case list::Tap::kHide:
             HidePassword(r);
-        } else {
+            return;
+        case list::Tap::kShow:
             ShowPassword(r);
-        }
-        return;
+            return;
+        case list::Tap::kType:
+            break;
     }
     if (zone == list::Zone::kTypeTotp && !r.has_otp) {
         Toast("no TOTP for this record");

@@ -43,7 +43,8 @@ Portrait, 480x800. The panel scans landscape (hardware.md): `ui_logic.h` turns t
   down per record, "Sort A to Z") or the console (`pass move`, `pass sort`);
   a new one goes last. The password hidden, the TOTP code shown (new every
   30 s). A row's quarters: type the user, type the password, show the
-  password (20 s), type the TOTP code.
+  password (20 s), type the TOTP code. While the password is shown, a tap
+  anywhere in the row only hides it (nothing typed).
 - **Pages**: a tab per page at the bottom, 4 at most (the row scrolls);
   Left / Right flip them, Home: page 1.
 - **Settings**: a swipe down from the top quarter; its back arrow, a swipe

@@ -851,6 +851,15 @@ void test_list_rows(void) {
     TEST_ASSERT_TRUE(ui::list::ZoneAt(400, 472) == Zone::kTypeTotp);
     TEST_ASSERT_TRUE(ui::list::ZoneAt(500, 472) == Zone::kTypeTotp);
     TEST_ASSERT_TRUE(ui::list::ZoneAt(-3, 472) == Zone::kTypeUser);
+    using ui::list::Tap;
+    TEST_ASSERT_TRUE(ui::list::OnTap(false, Zone::kTypeUser) == Tap::kType);
+    TEST_ASSERT_TRUE(ui::list::OnTap(false, Zone::kTypeTotp) == Tap::kType);
+    TEST_ASSERT_TRUE(ui::list::OnTap(false, Zone::kShowPassword) == Tap::kShow);
+    // Shown: anywhere hides it, nothing typed.
+    TEST_ASSERT_TRUE(ui::list::OnTap(true, Zone::kTypeUser) == Tap::kHide);
+    TEST_ASSERT_TRUE(ui::list::OnTap(true, Zone::kTypePassword) == Tap::kHide);
+    TEST_ASSERT_TRUE(ui::list::OnTap(true, Zone::kShowPassword) == Tap::kHide);
+    TEST_ASSERT_TRUE(ui::list::OnTap(true, Zone::kTypeTotp) == Tap::kHide);
 
     ui::list::Span s = ui::list::PageSpan(14, 0);
     TEST_ASSERT_EQUAL_size_t(0, s.first);

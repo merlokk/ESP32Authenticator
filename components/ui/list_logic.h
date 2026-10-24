@@ -32,6 +32,18 @@ constexpr Zone ZoneAt(int32_t x, int32_t width) {
     return static_cast<Zone>(q > 3 ? 3 : q);
 }
 
+// A tap on a row: while its password is shown, anywhere in it only hides it
+// (nothing is typed); else what the quarter does.
+enum class Tap : uint8_t {
+    kHide,  // the password off the glass
+    kShow,  // the password on it
+    kType,  // the quarter's user / password / TOTP code typed
+};
+
+constexpr Tap OnTap(bool shown, Zone zone) {
+    return shown ? Tap::kHide : zone == Zone::kShowPassword ? Tap::kShow : Tap::kType;
+}
+
 // The records on `page`: list positions first .. first + count - 1.
 struct Span {
     size_t first;

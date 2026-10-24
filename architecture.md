@@ -290,7 +290,8 @@ the vault's records in the user's order, 6 a page; a row shows the site
 (Montserrat 28), the TOTP code (32, redrawn each 30 s window), the user and
 the password as `********` (24); one line over the rows says what a tap in
 each quarter does; a tap in a quarter types the user, types the password, shows
-the password (20 s, or a tap again; wiped in LVGL's heap after) or types
+the password (20 s, or a tap anywhere in the row, which then types nothing:
+`list::OnTap`; wiped in LVGL's heap after) or types
 the TOTP code (`ui::SetTypist` = `ble_kb::Type`, in the `ui_type` task; a
 note says what happened). A tab per page at the bottom (none for one page),
 at most 4: the row scrolls with the page, arrows where pages are hidden.
