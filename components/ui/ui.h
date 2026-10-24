@@ -158,9 +158,9 @@ void SetWebHooks(const WebHooks *hooks);
 // while the core waits for the button, a window says what it is (the site,
 // the account) and which button does what (Left or Home allow, Right refuses).
 void SetFidoRequest(const fido_prompt::Request &request);
-// Console `ui demo prompt`: the window for a made-up sign-in, shown (or not)
-// with no request; the buttons do nothing to it.
-void ShowFidoPromptDemo(bool on);
+// Console `ui demo prompt [n]`: the window for a made-up sign-in (n accounts
+// for the site), shown (or not) with no request; the buttons do nothing to it.
+void ShowFidoPromptDemo(bool on, uint8_t accounts = 1);
 
 // The touch's calibration (touch_cal_logic.h), applied to every real touch;
 // saved by `save` (the ui's own task) when Settings > Touchscreen keeps a new one.

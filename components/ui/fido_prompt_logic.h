@@ -15,6 +15,7 @@ namespace ui::fido_prompt {
 inline constexpr size_t kTextSize = 65;  // a stored string (64 bytes) + NUL
 inline constexpr size_t kIdSize = 32;    // the store's credential ID
 inline constexpr size_t kIds = 8;        // allowList IDs kept
+inline constexpr size_t kNames = 4;      // accounts named when there are several
 
 enum class Kind : uint8_t {
     kOther,        // a request (unknown or unread)
@@ -37,6 +38,8 @@ struct Request {
     uint8_t ids;    // the allowList's (or U2F key handle's) IDs of the store's size in `id`
     uint8_t id[kIds][kIdSize];
     uint8_t accounts;  // sign-in: the store's keys for the site (the device fills it)
+    uint8_t names;     // the first named of them (AddAccount)
+    char name[kNames][kTextSize];
 };
 
 // --- a small CBOR reader: definite lengths, depth-limited; a fault stops it.
@@ -427,6 +430,100 @@ constexpr bool Matches(const Request &r, const char *rp_id, const uint8_t *id) {
     for (; rp_id[i] != '\0' && rp_id[i] == r.site[i]; ++i) {
     }
     return rp_id[i] == r.site[i];
+}
+
+constexpr void Copy(char *out, size_t size, const char *s) {
+    size_t n = 0;
+    for (; n + 1 < size && s[n] != '\0'; ++n) {
+        out[n] = s[n];
+    }
+    out[n] = '\0';
+}
+
+// `s` after `out`'s text (cut at its size).
+constexpr void Append(char *out, size_t size, const char *s) {
+    size_t n = 0;
+    for (; out[n] != '\0'; ++n) {
+    }
+    Copy(out + n, size - n, s);
+}
+
+// `v` in decimal after `out`'s text (cut at its size).
+constexpr void AppendNumber(char *out, size_t size, unsigned v) {
+    char digits[12] = {};
+    size_t d = 0;
+    do {
+        digits[d++] = static_cast<char>('0' + v % 10);
+        v /= 10;
+    } while (v > 0);
+    size_t n = 0;
+    for (; out[n] != '\0'; ++n) {
+    }
+    while (d > 0 && n + 1 < size) {
+        out[n++] = digits[--d];
+    }
+    out[n] = '\0';
+}
+
+// A stored key the sign-in may use (Matches): the one there is names the
+// account (user, display); of several, the first kNames named are listed.
+constexpr void AddAccount(Request *r, const char *user, const char *display) {
+    if (r->accounts < 255) {
+        ++r->accounts;
+    }
+    if (r->accounts == 1) {
+        Copy(r->user, kTextSize, user);
+        Copy(r->display, kTextSize, display);
+    } else {
+        r->user[0] = '\0';  // which one: the host asks, or the first
+        r->display[0] = '\0';
+    }
+    const char *name = user[0] != '\0' ? user : display;
+    if (name[0] != '\0' && r->names < kNames) {
+        Copy(r->name[r->names++], kTextSize, name);
+    }
+}
+
+// The account lines under the site: user and display (either), or the
+// listed names ("+N more" for the rest), or "one of N accounts". Their
+// count; 0: none.
+constexpr int AccountText(const Request &r, char *out, size_t size) {
+    size_t n = 0;
+    int lines = 0;
+    auto put = [&](const char *s) {
+        if (lines > 0 && n + 1 < size) {
+            out[n++] = '\n';
+        }
+        for (size_t i = 0; s[i] != '\0' && n + 1 < size; ++i) {
+            out[n++] = s[i];
+        }
+        ++lines;
+    };
+    if (r.user[0] != '\0' || r.display[0] != '\0') {
+        if (r.user[0] != '\0') {
+            put(r.user);
+        }
+        if (r.display[0] != '\0') {
+            put(r.display);
+        }
+    } else if (r.accounts > 1 && r.names > 0) {
+        for (size_t i = 0; i < r.names; ++i) {
+            put(r.name[i]);
+        }
+        if (r.accounts > r.names) {
+            char more[16] = "+";
+            AppendNumber(more, sizeof more, static_cast<unsigned>(r.accounts - r.names));
+            Append(more, sizeof more, " more");
+            put(more);
+        }
+    } else if (r.accounts > 1) {
+        char text[24] = "one of ";
+        AppendNumber(text, sizeof text, r.accounts);
+        Append(text, sizeof text, " accounts");
+        put(text);
+    }
+    out[n] = '\0';
+    return lines;
 }
 
 constexpr const char *Title(Kind k) {

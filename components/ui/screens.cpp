@@ -275,23 +275,16 @@ void ShowPrompt() {
                hints, 170, kButtonsHeight);
     PromptHint(prompt, "Reject " LV_SYMBOL_RIGHT, LV_ALIGN_TOP_RIGHT, hints, 170, kButtonsHeight);
 
-    char text[2 * fido_prompt::kTextSize + 128];
+    char text[fido_prompt::kNames * fido_prompt::kTextSize + 128];
     int32_t y = hints + kButtonsHeight + 24;
     if (r.site[0] != '\0') {
         PromptLabel(prompt, &lv_font_montserrat_32, r.site, y);
         y += 90;
     }
-    text[0] = '\0';
-    if (r.user[0] != '\0' && r.display[0] != '\0') {
-        snprintf(text, sizeof text, "%.64s\n%.64s", r.user, r.display);
-    } else if (r.user[0] != '\0' || r.display[0] != '\0') {
-        snprintf(text, sizeof text, "%.64s", r.user[0] != '\0' ? r.user : r.display);
-    } else if (r.accounts > 1) {
-        snprintf(text, sizeof text, "one of %u accounts", static_cast<unsigned>(r.accounts));
-    }
-    if (text[0] != '\0') {
+    const int lines = fido_prompt::AccountText(r, text, sizeof text);
+    if (lines > 0) {
         PromptLabel(prompt, &lv_font_montserrat_24, text, y);
-        y += 80;
+        y += 30 * (lines < 2 ? 2 : lines) + 20;  // as two lines were before
     }
     const char *note = nullptr;
     switch (r.kind) {
@@ -4064,15 +4057,20 @@ void SetFidoRequest(const fido_prompt::Request &request) {
     Unlock();
 }
 
-void ShowFidoPromptDemo(bool on) {
+void ShowFidoPromptDemo(bool on, uint8_t accounts) {
     Lock();
     if (on) {
         fido_request = {};
         fido_request.kind = fido_prompt::Kind::kSignIn;
         snprintf(fido_request.site, sizeof fido_request.site, "github.com");
-        snprintf(fido_request.user, sizeof fido_request.user, "octocat");
-        snprintf(fido_request.display, sizeof fido_request.display, "The Octocat");
-        fido_request.accounts = 1;
+        if (accounts <= 1) {
+            fido_prompt::AddAccount(&fido_request, "octocat", "The Octocat");
+        }
+        for (unsigned i = 1; accounts > 1 && i <= accounts; ++i) {
+            char user[16];
+            snprintf(user, sizeof user, "octocat%u", i);
+            fido_prompt::AddAccount(&fido_request, user, "");
+        }
         fido_request.verify = true;
     }
     prompt_demo = on;

@@ -41,7 +41,7 @@ Portrait, 480x800. The panel scans landscape (hardware.md): `ui_logic.h` turns t
   battery; later the sync storage. While FIDO2 waits: Left or Home yes, Right no; a window
   over everything says what is asked (create a key / sign in / U2F / reset /
   selection), the site, the account (a sign-in: the store's key in the allowList,
-  else for the site, or how many), whether the PIN was given, with "< Allow" and "Reject >" by
+  else for the site; of several the first 4 names and "+N more"), whether the PIN was given, with "< Allow" and "Reject >" by
   the buttons (the edges, at the password list's second row) and "Home:
   allow" at the bottom (`fido_prompt_logic.h` reads the request).
 - **List**: the records in the user's order, set on the web site (up /

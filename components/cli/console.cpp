@@ -170,9 +170,16 @@ int CmdUi(int argc, char **argv) {
         heap_caps_free(shot);
         return 0;
     }
-    if (argc == 3 && strcmp(argv[1], "demo") == 0 && strcmp(argv[2], "prompt") == 0) {
-        ui::ShowFidoPromptDemo(true);
-        printf("the FIDO2 prompt for a made-up sign-in, on the screen only ('ui demo off')\n");
+    if (argc >= 3 && strcmp(argv[1], "demo") == 0 && strcmp(argv[2], "prompt") == 0) {
+        const int n = argc == 4 ? atoi(argv[3]) : 1;
+        if (n < 1 || n > 30) {
+            printf("usage: ui demo prompt [1..30]\n");
+            return 1;
+        }
+        ui::ShowFidoPromptDemo(true, static_cast<uint8_t>(n));
+        printf("the FIDO2 prompt for a made-up sign-in (%d account(s)), on the screen only "
+               "('ui demo off')\n",
+               n);
         return 0;
     }
     if (argc == 3 && strcmp(argv[1], "demo") == 0 && strcmp(argv[2], "off") == 0) {
@@ -504,7 +511,7 @@ const esp_console_cmd_t kCommands[] = {
         .command = "ui",
         .help = "LVGL display: [info] size, refreshes, the last one, the ui task's free stack | "
                 "wallpaper [grey|bw]: draw a random power-off wallpaper now, as display.wallpaper in "
-                "config.json or as given (stays on) | demo prompt: the FIDO2 prompt, made up | demo fido [n] / demo off: n (10) made-up keys in the "
+                "config.json or as given (stays on) | demo prompt [n]: the FIDO2 prompt, made up (n accounts) | demo fido [n] / demo off: n (10) made-up keys in the "
                 "U2F / FIDO2 list, on the screen only | show list|settings|fido: that screen | "
                 "click <x> <y> [hold ms] / swipe <x0> <y0> <x1> <y1>: a made-up finger (portrait "
                 "px) | "
@@ -512,7 +519,7 @@ const esp_console_cmd_t kCommands[] = {
                 "screenshot: the screen as base64 (utils/screenshot.py makes a PNG)",
         .hint = "[wallpaper [grey|bw] | show <screen> | key <key> | click <x> <y> [ms] | "
                 "swipe <x0> <y0> <x1> <y1> | "
-                "demo fido [n] | demo prompt | demo off | screenshot]",
+                "demo fido [n] | demo prompt [n] | demo off | screenshot]",
         .func = &CmdUi,
         .argtable = nullptr,
         .func_w_context = nullptr,

@@ -94,10 +94,10 @@ std::atomic<bool> fido_waiting{false};
 // What a request asks, for the prompt on the screen (ui::SetFidoRequest),
 // before the core takes it: a sign-in also counts the store's keys it may use
 // (those in the allowList, else the site's; the core is idle now, its lock
-// free) and names the one there is.
+// free) and names the one there is, or the first few.
 void PromptFor(const uint8_t *msg, size_t len) {
     namespace fp = ui::fido_prompt;
-    static fp::Request request;  // ~530 bytes: off the transport task's stack
+    static fp::Request request;  // ~800 bytes: off the transport task's stack
     request = fp::Parse(msg, len);
     if (request.kind == fp::Kind::kSignIn || request.kind == fp::Kind::kU2fSignIn) {
         static fido_ctap_credential_t *keys = nullptr;  // PSRAM, the store's size
@@ -112,17 +112,9 @@ void PromptFor(const uint8_t *msg, size_t len) {
         size_t count = 0;
         if (keys != nullptr && fido_ctap_list(keys, capacity, &count) == ESP_OK) {
             for (size_t i = 0; i < count; ++i) {
-                if (!fp::Matches(request, keys[i].rp_id, keys[i].id)) {
-                    continue;
+                if (fp::Matches(request, keys[i].rp_id, keys[i].id)) {
+                    fp::AddAccount(&request, keys[i].user_name, keys[i].display_name);
                 }
-                if (request.accounts++ == 0) {
-                    snprintf(request.user, sizeof request.user, "%s", keys[i].user_name);
-                    snprintf(request.display, sizeof request.display, "%s", keys[i].display_name);
-                }
-            }
-            if (request.accounts > 1) {
-                request.user[0] = '\0';  // which one: the host asks, or the first
-                request.display[0] = '\0';
             }
         }
     }

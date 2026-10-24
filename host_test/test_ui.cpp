@@ -964,6 +964,37 @@ void test_fido_prompt(void) {
     r.allow = fp::kIds + 1;  // a list not read whole: the site's keys
     TEST_ASSERT_TRUE(fp::Matches(r, "webauthn.io", id));
 
+    // The accounts: one named in full, several listed, "+N more", unnamed counted.
+    char text[fp::kNames * fp::kTextSize + 32];
+    fp::Request s = {};
+    TEST_ASSERT_EQUAL_INT(0, fp::AccountText(s, text, sizeof text));
+    TEST_ASSERT_EQUAL_STRING("", text);
+    fp::AddAccount(&s, "alice", "Alice A");
+    TEST_ASSERT_EQUAL_INT(2, fp::AccountText(s, text, sizeof text));
+    TEST_ASSERT_EQUAL_STRING("alice\nAlice A", text);
+    fp::AddAccount(&s, "", "Bob B");
+    TEST_ASSERT_EQUAL_INT(2, fp::AccountText(s, text, sizeof text));
+    TEST_ASSERT_EQUAL_STRING("alice\nBob B", text);
+    fp::AddAccount(&s, "", "");  // unnamed: counted only
+    fp::AddAccount(&s, "carol", "");
+    fp::AddAccount(&s, "dave", "");
+    fp::AddAccount(&s, "erin", "");
+    TEST_ASSERT_EQUAL_UINT8(6, s.accounts);
+    TEST_ASSERT_EQUAL_INT(5, fp::AccountText(s, text, sizeof text));
+    TEST_ASSERT_EQUAL_STRING("alice\nBob B\ncarol\ndave\n+2 more", text);
+    TEST_ASSERT_EQUAL_INT(5, fp::AccountText(s, text, 12));  // cut at the size
+    TEST_ASSERT_EQUAL_STRING("alice\nBob B", text);
+    fp::Request none = {};
+    fp::AddAccount(&none, "", "");
+    fp::AddAccount(&none, "", "");
+    TEST_ASSERT_EQUAL_INT(1, fp::AccountText(none, text, sizeof text));
+    TEST_ASSERT_EQUAL_STRING("one of 2 accounts", text);
+    for (int i = 0; i < 10; ++i) {
+        fp::AddAccount(&s, "x", "");
+    }
+    fp::AccountText(s, text, sizeof text);
+    TEST_ASSERT_EQUAL_STRING("alice\nBob B\ncarol\ndave\n+12 more", text);
+
     // U2F_AUTHENTICATE, a short APDU: the application's first bytes.
     std::vector<uint8_t> u = {0x00, 0x02, 0x03, 0x00, 65 + 4};
     u.insert(u.end(), 32, 0x00);  // challenge
