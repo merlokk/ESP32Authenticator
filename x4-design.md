@@ -27,10 +27,10 @@ Portrait, 480x800. The panel scans landscape (hardware.md): `ui_logic.h` turns t
 ```
 +------------------------------+
 | WiFi BT SD        12:34 bat  |  status bar (FIDO2: <- yes -> no)
+|  user | pass | show | TOTP   |  what a tap in each quarter does
 +------------------------------+
-| github.com           123 456 |
-| user@mail          ********  |  a record: tap a quarter to type the
-|  user | passw. | show | TOTP |  user / password, show it, type TOTP
+| github.com           123 456 |  a record: tap a quarter to type the
+| user@mail          ********  |  user / password, show it, type TOTP
 | ...  (6 records a page)      |
 +------------------------------+
 | [1]   2    3    4 >          |  a tab per page, 4 shown
@@ -39,8 +39,9 @@ Portrait, 480x800. The panel scans landscape (hardware.md): `ui_logic.h` turns t
 
 - **Status bar**: Wi-Fi, Bluetooth (host connected), SD card, time,
   battery; later the sync storage. While FIDO2 waits: Left yes, Right no.
-- **List**: the records in the vault's order (site, then user; to choose
-  from the web later). The password hidden, the TOTP code shown (new every
+- **List**: the records in the user's order, set on the web site (up /
+  down per record, "Sort A to Z") or the console (`pass move`, `pass sort`);
+  a new one goes last. The password hidden, the TOTP code shown (new every
   30 s). A row's quarters: type the user, type the password, show the
   password (20 s), type the TOTP code.
 - **Pages**: a tab per page at the bottom, 4 at most (the row scrolls);

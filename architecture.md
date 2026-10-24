@@ -289,9 +289,10 @@ the battery (icon by 25 %, charging mark, percent; moves by 2 % or more);
 while FIDO2 waits, "FIDO2 <- yes -> no" instead of the left half. `main.cpp`
 fills it (`ui::SetStatusSource`, every 0.5 s; the gauge every 30 s); a label
 is set only when its text changed (each change is a fast refresh). The list:
-the vault's records in its order (site, user), 6 a page; a row shows the
-site, the TOTP code (redrawn each 30 s window), the user and the password
-as `********`; a tap in a quarter types the user, types the password, shows
+the vault's records in the user's order, 6 a page; a row shows the site
+(Montserrat 28), the TOTP code (32, redrawn each 30 s window), the user and
+the password as `********` (24); one line over the rows says what a tap in
+each quarter does; a tap in a quarter types the user, types the password, shows
 the password (20 s, or a tap again; wiped in LVGL's heap after) or types
 the TOTP code (`ui::SetTypist` = `ble_kb::Type`, in the `ui_type` task; a
 note says what happened). A tab per page at the bottom (none for one page),
@@ -432,6 +433,7 @@ and never starts without lwIP (an assert).
 | `GET /api/vault` | store state, PIN tries / lock, records: id, site, user, whether a password / TOTP secret is set, modified. Never a password or secret |
 | `GET /api/vault/totp?id=N` | the record's code for the current window and the seconds left |
 | `POST /api/vault/add\|set\|delete` | `{site, user, password, otp}` / `{id, any of them}` (absent keeps, `otp: ""` removes; all checked before any is written) / `{id}`. `otp`: Base32, or `base64:<Base64>` (kept as Base32) |
+| `POST /api/vault/move\|sort` | `{id, position}` (0-based list place; past the end: last) / `{}` (by site, then user): the device's list order; the page shows it with up / down per record and "Sort A to Z" |
 | `POST /api/vault/unlock\|lock` | `{pin}` (the wipe PIN answers as a wrong one) / `{}` |
 | `GET /api/fido`, `POST /api/fido/delete` | store info and credentials (site, user, resident, U2F, made when / by; the page marks U2F ones with a badge) / `{credential: 64 hex}` |
 
@@ -551,8 +553,11 @@ SPIFFS).
   password (0-128), TOTP secret (Base32, normalized, up to 64 characters;
   `base64:<Base64>` is taken and kept as Base32);
   UTF-8 without control characters. A site may have several users; (site,
-  user) is unique without ASCII case. Sorted by site, then user; each record
-  has a stable ID (never reused) and its own modification time.
+  user) is unique without ASCII case. In the user's order (the screen's
+  and the site's): a new record goes last, `Move` puts one elsewhere,
+  `SortByName` sorts by site, then user; serialized in that order (format
+  2; format 1 files, kept sorted by name, are read sorted). Each record has
+  a stable ID (never reused) and its own modification time.
 - File: store header (kind 2, AES-256-GCM, random nonce per write; the header
   is the associated data) + the serialized records + tag. Loaded whole and
   decrypted into PSRAM at unlock, rewritten whole on every change (version,

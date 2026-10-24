@@ -234,7 +234,7 @@ Opening the port with RTS asserted resets the chip.
 | `totp test` | RFC 6238 SHA-1 vectors through `crypto::Totp` |
 | `pass [info]` | password store: state (why it is off), records of max, file, version and change time |
 | `pass list [filter]` | #, site / user, password set, TOTP; filter: part of site or user. Passwords are never shown |
-| `pass add <site> [user] [password] [otp]` | a record; quote values with spaces. Prints its # (sorted by site, user) |
+| `pass add <site> [user] [password] [otp]` | a record; quote values with spaces. Prints its # (a new record goes last) |
 | `pass set <#> <site\|user\|password\|otp> [value]` | change a field, no value: clear. Prints the record's new # |
 | `pass delete <#>` / `pass code <#>` | delete a record / its TOTP codes now |
 | `pass move <#> <to #>` / `pass sort` | the list order (the screen's): one record to a place / all by site, then user |
