@@ -67,6 +67,20 @@ void test_ui_refresh_plan(void) {
     }
     TEST_ASSERT_TRUE(plan.NextIsFull());
     TEST_ASSERT_FALSE(plan.NextIsFull());
+    // A new screen is a full refresh, and the count starts over from it.
+    TEST_ASSERT_FALSE(plan.NextIsFull(ui::RefreshPlan::kBigChange - 1));
+    TEST_ASSERT_TRUE(plan.NextIsFull(ui::RefreshPlan::kBigChange));
+    for (int i = 1; i < ui::RefreshPlan::kFullEvery; ++i) {
+        TEST_ASSERT_FALSE(plan.NextIsFull(10));
+    }
+    TEST_ASSERT_TRUE(plan.NextIsFull(10));
+}
+
+void test_ui_changed_pixels(void) {
+    const uint8_t a[3] = {0xFF, 0x00, 0xA5};
+    const uint8_t b[3] = {0xFF, 0x81, 0x5A};
+    TEST_ASSERT_EQUAL_UINT32(10, ui::ChangedPixels(a, b, 3));
+    TEST_ASSERT_EQUAL_UINT32(0, ui::ChangedPixels(a, a, 3));
 }
 
 void test_ui_touch_to_screen(void) {
@@ -167,6 +181,7 @@ void RegisterUiTests(void) {
     RUN_TEST(test_ui_corners);
     RUN_TEST(test_ui_to_panel_every_pixel_once);
     RUN_TEST(test_ui_refresh_plan);
+    RUN_TEST(test_ui_changed_pixels);
     RUN_TEST(test_ui_touch_to_screen);
     RUN_TEST(test_pin_pad_keys);
     RUN_TEST(test_pin_pad_enter);

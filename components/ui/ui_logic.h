@@ -72,15 +72,31 @@ constexpr ScreenPoint TouchToScreen(uint16_t tx, uint16_t ty) {
             kTouchFlipY ? static_cast<uint16_t>(kHeight - 1 - y) : y};
 }
 
+// Pixels that differ between two frames of `bytes` bytes.
+constexpr uint32_t ChangedPixels(const uint8_t *a, const uint8_t *b, size_t bytes) {
+    uint32_t n = 0;
+    for (size_t i = 0; i < bytes; ++i) {
+        for (uint8_t d = static_cast<uint8_t>(a[i] ^ b[i]); d != 0; d &= static_cast<uint8_t>(d - 1)) {
+            ++n;
+        }
+    }
+    return n;
+}
+
 // Fast refreshes leave ghosts: every kFullEvery-th refresh is a full one
-// (and the first, though the driver forces that itself).
+// (and the first, though the driver forces that itself). A fast refresh only
+// nudges the pixels: a new screen in one (the PIN pad over the boot screen)
+// came out faint and darkened tap by tap (29524 px changed; a tap changes a
+// dot, ~600 px, and a line), so a frame that changes kBigChange
+// pixels or more is a full one too, and the count starts over.
 class RefreshPlan {
    public:
     static constexpr uint16_t kFullEvery = 20;
+    static constexpr uint32_t kBigChange = epd::kWidth * epd::kHeight / 32;  // 12000
 
-    bool NextIsFull() {
-        const bool full = count_ == 0;
-        count_ = static_cast<uint16_t>((count_ + 1) % kFullEvery);
+    bool NextIsFull(uint32_t changed = 0) {
+        const bool full = count_ == 0 || changed >= kBigChange;
+        count_ = static_cast<uint16_t>(((full ? 0 : count_) + 1) % kFullEvery);
         return full;
     }
 

@@ -52,6 +52,8 @@ uint8_t *frame = nullptr;    // the one on the glass, or going there (PSRAM)
 RefreshPlan plan;
 uint32_t refreshes = 0;
 uint32_t skipped = 0;  // flushes that changed no pixel
+uint32_t last_changed = 0;  // pixels the last refresh changed
+bool last_full = false;
 uint32_t last_rotate_us = 0;
 esp_err_t last_err = ESP_OK;
 
@@ -102,15 +104,20 @@ void PushTask(void *) {
         xSemaphoreTake(panel_mutex, portMAX_DELAY);
         xSemaphoreTake(pending_mutex, portMAX_DELAY);
         bool draw = have_pending && !held;
+        uint32_t changed = 0;
         if (draw) {
-            draw = !frame_on_glass || memcmp(pending, frame, epd::kFrameBytes) != 0;
+            changed = frame_on_glass ? ChangedPixels(pending, frame, epd::kFrameBytes)
+                                     : epd::kWidth * epd::kHeight;
+            draw = changed != 0;
             skipped += draw ? 0 : 1;
             memcpy(frame, pending, epd::kFrameBytes);
             have_pending = false;
         }
         xSemaphoreGive(pending_mutex);
         if (draw) {
-            last_err = epd::Refresh(frame, plan.NextIsFull() ? epd::Mode::kFull : epd::Mode::kFast);
+            last_full = plan.NextIsFull(changed);
+            last_changed = changed;
+            last_err = epd::Refresh(frame, last_full ? epd::Mode::kFull : epd::Mode::kFast);
             frame_on_glass = last_err == ESP_OK;
             ++refreshes;
             if (last_err != ESP_OK) {
@@ -311,9 +318,11 @@ void PrintInfo() {
         printf("ui: no display\n");
         return;
     }
-    printf("ui: %ux%u portrait, %" PRIu32 " refreshes (full every %u), %" PRIu32
-           " unchanged dropped, last %s, turn %" PRIu32 " us, stack free %u B (push %u B)%s\n",
-           kWidth, kHeight, refreshes, RefreshPlan::kFullEvery, skipped, esp_err_to_name(last_err),
+    printf("ui: %ux%u portrait, %" PRIu32 " refreshes (full every %u or from %" PRIu32
+           " px changed), %" PRIu32 " unchanged dropped, last %s %s, %" PRIu32
+           " px, turn %" PRIu32 " us, stack free %u B (push %u B)%s\n",
+           kWidth, kHeight, refreshes, RefreshPlan::kFullEvery, RefreshPlan::kBigChange, skipped,
+           last_full ? "full" : "fast", esp_err_to_name(last_err), last_changed,
            last_rotate_us, static_cast<unsigned>(uxTaskGetStackHighWaterMark(task)),
            static_cast<unsigned>(uxTaskGetStackHighWaterMark(push_task)),
            held ? ", panel held" : "");
