@@ -93,8 +93,13 @@ void IdleTask(void *) {
 
 void Boot() {
     const Holds holds = SleepHolds(boards::kBoard);
+    // Driven to the held level first: a released pad would float, and the
+    // peripheral rail with it would cut the battery power.
     for (size_t i = 0; i < holds.size; ++i) {
-        gpio_hold_dis(static_cast<gpio_num_t>(holds.items[i].pin));
+        const auto pin = static_cast<gpio_num_t>(holds.items[i].pin);
+        gpio_set_level(pin, holds.items[i].level);
+        gpio_set_direction(pin, GPIO_MODE_OUTPUT);
+        gpio_hold_dis(pin);
     }
     gpio_deep_sleep_hold_dis();
     if (esp_sleep_get_wakeup_causes() & (1u << ESP_SLEEP_WAKEUP_EXT1)) {

@@ -148,17 +148,19 @@ void test_epd_grey_tables(void) {
 void test_power_sleep_holds(void) {
     constexpr boards::X4Pro b;
     constexpr power::Holds h = power::SleepHolds(b);
-    TEST_ASSERT_EQUAL_size_t(5, h.size);
-    TEST_ASSERT_EQUAL_INT8(14, h.items[0].pin);  // EPD RST high: the panel stays asleep
+    TEST_ASSERT_EQUAL_size_t(6, h.size);
+    TEST_ASSERT_EQUAL_INT8(1, h.items[0].pin);   // peripheral rail high: the battery power stays on
     TEST_ASSERT_EQUAL_UINT8(1, h.items[0].level);
-    TEST_ASSERT_EQUAL_INT8(5, h.items[1].pin);   // SD power off
+    TEST_ASSERT_EQUAL_INT8(14, h.items[1].pin);  // EPD RST high: the panel stays asleep
     TEST_ASSERT_EQUAL_UINT8(1, h.items[1].level);
-    TEST_ASSERT_EQUAL_INT8(2, h.items[2].pin);   // touch power off
+    TEST_ASSERT_EQUAL_INT8(5, h.items[2].pin);   // SD power off
     TEST_ASSERT_EQUAL_UINT8(1, h.items[2].level);
-    TEST_ASSERT_EQUAL_INT8(8, h.items[3].pin);   // frontlight cool low
-    TEST_ASSERT_EQUAL_UINT8(0, h.items[3].level);
-    TEST_ASSERT_EQUAL_INT8(9, h.items[4].pin);   // frontlight warm low
+    TEST_ASSERT_EQUAL_INT8(2, h.items[3].pin);   // touch power off
+    TEST_ASSERT_EQUAL_UINT8(1, h.items[3].level);
+    TEST_ASSERT_EQUAL_INT8(8, h.items[4].pin);   // frontlight cool low
     TEST_ASSERT_EQUAL_UINT8(0, h.items[4].level);
+    TEST_ASSERT_EQUAL_INT8(9, h.items[5].pin);   // frontlight warm low
+    TEST_ASSERT_EQUAL_UINT8(0, h.items[5].level);
     constexpr boards::DevBoard none;  // no panel, SD or touch
     TEST_ASSERT_EQUAL_size_t(0, power::SleepHolds(none).size);
 }

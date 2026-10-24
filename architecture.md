@@ -298,8 +298,10 @@ PNG from `/sdcard/wallpapers` (the stock firmware's folder) on the panel
 (full refresh), the panel in deep sleep, wait for Power to be released, then
 RTC ext1 wake on Power (low, RTC pull-up) and deep sleep. Held through sleep
 (`power_logic.h`, as FreeInk's PowerManager): EPD RST high, SD and touch
-power off, the frontlight's PWM pins low; `power::Boot()` releases them first
-thing at boot. GPIO1 (peripheral rail) is not held, as in FreeInk. A sleep
+power off, the frontlight's PWM pins low, and (unlike FreeInk) GPIO1, the
+peripheral rail, high: on the battery the board's power drops without it (a
+cold boot, RTC memory lost); `power::Boot()` drives them to the same levels
+and releases them first thing at boot. A sleep
 the chip refuses (`esp_deep_sleep_try_to_start` returns): a restart, not a
 drain at full current. A wake is a reboot: the boot screen, the PIN again,
 unless the key was kept. Kept key (`power.keepPinHours`, not after Power x3

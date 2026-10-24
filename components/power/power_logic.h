@@ -5,8 +5,11 @@
 // (powerDownRailsForSleep) on the X4 Pro: SD and touch power off (their
 // enables are active-low: held high), the panel's RST held high so the
 // controller stays in its deep sleep; the frontlight's PWM pins held low
-// (isolated, they would float). Boot releases the same pins before any
-// driver touches them. Wake: the Power button (RTC ext1, low).
+// (isolated, they would float). Unlike FreeInk, the peripheral rail (GPIO1)
+// held high: on the battery the board's power drops without it, a cold boot
+// that loses RTC memory (measured). Boot releases the same pins (driven to
+// the same levels first) before any driver touches them. Wake: the Power
+// button (RTC ext1, low).
 //
 // Also: when idling turns it off (IdleOff), and the record that keeps a
 // secret (the vault key) through one deep sleep (Kept).
@@ -23,7 +26,7 @@ struct Hold {
     uint8_t level;
 };
 
-inline constexpr size_t kMaxHolds = 5;
+inline constexpr size_t kMaxHolds = 6;
 
 struct Holds {
     Hold items[kMaxHolds] = {};
@@ -38,6 +41,7 @@ struct Holds {
 
 constexpr Holds SleepHolds(const boards::Board &b) {
     Holds out;
+    out.Add(b.power_pins.peripheral_rail, 1);
     out.Add(b.display_pins.reset, 1);
     out.Add(b.sd_pins.power_enable, 1);
     out.Add(b.touch_pins.power_enable, 1);
