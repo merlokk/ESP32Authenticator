@@ -58,7 +58,10 @@ uint32_t last_rotate_us = 0;
 esp_err_t last_err = ESP_OK;
 
 // The panel takes a second a frame: a task of its own draws the latest flush,
-// so the ui task keeps reading the touch meanwhile (a tap is not lost).
+// so the ui task keeps reading the touch meanwhile (a tap is not lost). The
+// panel's power stays on between frames (PIN taps come several a second) and
+// goes off kPanelOffMs after the last one.
+constexpr uint32_t kPanelOffMs = 2000;
 constexpr uint32_t kPushStackBytes = 4096;
 StackType_t push_stack[kPushStackBytes];
 StaticTask_t push_storage;
@@ -99,8 +102,15 @@ void Flush(lv_display_t *disp, const lv_area_t *, uint8_t *px_map) {
 // Draws the latest pending frame; one that changes nothing on the glass is
 // dropped (a pressed key that looks the same makes one).
 void PushTask(void *) {
+    bool panel_on = false;
     for (;;) {
-        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        if (ulTaskNotifyTake(pdTRUE, panel_on ? pdMS_TO_TICKS(kPanelOffMs) : portMAX_DELAY) == 0) {
+            xSemaphoreTake(panel_mutex, portMAX_DELAY);
+            epd::PowerOff();
+            panel_on = false;
+            xSemaphoreGive(panel_mutex);
+            continue;
+        }
         xSemaphoreTake(panel_mutex, portMAX_DELAY);
         xSemaphoreTake(pending_mutex, portMAX_DELAY);
         bool draw = have_pending && !held;
@@ -117,7 +127,8 @@ void PushTask(void *) {
         if (draw) {
             last_full = plan.NextIsFull(changed);
             last_changed = changed;
-            last_err = epd::Refresh(frame, last_full ? epd::Mode::kFull : epd::Mode::kFast);
+            last_err = epd::Refresh(frame, last_full ? epd::Mode::kFull : epd::Mode::kFast, true);
+            panel_on = last_err == ESP_OK;
             frame_on_glass = last_err == ESP_OK;
             ++refreshes;
             if (last_err != ESP_OK) {

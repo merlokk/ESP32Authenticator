@@ -25,7 +25,10 @@ Controller Detected();
 // Draws a frame (kFrameBytes: 100 bytes a row, MSB left, bit 1 white) and
 // waits for the panel; it is powered off after. ESP_ERR_TIMEOUT: BUSY never
 // settled.
-esp_err_t Refresh(const uint8_t *frame, Mode mode);
+// `stay_on` (UC81xx): the panel's power left on after it (127 + 88 ms of a
+// fast refresh's 880 saved while frames keep coming); PowerOff ends it.
+esp_err_t Refresh(const uint8_t *frame, Mode mode, bool stay_on = false);
+esp_err_t PowerOff();
 
 // 4 grey levels (HasGrey: UC8179 only, else ESP_ERR_NOT_SUPPORTED), one full
 // refresh; for still pictures. Two frames in the Refresh format: `low` the

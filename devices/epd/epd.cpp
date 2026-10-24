@@ -41,6 +41,15 @@ int screen_type = -1;  // stock NVS hw_calib/screenType, -1 unknown
 uint32_t refreshes = 0;
 uint32_t last_ms = 0;
 Mode last_mode = Mode::kFull;
+bool powered = false;  // UC81xx: the booster on (Refresh stay_on), until PowerOff
+// The last B/W refresh by step (ms): new plane, power on, refresh, old plane, power off.
+uint32_t step_ms[5] = {};
+int64_t step_at = 0;
+void Step(int i) {
+    const int64_t now = esp_timer_get_time();
+    step_ms[i] = static_cast<uint32_t>((now - step_at) / 1000);
+    step_at = now;
+}
 bool last_grey = false;
 
 spi_device_handle_t spi = nullptr;
@@ -258,6 +267,17 @@ esp_err_t InitController() {
     }
     have_old = false;
     asleep = false;
+    powered = false;  // the reset powered it down
+    return err;
+}
+
+esp_err_t PowerOffUc() {
+    esp_err_t err = ESP_OK;
+    if (powered) {
+        err = Command(kUcPowerOff);
+        if (err == ESP_OK) err = WaitIdle();
+        powered = false;
+    }
     return err;
 }
 
@@ -279,8 +299,9 @@ esp_err_t RefreshSsd(const uint8_t *frame, Mode mode) {
     return err;
 }
 
-esp_err_t RefreshUc(const uint8_t *frame, Mode mode) {
+esp_err_t RefreshUc(const uint8_t *frame, Mode mode, bool stay_on) {
     const bool uc8279 = controller == Controller::kUc8279;
+    step_at = esp_timer_get_time();
     esp_err_t err = Plane(kUcNew, frame);
     if (err == ESP_OK && mode == Mode::kFull) err = Plane(kUcOld, nullptr, 0xFF);
     if (err == ESP_OK) {
@@ -290,8 +311,13 @@ esp_err_t RefreshUc(const uint8_t *frame, Mode mode) {
             err = mode == Mode::kFull ? SendAll(kUc8179Full) : SendAll(kUc8179Fast);
         }
     }
-    if (err == ESP_OK) err = Command(kUcPowerOn);
-    if (err == ESP_OK) err = WaitIdle();
+    Step(0);
+    if (err == ESP_OK && !powered) {
+        err = Command(kUcPowerOn);
+        if (err == ESP_OK) err = WaitIdle();
+        powered = err == ESP_OK;
+    }
+    Step(1);
     if (err == ESP_OK && mode == Mode::kFast) {
         err = Command(kUcPartialIn);
         if (err == ESP_OK && uc8279) err = Send(kUc8279Window);
@@ -301,10 +327,12 @@ esp_err_t RefreshUc(const uint8_t *frame, Mode mode) {
     if (err == ESP_OK) err = WaitRefresh();
     if (err == ESP_OK && mode == Mode::kFast) err = Command(kUcPartialOut);
     if (err == ESP_OK && !uc8279) err = Send(kUc8179Idle);
+    Step(2);
     // The old plane now matches the glass: the next fast refresh diffs against it.
     if (err == ESP_OK) err = Plane(kUcOld, frame);
-    if (err == ESP_OK) err = Command(kUcPowerOff);
-    if (err == ESP_OK) err = WaitIdle();
+    Step(3);
+    if (err == ESP_OK && !stay_on) err = PowerOffUc();
+    Step(4);
     return err;
 }
 
@@ -316,6 +344,7 @@ esp_err_t ClearGreyUc(const uint8_t *frame) {
     if (err == ESP_OK) err = SendAll(kUc8179Fast);
     if (err == ESP_OK) err = Command(kUcPowerOn);
     if (err == ESP_OK) err = WaitIdle();
+    powered = err == ESP_OK;
     if (err == ESP_OK) err = Command(kUcPartialIn);
     if (err == ESP_OK) err = Command(kUcRefresh);
     if (err == ESP_OK) err = WaitRefresh();
@@ -400,7 +429,7 @@ bool Ready() { return ready; }
 
 Controller Detected() { return controller; }
 
-esp_err_t Refresh(const uint8_t *frame, Mode mode) {
+esp_err_t Refresh(const uint8_t *frame, Mode mode, bool stay_on) {
     if (!ready || frame == nullptr) {
         return ESP_ERR_INVALID_STATE;
     }
@@ -416,7 +445,7 @@ esp_err_t Refresh(const uint8_t *frame, Mode mode) {
         grey_shown = false;
     }
     if (err == ESP_OK) {
-        err = controller == Controller::kSsd1677 ? RefreshSsd(frame, mode) : RefreshUc(frame, mode);
+        err = controller == Controller::kSsd1677 ? RefreshSsd(frame, mode) : RefreshUc(frame, mode, stay_on);
     }
     last_ms = static_cast<uint32_t>((esp_timer_get_time() - start) / 1000);
     last_mode = mode;
@@ -442,6 +471,7 @@ esp_err_t RefreshGrey(const uint8_t *low, const uint8_t *high) {
     }
     xSemaphoreTake(mutex, portMAX_DELAY);
     const int64_t start = esp_timer_get_time();
+    PowerOffUc();  // its init resets the controller: not with the booster on
     const esp_err_t err = RefreshGreyUc(low, high);
     last_ms = static_cast<uint32_t>((esp_timer_get_time() - start) / 1000);
     last_grey = true;
@@ -469,10 +499,21 @@ esp_err_t Sleep() {
             if (err == ESP_OK) err = WaitRefresh();
             if (err == ESP_OK) err = Send(kSsdDeepSleep);
         } else {
-            err = Send(kUcDeepSleep);
+            err = PowerOffUc();
+            if (err == ESP_OK) err = Send(kUcDeepSleep);
         }
         asleep = err == ESP_OK;
     }
+    xSemaphoreGive(mutex);
+    return err;
+}
+
+esp_err_t PowerOff() {
+    if (!ready) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    xSemaphoreTake(mutex, portMAX_DELAY);
+    const esp_err_t err = controller == Controller::kSsd1677 ? ESP_OK : PowerOffUc();
     xSemaphoreGive(mutex);
     return err;
 }
@@ -482,8 +523,9 @@ void PrintInfo() {
         printf("epd        none on this board\n");
         return;
     }
-    printf("epd        %s, %ux%u, %s%s\n", Name(controller), kWidth, kHeight,
-           ready ? "ready" : "not running", asleep ? ", asleep" : "");
+    printf("epd        %s, %ux%u, %s%s%s\n", Name(controller), kWidth, kHeight,
+           ready ? "ready" : "not running", asleep ? ", asleep" : "",
+           powered ? ", powered" : "");
     for (int pass = 0; pass < 2; ++pass) {
         printf("probe %d    FLG 0x%02x  VER %02x %02x %02x %02x %02x\n", pass + 1, probe_flg[pass],
                probe_ver[pass][0], probe_ver[pass][1], probe_ver[pass][2], probe_ver[pass][3],
@@ -495,6 +537,9 @@ void PrintInfo() {
     }
     printf("refreshes  %" PRIu32 ", last %s in %" PRIu32 " ms\n", refreshes,
            last_grey ? "grey" : last_mode == Mode::kFull ? "full" : "fast", last_ms);
+    printf("steps      new plane %" PRIu32 ", power on %" PRIu32 ", refresh %" PRIu32
+           ", old plane %" PRIu32 ", power off %" PRIu32 " ms\n",
+           step_ms[0], step_ms[1], step_ms[2], step_ms[3], step_ms[4]);
 }
 
 }  // namespace epd
