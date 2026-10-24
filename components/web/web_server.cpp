@@ -17,6 +17,7 @@
 #include "esp_system.h"
 #include "esp_timer.h"
 #include "fido_ctap.h"
+#include "frontlight.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
@@ -56,6 +57,7 @@ WWW_FILE(unauthorised_page, 401_html)
 WWW_FILE(app_script, app_js)
 WWW_FILE(passwords_page, passwords_html)
 WWW_FILE(fido_page, fido_html)
+WWW_FILE(settings_page, settings_html)
 
 struct Page {
     const char *name;
@@ -74,6 +76,7 @@ const Page kPages[] = {
     {"app.js", app_script_start, app_script_end},
     {"passwords.html", passwords_page_start, passwords_page_end},
     {"fido.html", fido_page_start, fido_page_end},
+    {"settings.html", settings_page_start, settings_page_end},
 };
 
 const Page *FindPage(const char *name) {
@@ -320,7 +323,9 @@ esp_err_t StatusApi(httpd_req_t *request) {
         ",\"fido_used\":%u,\"fido_size\":%u,\"fido_pin\":%s,\"fido_pin_retries\":%u"
         ",\"fido_counter\":%" PRIu32 ",\"fido_version\":%" PRIu32 ",\"fido_modified\":%lld"
         ",\"time_utc\":%lld,\"time_offset\":%d,\"time_zone\":\"%s\",\"time_sync\":\"%s\""
-        ",\"time_sync_ago_s\":%ld,\"ble_name\":\"%s\",\"wallpaper\":\"%s\"}",
+        ",\"time_sync_ago_s\":%ld,\"ble_name\":\"%s\",\"wallpaper\":\"%s\""
+        ",\"light\":%s,\"light_on\":%s,\"light_brightness\":%u,\"light_warmth\":%u"
+        ",\"idle_minutes\":%u,\"hold_rail\":%s}",
         app->version, app->idf_ver, static_cast<uint32_t>(esp_timer_get_time() / 1000000),
         static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL)),
         static_cast<unsigned>(heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL)),
@@ -341,7 +346,12 @@ esp_err_t StatusApi(httpd_req_t *request) {
         time_set ? static_cast<long long>(now) : 0LL,
         time_set ? tz::OffsetSeconds(now) : 0, zone, sync_state,
         sync.since_last_ms == timesync::kNever ? -1L : static_cast<long>(sync.since_last_ms / 1000),
-        ble_name, config::Name(config::Get().display.wallpaper));
+        ble_name, config::Name(config::Get().display.wallpaper),
+        frontlight::Present() ? "true" : "false", frontlight::IsOn() ? "true" : "false",
+        static_cast<unsigned>(config::Get().frontlight.brightness),
+        static_cast<unsigned>(config::Get().frontlight.warmth),
+        static_cast<unsigned>(config::Get().power.idle_minutes),
+        config::Get().power.hold_rail ? "true" : "false");
     return SendJson(request, nullptr, g_json);
 }
 
@@ -565,6 +575,9 @@ esp_err_t SettingsPost(httpd_req_t *request) {
     if (outcome.ble_changed) {
         ble::SetName(config::Get().ble.name);
     }
+    if (outcome.frontlight_changed) {
+        frontlight::SetLevel(config::Get().frontlight.brightness, config::Get().frontlight.warmth);
+    }
     ESP_LOGI(TAG, "settings written over http (memory only until saved)");
     return SendJson(request, nullptr, "{\"ok\":true,\"saved\":false}");
 }
@@ -592,11 +605,20 @@ esp_err_t ActionApi(httpd_req_t *request) {
                 timesync::Apply();
                 boards::SetLedBrightness(config::Get().led.percent,
                                          config::Get().led.idle_percent);
+                frontlight::SetLevel(config::Get().frontlight.brightness,
+                                     config::Get().frontlight.warmth);
                 Apply();
             }
             break;
         case Action::kWifiRetry:
             wifimgr::Apply();
+            break;
+        case Action::kLightOn:
+        case Action::kLightOff:
+            if (!frontlight::Present()) {
+                return Refuse(request, "409 Conflict", "no frontlight on this board");
+            }
+            err = action == Action::kLightOn ? frontlight::On() : frontlight::Off();
             break;
         case Action::kNone:
             return Refuse(request, "400 Bad Request", "no such action");

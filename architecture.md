@@ -398,13 +398,13 @@ and never starts without lwIP (an assert).
 
 | Route | |
 |---|---|
-| `GET /`, `/*.html`, `/app.js` | pages: front (network, BLE, device), passwords, FIDO2, Wi-Fi settings, device status, hardware info (from device status), restart. Whitelist of names/extensions; anything else, e.g. `/config.json`, is the 404 page |
-| `GET /api/status` | firmware, heap, SPIFFS, Wi-Fi (IP, MAC, internet), AP, BLE, FIDO (readiness, requests, credentials stored of max, store bytes, PIN set and attempts, signature counter, file version and modification time; `fido_store` false while a request holds the store, `fido_off` why FIDO2 is off). No secrets |
+| `GET /`, `/*.html`, `/app.js` | pages: front (network, device), settings (BLE state and name, wallpaper, frontlight, idle off, `holdRail`; each control set and saved at once), passwords, FIDO2, Wi-Fi settings, device status, hardware info (from device status), restart. Whitelist of names/extensions; anything else, e.g. `/config.json`, is the 404 page |
+| `GET /api/status` | firmware, heap, SPIFFS, Wi-Fi (IP, MAC, internet), AP, BLE, FIDO (readiness, requests, credentials stored of max, store bytes, PIN set and attempts, signature counter, file version and modification time; `fido_store` false while a request holds the store, `fido_off` why FIDO2 is off), wallpaper, frontlight (present, on, level), `idle_minutes`, `hold_rail`. No secrets |
 | `GET /api/devstatus` | the console's `devstatus` dump (stdout swapped for the request) |
 | `GET /api/hwinfo` | the console's `hwinfo` dump, the same way (eFuse key purposes and flags only, no NVS values) |
-| `GET /api/settings`, `POST /api/settings` | Wi-Fi mode, AP, networks (with `ip`; absent `ip` keeps the current one), `ble.name` (applied to the radio at once; the front page sets and saves it), `display.wallpaper` (`grey` / `bw`, the front page's switch, saved). Whitelist; passwords write-only (absent/null keeps, `""` clears); all-or-nothing; memory only |
+| `GET /api/settings`, `POST /api/settings` | Wi-Fi mode, AP, networks (with `ip`; absent `ip` keeps the current one), `ble.name` (applied to the radio at once), `display.wallpaper` (`grey` / `bw`), `frontlight` {`brightness` 1..100, `warmth` 0..100} (applied to the light at once), `power` {`idleMinutes`, `holdRail`; not `keepPinHours`}; the settings page saves each. Whitelist; passwords write-only (absent/null keeps, `""` clears); all-or-nothing; memory only |
 | `GET /api/wifi/scan` | access points (hidden/duplicate names dropped) |
-| `POST /api/action?do=save\|reload\|retry` | save config.json / reload it / put Wi-Fi settings on the radio |
+| `POST /api/action?do=save\|reload\|retry\|light-on\|light-off` | save config.json / reload it / put Wi-Fi settings on the radio / the frontlight on or off (not saved) |
 | `POST /api/reboot?confirm=reboot` | restart |
 | `GET /api/vault` | store state, PIN tries / lock, records: id, site, user, whether a password / TOTP secret is set, modified. Never a password or secret |
 | `GET /api/vault/totp?id=N` | the record's code for the current window and the seconds left |

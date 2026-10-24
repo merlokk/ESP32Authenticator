@@ -246,6 +246,61 @@ void test_display_wallpaper(void) {
     TEST_ASSERT_TRUE(d.display.wallpaper == config::WallpaperMode::kGrey);
 }
 
+void test_frontlight_level(void) {
+    config::Data d = Base();
+    web::WriteOutcome out = Apply(R"({"frontlight": {"brightness": 60, "warmth": 0}})", &d);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(WriteResult::kOk), static_cast<int>(out.result));
+    TEST_ASSERT_TRUE(out.frontlight_changed);
+    TEST_ASSERT_EQUAL_UINT8(60, d.frontlight.brightness);
+    TEST_ASSERT_EQUAL_UINT8(0, d.frontlight.warmth);
+    out = Apply(R"({"frontlight": {"warmth": 100}})", &d);
+    TEST_ASSERT_EQUAL_UINT8(60, d.frontlight.brightness);
+    TEST_ASSERT_EQUAL_UINT8(100, d.frontlight.warmth);
+    AssertRefused(R"({"frontlight": {"brightness": 0}})", WriteResult::kBadValue,
+                  "frontlight.brightness");
+    AssertRefused(R"({"frontlight": {"brightness": 101}})", WriteResult::kBadValue,
+                  "frontlight.brightness");
+    AssertRefused(R"({"frontlight": {"warmth": 50.5}})", WriteResult::kBadValue,
+                  "frontlight.warmth");
+    AssertRefused(R"({"frontlight": {"warmth": "50"}})", WriteResult::kBadValue,
+                  "frontlight.warmth");
+    AssertRefused(R"({"frontlight": {"on": true}})", WriteResult::kUnknownField, "frontlight.on");
+    AssertRefused(R"({"frontlight": 5})", WriteResult::kBadValue, "frontlight");
+    d = Base();
+    out = Apply(R"({"frontlight": {"brightness": 60}, "web": {}})", &d);
+    TEST_ASSERT_FALSE(out.frontlight_changed);
+    TEST_ASSERT_EQUAL_UINT8(20, d.frontlight.brightness);
+}
+
+void test_power(void) {
+    config::Data d = Base();
+    web::WriteOutcome out = Apply(R"({"power": {"idleMinutes": 0, "holdRail": false}})", &d);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(WriteResult::kOk), static_cast<int>(out.result));
+    TEST_ASSERT_EQUAL_UINT16(0, d.power.idle_minutes);
+    TEST_ASSERT_FALSE(d.power.hold_rail);
+    TEST_ASSERT_FALSE(out.frontlight_changed);
+    Apply(R"({"power": {"idleMinutes": 1440}})", &d);
+    TEST_ASSERT_EQUAL_UINT16(1440, d.power.idle_minutes);
+    TEST_ASSERT_FALSE(d.power.hold_rail);
+    AssertRefused(R"({"power": {"idleMinutes": 1441}})", WriteResult::kBadValue,
+                  "power.idleMinutes");
+    AssertRefused(R"({"power": {"idleMinutes": -1}})", WriteResult::kBadValue,
+                  "power.idleMinutes");
+    AssertRefused(R"({"power": {"holdRail": 1}})", WriteResult::kBadValue, "power.holdRail");
+    // The PIN's hours stay a console matter.
+    AssertRefused(R"({"power": {"keepPinHours": 168}})", WriteResult::kUnknownField,
+                  "power.keepPinHours");
+    AssertRefused(R"({"power": []})", WriteResult::kBadValue, "power");
+}
+
+void test_light_actions(void) {
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(web::Action::kLightOn),
+                          static_cast<int>(web::ActionFromUri("/api/action?do=light-on")));
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(web::Action::kLightOff),
+                          static_cast<int>(web::ActionFromUri("/api/action?do=light-off")));
+    TEST_ASSERT_EQUAL_STRING("light-on", web::ActionName(web::Action::kLightOn));
+}
+
 }  // namespace
 
 void RegisterWebSettingsTests(void) {
@@ -264,4 +319,7 @@ void RegisterWebSettingsTests(void) {
     RUN_TEST(test_actions);
     RUN_TEST(test_ble_name);
     RUN_TEST(test_display_wallpaper);
+    RUN_TEST(test_frontlight_level);
+    RUN_TEST(test_power);
+    RUN_TEST(test_light_actions);
 }

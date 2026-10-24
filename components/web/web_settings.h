@@ -9,6 +9,8 @@
 //   (web.* included: the site cannot unlock itself). An absent `ip` keeps the
 //   network's current one (matched by SSID). `ble.name`: 1..29 bytes
 //   (config::ValidBleName, not empty). `display.wallpaper`: grey or bw.
+//   `frontlight` {brightness 1..100, warmth 0..100}. `power` {idleMinutes
+//   0..1440, holdRail}; keepPinHours is not on the list.
 // - Passwords are write-only: GET never returns one. In a POST an absent or
 //   null password keeps the current one (networks matched by SSID), "" clears.
 // - All or nothing: any refusal leaves `into` untouched.
@@ -38,7 +40,8 @@ struct WriteOutcome {
     WriteResult result = WriteResult::kOk;
     char detail[48] = {};
     bool wifi_changed = false;
-    bool ble_changed = false;  // ble.name: apply it to the radio
+    bool ble_changed = false;         // ble.name: apply it to the radio
+    bool frontlight_changed = false;  // the level: apply it to the light
 };
 
 WriteOutcome ApplySettings(const char *body, size_t length, config::Data *into);
@@ -50,6 +53,8 @@ enum class Action : uint8_t {
     kSave,       // write config.json
     kReload,     // re-read config.json (drops unsaved edits)
     kWifiRetry,  // apply the Wi-Fi settings and restart the walk
+    kLightOn,    // the frontlight now (a state, not saved: it starts off)
+    kLightOff,
 };
 
 Action ActionFromUri(const char *uri);

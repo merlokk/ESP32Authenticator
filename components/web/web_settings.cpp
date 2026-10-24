@@ -290,6 +290,75 @@ bool ReadDisplay(const cJSON *display, config::Data *into, WriteOutcome *out) {
     return true;
 }
 
+// A whole number in lo..hi.
+bool ReadNumber(const cJSON *item, uint32_t lo, uint32_t hi, uint32_t *value) {
+    if (!cJSON_IsNumber(item) || item->valuedouble < lo || item->valuedouble > hi ||
+        item->valuedouble != static_cast<double>(static_cast<uint32_t>(item->valuedouble))) {
+        return false;
+    }
+    *value = static_cast<uint32_t>(item->valuedouble);
+    return true;
+}
+
+// `frontlight`: {"brightness": 1..100, "warmth": 0..100}, nothing else.
+bool ReadFrontlight(const cJSON *light, config::Data *into, WriteOutcome *out) {
+    if (!cJSON_IsObject(light)) {
+        Say(out, WriteResult::kBadValue, "frontlight");
+        return false;
+    }
+    for (const cJSON *item = light->child; item != nullptr; item = item->next) {
+        const char *key = item->string != nullptr ? item->string : "";
+        const bool brightness = std::strcmp(key, "brightness") == 0;
+        char detail[sizeof out->detail];
+        std::snprintf(detail, sizeof detail, "frontlight.%s", key);
+        if (!brightness && std::strcmp(key, "warmth") != 0) {
+            Say(out, WriteResult::kUnknownField, detail);
+            return false;
+        }
+        uint32_t value = 0;
+        if (!ReadNumber(item, brightness ? 1 : 0, 100, &value)) {
+            Say(out, WriteResult::kBadValue, detail);
+            return false;
+        }
+        (brightness ? into->frontlight.brightness : into->frontlight.warmth) =
+            static_cast<uint8_t>(value);
+        out->frontlight_changed = true;
+    }
+    return true;
+}
+
+// `power`: {"idleMinutes": 0..1440, "holdRail": bool}; not keepPinHours (a
+// site that could stretch it would weaken the PIN).
+bool ReadPower(const cJSON *power, config::Data *into, WriteOutcome *out) {
+    if (!cJSON_IsObject(power)) {
+        Say(out, WriteResult::kBadValue, "power");
+        return false;
+    }
+    for (const cJSON *item = power->child; item != nullptr; item = item->next) {
+        const char *key = item->string != nullptr ? item->string : "";
+        char detail[sizeof out->detail];
+        std::snprintf(detail, sizeof detail, "power.%s", key);
+        uint32_t value = 0;
+        if (std::strcmp(key, "idleMinutes") == 0) {
+            if (!ReadNumber(item, 0, config::kMaxIdleMinutes, &value)) {
+                Say(out, WriteResult::kBadValue, detail);
+                return false;
+            }
+            into->power.idle_minutes = static_cast<uint16_t>(value);
+        } else if (std::strcmp(key, "holdRail") == 0) {
+            if (!cJSON_IsBool(item)) {
+                Say(out, WriteResult::kBadValue, detail);
+                return false;
+            }
+            into->power.hold_rail = cJSON_IsTrue(item);
+        } else {
+            Say(out, WriteResult::kUnknownField, detail);
+            return false;
+        }
+    }
+    return true;
+}
+
 }  // namespace
 
 WriteOutcome ApplySettings(const char *body, size_t length, config::Data *into) {
@@ -331,6 +400,10 @@ WriteOutcome ApplySettings(const char *body, size_t length, config::Data *into) 
             ok = ReadBle(section, &staged, &out);
         } else if (std::strcmp(key, "display") == 0) {
             ok = ReadDisplay(section, &staged, &out);
+        } else if (std::strcmp(key, "frontlight") == 0) {
+            ok = ReadFrontlight(section, &staged, &out);
+        } else if (std::strcmp(key, "power") == 0) {
+            ok = ReadPower(section, &staged, &out);
         } else {
             Say(&out, WriteResult::kUnknownField, key);
             ok = false;
@@ -344,6 +417,7 @@ WriteOutcome ApplySettings(const char *body, size_t length, config::Data *into) 
     if (!ok) {
         out.wifi_changed = false;
         out.ble_changed = false;
+        out.frontlight_changed = false;
         return out;
     }
     out.result = WriteResult::kOk;
@@ -386,6 +460,8 @@ Action ActionFromUri(const char *uri) {
         {"save", Action::kSave},
         {"reload", Action::kReload},
         {"retry", Action::kWifiRetry},
+        {"light-on", Action::kLightOn},
+        {"light-off", Action::kLightOff},
     };
     for (;;) {
         size_t length = 0;
@@ -416,6 +492,8 @@ const char *ActionName(Action action) {
         case Action::kSave: return "save";
         case Action::kReload: return "reload";
         case Action::kWifiRetry: return "retry";
+        case Action::kLightOn: return "light-on";
+        case Action::kLightOff: return "light-off";
     }
     return "nothing";
 }

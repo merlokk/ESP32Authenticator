@@ -15,7 +15,7 @@ Firmware: C/C++ on **ESP-IDF**.
 
 - Done: BLE keyboard + FIDO2 (CTAP 2.1, works with Chrome on Windows 11),
   bonding and host switching; FIDO2 credential management on the console
-  (`fido2 info|list|delete|reset`) and the store on the web front page; Wi-Fi
+  (`fido2 info|list|delete|reset`) and the store on the web settings page; Wi-Fi
   client / AP / AP+client with static IPs and an internet check; configuration
   web site; USB console; `config.json`; time (SNTP, time zones, `rtc::Clock`:
   BM8563 RTC on the X4 Pro, else the CPU timer); board classes chosen in `devices/config.h`; WS2812 LED (red at boot,

@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0b0d0c">
+<title>Settings</title>
+<style>html,body{margin:0;background:#0b0d0c;color:#d6ded8;
+font:16px/1.5 system-ui,-apple-system,sans-serif}
+body{padding:0 16px 40px}</style>
+</head>
+<body data-page="settings">
+<div class="wrap">
+<header>
+  <h1>Settings</h1>
+  <span class="lamp" id="lamp">reading&hellip;</span>
+</header>
+
+<p class="lead">Each change is applied and saved to config.json at once.</p>
+
+<nav>
+  <a class="btn" href="/">
+    <span class="chev">&lsaquo;</span>
+    <span class="grow"><span class="name">Back</span></span>
+  </a>
+</nav>
+
+<h2>Bluetooth</h2>
+<table>
+  <tr><th>ble</th><td id="ble">&hellip;</td></tr>
+  <tr><th>keyboard</th><td id="kb">&hellip;</td></tr>
+  <tr><th>fido2</th><td id="fido">&hellip;</td></tr>
+  <tr><th>stored</th><td><span id="fido-store">&hellip;</span>
+      <div class="meter" id="fido-meter"><i></i></div></td></tr>
+  <tr><th>pin</th><td id="fido-pin">&hellip;</td></tr>
+  <tr><th>counter</th><td id="fido-counter">&hellip;</td></tr>
+  <tr><th>file</th><td id="fido-file">&hellip;</td></tr>
+</table>
+<div class="field">
+  <label for="ble-name">name</label>
+  <input id="ble-name" autocomplete="off" spellcheck="false" maxlength="29">
+  <button class="btn small" type="button" id="ble-name-set">Set</button>
+</div>
+<div class="notice" id="said" hidden></div>
+
+<h2>Screen</h2>
+<p class="hint">power-off wallpaper</p>
+<div class="seg" id="wallpaper">
+  <button type="button" data-mode="grey">4 grey levels</button>
+  <button type="button" data-mode="bw">black and white</button>
+</div>
+<div class="notice" id="said-wallpaper" hidden></div>
+
+<h2>Frontlight</h2>
+<div id="light-box">
+<div class="seg" id="light-state">
+  <button type="button" data-on="1">On</button>
+  <button type="button" data-on="0">Off</button>
+</div>
+<div class="field">
+  <label for="light-brightness">brightness</label>
+  <input type="range" id="light-brightness" min="1" max="100">
+  <span class="value" id="light-brightness-value"></span>
+</div>
+<div class="field">
+  <label for="light-warmth">warmth</label>
+  <input type="range" id="light-warmth" min="0" max="100">
+  <span class="value" id="light-warmth-value"></span>
+</div>
+<p class="hint">Warmth 0 is all cool, 100 all warm. The level is saved; the
+light itself starts off at boot (Power x2 toggles it).</p>
+</div>
+<div class="notice" id="said-light" hidden></div>
+
+<h2>Power</h2>
+<div class="field">
+  <label for="idle">idle off</label>
+  <input id="idle" type="number" min="0" max="1440" inputmode="numeric">
+  <button class="btn small" type="button" id="idle-set">Set</button>
+</div>
+<p class="hint">Minutes with nothing done before it powers off; 0: never. A USB
+host or the pairing window keeps it on.</p>
+<p class="hint">in the sleep</p>
+<div class="seg" id="rail">
+  <button type="button" data-hold="1">battery kept</button>
+  <button type="button" data-hold="0">battery cut</button>
+</div>
+<p class="hint"><b>Battery kept</b>: a wake within power.keepPinHours needs no
+PIN; the sleep draws a little. <b>Battery cut</b>: on the battery the power
+drops, nothing drawn, the PIN after every wake.</p>
+<div class="notice" id="said-power" hidden></div>
+</div>
+<script src="/app.js"></script>
+</body>
+</html>

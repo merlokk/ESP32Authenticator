@@ -34,6 +34,11 @@ body{padding:0 16px 40px}</style>
       <span class="sub">the keys sites made on this device</span></span>
     <span class="chev">&rsaquo;</span>
   </a>
+  <a class="btn" href="/settings.html">
+    <span class="grow"><span class="name">Settings</span>
+      <span class="sub">Bluetooth, wallpaper, frontlight, power</span></span>
+    <span class="chev">&rsaquo;</span>
+  </a>
   <a class="btn" href="/wifi.html">
     <span class="grow"><span class="name">Wi-Fi</span>
       <span class="sub">mode, networks, access point, what is on the air</span></span>
@@ -57,24 +62,6 @@ body{padding:0 16px 40px}</style>
   <tr><th>access point</th><td id="ap">&hellip;</td></tr>
 </table>
 
-<h2>Bluetooth</h2>
-<table>
-  <tr><th>ble</th><td id="ble">&hellip;</td></tr>
-  <tr><th>keyboard</th><td id="kb">&hellip;</td></tr>
-  <tr><th>fido2</th><td id="fido">&hellip;</td></tr>
-  <tr><th>stored</th><td><span id="fido-store">&hellip;</span>
-      <div class="meter" id="fido-meter"><i></i></div></td></tr>
-  <tr><th>pin</th><td id="fido-pin">&hellip;</td></tr>
-  <tr><th>counter</th><td id="fido-counter">&hellip;</td></tr>
-  <tr><th>file</th><td id="fido-file">&hellip;</td></tr>
-</table>
-<div class="field">
-  <label for="ble-name">name</label>
-  <input id="ble-name" autocomplete="off" spellcheck="false" maxlength="29">
-  <button class="btn small" type="button" id="ble-name-set">Set</button>
-</div>
-<div class="notice" id="said" hidden></div>
-
 <h2>Device</h2>
 <table>
   <tr><th>time</th><td id="time">&hellip;</td></tr>
@@ -86,12 +73,6 @@ body{padding:0 16px 40px}</style>
       <div class="meter" id="spiffs-meter"><i></i></div></td></tr>
   <tr><th>firmware</th><td id="firmware">&hellip;</td></tr>
 </table>
-<p class="hint">power-off wallpaper</p>
-<div class="seg" id="wallpaper">
-  <button type="button" data-mode="grey">4 grey levels</button>
-  <button type="button" data-mode="bw">black and white</button>
-</div>
-<div class="notice" id="said-wallpaper" hidden></div>
 
 <footer>
   Passwords, TOTP secrets and keys never leave the device through this site:

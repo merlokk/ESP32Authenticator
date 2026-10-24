@@ -64,6 +64,9 @@
     "color:var(--text);font:inherit;font-size:16px}",
     ".field input:focus{outline:none;border-color:#3a4d42}",
     ".field input:disabled{opacity:.5}",
+    ".field input[type=range]{padding:0;border:0;background:none;accent-color:var(--green)}",
+    ".field .value{flex:0 0 48px;text-align:right;color:var(--faint);font-size:14px;",
+    "font-variant-numeric:tabular-nums}",
     "button.reveal{flex:0 0 auto;min-height:48px;padding:0 12px;border:1px solid var(--line);",
     "border-radius:10px;background:var(--plate);color:var(--faint);font:inherit;",
     "font-size:13px;cursor:pointer}",
@@ -206,13 +209,82 @@
            d.internet === "online" ? "ok" : d.internet === "offline" ? "bad" : "faint");
       text(by("ap"), apUp ? d.ap_ssid + " at " + d.ap_ip + ", " + d.ap_clients + " client(s)" : "off");
 
+      if (d.time_utc > 0) {
+        // The device's local time: UTC shifted by its zone, printed as UTC.
+        var off = d.time_offset, a = Math.abs(off);
+        var local = localTime(d.time_utc, off);
+        text(by("time"), local + " " + d.time_zone + " (UTC" + (off < 0 ? "-" : "+") +
+             ("0" + Math.floor(a / 3600)).slice(-2) + ":" + ("0" + Math.floor(a % 3600 / 60)).slice(-2) + ")");
+      } else { text(by("time"), "not set", "warn"); }
+      text(by("time-sync"), d.time_sync + (d.time_sync_ago_s >= 0 ? ", last " +
+           duration(d.time_sync_ago_s) + " ago" : ""),
+           d.time_sync === "ok" ? "ok" : d.time_sync === "failing" ? "bad" : "faint");
+      text(by("uptime"), duration(d.uptime_s));
+      text(by("heap"), bytes(d.heap_free) + ", lowest " + bytes(d.heap_low));
+      text(by("psram"), bytes(d.psram_free));
+      var used = d.spiffs_total > 0 ? (d.spiffs_used / d.spiffs_total) * 100 : 0;
+      text(by("spiffs"), d.spiffs_total > 0 ? bytes(d.spiffs_used) + " of " +
+           bytes(d.spiffs_total) + " (" + used.toFixed(0) + "%)" : "not mounted");
+      fill(by("spiffs-meter"), used, 80, 95);
+      text(by("firmware"), d.firmware + " on esp-idf " + d.idf);
+    }
+
+    function failed(why) {
+      lamp("bad", why);
+      var cells = document.querySelectorAll("td, td span");
+      for (var i = 0; i < cells.length; i++) {
+        if (cells[i].textContent === "…") text(cells[i], "-", "faint");
+      }
+    }
+
+    function refresh() { getJson("/api/status", paint, failed); }
+
+    refresh();
+    setInterval(refresh, 5000);
+    // A click on the lamp reads the status now, without waiting for the timer.
+    var light = by("lamp");
+    light.style.cursor = "pointer";
+    light.title = "refresh now";
+    light.addEventListener("click", function () { lamp("", "reading…"); refresh(); });
+  }
+
+  // --- settings ---------------------------------------------------------------
+
+  // Each control: POST /api/settings, then save; `then` runs on success.
+  function setAndSave(body, saidId, okText, then) {
+    said("applying…", "", saidId);
+    post("/api/settings", body, function () {
+      post("/api/action?do=save", null, function () {
+        said(okText, "ok", saidId);
+        if (then) then();
+      }, function (why) { said("set, but not saved: " + why, "bad", saidId); });
+    }, function (why) { said(why, "bad", saidId); });
+  }
+
+  function settingsPage() {
+    function mark(id, attr, value) {
+      var buttons = by(id).querySelectorAll("button");
+      for (var i = 0; i < buttons.length; i++) {
+        buttons[i].className = buttons[i].getAttribute(attr) === value ? "on" : "";
+      }
+    }
+    // A field follows the device until somebody touches it.
+    var edited = {};
+    function follow(id, value) {
+      var input = by(id);
+      if (!edited[id] && document.activeElement !== input) input.value = value;
+    }
+    function showLevel() {
+      by("light-brightness-value").textContent = by("light-brightness").value + "%";
+      by("light-warmth-value").textContent = by("light-warmth").value + "%";
+    }
+
+    function paint(d) {
+      lamp(d.ble === "connected" ? "ok" : "warn", d.ble);
       text(by("ble"), d.ble + (d.ble === "connected" ? (d.ble_secure ? ", secure" : ", not secure") : ""),
            d.ble === "connected" && d.ble_secure ? "ok" : "");
       // The name field follows the device until somebody types in it.
-      var nameInput = by("ble-name");
-      if (nameInput && !nameEdited && document.activeElement !== nameInput) {
-        nameInput.value = d.ble_name || "";
-      }
+      follow("ble-name", d.ble_name || "");
       text(by("kb"), d.kb_ready ? "ready" : "not subscribed", d.kb_ready ? "ok" : "faint");
       text(by("fido"), (d.fido_ready ? "ready" : "not subscribed") + ", " + d.fido_requests +
            " request(s), " + d.fido_errors + " error(s)", d.fido_ready ? "ok" : "faint");
@@ -238,81 +310,84 @@
         by("fido-meter").style.display = "none";
       }
 
-      if (d.time_utc > 0) {
-        // The device's local time: UTC shifted by its zone, printed as UTC.
-        var off = d.time_offset, a = Math.abs(off);
-        var local = localTime(d.time_utc, off);
-        text(by("time"), local + " " + d.time_zone + " (UTC" + (off < 0 ? "-" : "+") +
-             ("0" + Math.floor(a / 3600)).slice(-2) + ":" + ("0" + Math.floor(a % 3600 / 60)).slice(-2) + ")");
-      } else { text(by("time"), "not set", "warn"); }
-      text(by("time-sync"), d.time_sync + (d.time_sync_ago_s >= 0 ? ", last " +
-           duration(d.time_sync_ago_s) + " ago" : ""),
-           d.time_sync === "ok" ? "ok" : d.time_sync === "failing" ? "bad" : "faint");
-      text(by("uptime"), duration(d.uptime_s));
-      text(by("heap"), bytes(d.heap_free) + ", lowest " + bytes(d.heap_low));
-      text(by("psram"), bytes(d.psram_free));
-      var used = d.spiffs_total > 0 ? (d.spiffs_used / d.spiffs_total) * 100 : 0;
-      text(by("spiffs"), d.spiffs_total > 0 ? bytes(d.spiffs_used) + " of " +
-           bytes(d.spiffs_total) + " (" + used.toFixed(0) + "%)" : "not mounted");
-      fill(by("spiffs-meter"), used, 80, 95);
-      text(by("firmware"), d.firmware + " on esp-idf " + d.idf);
-      markWallpaper(d.wallpaper);
+      mark("wallpaper", "data-mode", d.wallpaper);
+      by("light-box").hidden = !d.light;
+      if (!d.light) said("this board has no frontlight", "", "said-light");
+      mark("light-state", "data-on", d.light_on ? "1" : "0");
+      follow("light-brightness", d.light_brightness);
+      follow("light-warmth", d.light_warmth);
+      showLevel();
+      follow("idle", d.idle_minutes);
+      mark("rail", "data-hold", d.hold_rail ? "1" : "0");
     }
 
-    // config.json display.wallpaper: grey (where the panel has it) or bw.
-    function markWallpaper(mode) {
-      var buttons = by("wallpaper").querySelectorAll("button");
-      for (var i = 0; i < buttons.length; i++) {
-        buttons[i].className = buttons[i].getAttribute("data-mode") === mode ? "on" : "";
-      }
-    }
-    by("wallpaper").addEventListener("click", function (e) {
-      var mode = e.target.getAttribute && e.target.getAttribute("data-mode");
-      if (!mode) return;
-      said("applying…", "", "said-wallpaper");
-      post("/api/settings", { display: { wallpaper: mode } }, function () {
-        post("/api/action?do=save", null, function () {
-          markWallpaper(mode);
-          said(mode === "grey" ? "4 grey levels, saved; a panel without them draws black and white"
-                               : "black and white, saved", "ok", "said-wallpaper");
-        }, function (why) { said("set, but not saved: " + why, "bad", "said-wallpaper"); });
-      }, function (why) { said(why, "bad", "said-wallpaper"); });
-    });
-
-    function failed(why) {
-      lamp("bad", why);
-      var cells = document.querySelectorAll("td, td span");
-      for (var i = 0; i < cells.length; i++) {
-        if (cells[i].textContent === "…") text(cells[i], "-", "faint");
-      }
-    }
-
-    function refresh() { getJson("/api/status", paint, failed); }
+    function refresh() { getJson("/api/status", paint, function (why) { lamp("bad", why); }); }
 
     // BLE name: config.json ble.name, applied to the radio at once, then saved.
-    var nameEdited = false;
-    by("ble-name").addEventListener("input", function () { nameEdited = true; });
+    by("ble-name").addEventListener("input", function () { edited["ble-name"] = true; });
     by("ble-name-set").addEventListener("click", function () {
       var name = by("ble-name").value.trim();
       if (!name) { said("a name is 1..29 bytes", "bad"); return; }
-      said("applying…");
-      post("/api/settings", { ble: { name: name } }, function () {
-        post("/api/action?do=save", null, function () {
-          nameEdited = false;
-          said("name set and saved to config.json; a paired host may show the old one " +
-               "until it reconnects", "ok");
-          refresh();
-        }, function (why) { said("set, but not saved: " + why, "bad"); });
-      }, function (why) { said(why, "bad"); });
+      setAndSave({ ble: { name: name } }, "said",
+                 "name set and saved to config.json; a paired host may show the old one " +
+                 "until it reconnects", function () { edited["ble-name"] = false; refresh(); });
+    });
+
+    // config.json display.wallpaper: grey (where the panel has it) or bw.
+    by("wallpaper").addEventListener("click", function (e) {
+      var mode = e.target.getAttribute && e.target.getAttribute("data-mode");
+      if (!mode) return;
+      setAndSave({ display: { wallpaper: mode } }, "said-wallpaper",
+                 mode === "grey" ? "4 grey levels, saved; a panel without them draws black and white"
+                                 : "black and white, saved",
+                 function () { mark("wallpaper", "data-mode", mode); });
+    });
+
+    // The light on / off: a state now, not saved.
+    by("light-state").addEventListener("click", function (e) {
+      var on = e.target.getAttribute && e.target.getAttribute("data-on");
+      if (!on) return;
+      post("/api/action?do=" + (on === "1" ? "light-on" : "light-off"), null, function () {
+        mark("light-state", "data-on", on);
+        said(on === "1" ? "on" : "off", "ok", "said-light");
+      }, function (why) { said(why, "bad", "said-light"); });
+    });
+    // config.json frontlight: applied while sliding, saved on release.
+    ["light-brightness", "light-warmth"].forEach(function (id) {
+      var input = by(id);
+      input.addEventListener("input", function () { edited[id] = true; showLevel(); });
+      input.addEventListener("change", function () {
+        var level = { brightness: +by("light-brightness").value, warmth: +by("light-warmth").value };
+        setAndSave({ frontlight: level }, "said-light",
+                   "brightness " + level.brightness + "%, warmth " + level.warmth + "%, saved",
+                   function () { edited[id] = false; });
+      });
+    });
+
+    // config.json power.idleMinutes (read live) and power.holdRail (at the next sleep).
+    by("idle").addEventListener("input", function () { edited.idle = true; });
+    by("idle-set").addEventListener("click", function () {
+      var minutes = Number(by("idle").value);
+      if (by("idle").value === "" || !(minutes >= 0 && minutes <= 1440) || minutes % 1) {
+        said("0..1440 minutes", "bad", "said-power");
+        return;
+      }
+      setAndSave({ power: { idleMinutes: minutes } }, "said-power",
+                 minutes ? "off after " + minutes + " min with nothing done, saved"
+                         : "never off on its own, saved",
+                 function () { edited.idle = false; });
+    });
+    by("rail").addEventListener("click", function (e) {
+      var hold = e.target.getAttribute && e.target.getAttribute("data-hold");
+      if (!hold) return;
+      setAndSave({ power: { holdRail: hold === "1" } }, "said-power",
+                 hold === "1" ? "battery kept through the sleep, saved"
+                              : "battery cut in the sleep, saved: the PIN after every wake",
+                 function () { mark("rail", "data-hold", hold); });
     });
 
     refresh();
     setInterval(refresh, 5000);
-    // A click on the lamp reads the status now, without waiting for the timer.
-    var light = by("lamp");
-    light.style.cursor = "pointer";
-    light.title = "refresh now";
-    light.addEventListener("click", function () { lamp("", "reading…"); refresh(); });
   }
 
   // --- the console dump -------------------------------------------------------
@@ -959,7 +1034,8 @@
     reboot: rebootPage,
     wifi: wifiPage,
     passwords: passwordsPage,
-    fido: fidoPage
+    fido: fidoPage,
+    settings: settingsPage
   };
   var which = document.body.getAttribute("data-page");
   if (pages[which]) pages[which]();
