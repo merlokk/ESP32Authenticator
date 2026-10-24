@@ -140,6 +140,13 @@ class Nav {
         return changed;
     }
 
+    // A screen by name (console `ui show`), pages kept. True when it changed.
+    constexpr bool Open(Mode m) {
+        const bool changed = mode_ != m;
+        mode_ = m;
+        return changed;
+    }
+
     // A swipe. True when the mode changed.
     constexpr bool Swipe(Gesture g) {
         Mode next = mode_;

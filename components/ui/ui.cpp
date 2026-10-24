@@ -147,21 +147,60 @@ void PushTask(void *) {
 // rest), so a tap shorter than a busy ui task is still a press and a release.
 // Between the edges the finger's place now: a swipe (nav::Classify, from the
 // down point to the last place) is taken by the screens at the lift.
+// Console `ui click` / `ui swipe`: a made-up finger, a step each read: down
+// at `from`, `steps` moves to `to`, up.
+struct Fake {
+    ScreenPoint from;
+    ScreenPoint to;
+    uint8_t steps;
+    uint8_t at;
+    bool active;
+};
+Fake fake = {};
+
+// The lift: what the finger's path was.
+void Lifted() {
+    gesture = nav::Classify(down_point.x, down_point.y, last_point.x, last_point.y, kHeight);
+    gesture_new = gesture != nav::Gesture::kTap;
+}
+
+void Pressed(ScreenPoint p) {
+    last_point = p;
+    down_point = p;
+    ++presses;
+    if (press_hook != nullptr) {
+        press_hook();
+    }
+}
+
+// One step of the made-up finger.
+void PlayFake() {
+    if (fake.at == 0) {
+        Pressed(fake.from);
+        last_down = true;
+    } else if (fake.at <= fake.steps) {
+        const int32_t k = fake.at;
+        const int32_t n = fake.steps;
+        last_point.x = static_cast<uint16_t>(fake.from.x + (fake.to.x - fake.from.x) * k / n);
+        last_point.y = static_cast<uint16_t>(fake.from.y + (fake.to.y - fake.from.y) * k / n);
+    } else {
+        Lifted();
+        last_down = false;
+        fake.active = false;
+    }
+    ++fake.at;
+}
+
 void ReadTouch(lv_indev_t *, lv_indev_data_t *data) {
     touch::gt911::Edge e = {};
     uint8_t more = 0;
-    if (touch::NextEdge(&e, &more)) {
+    if (fake.active) {
+        PlayFake();
+    } else if (touch::NextEdge(&e, &more)) {
         if (e.down) {
-            last_point = TouchToScreen(e.x, e.y);
-            down_point = last_point;
-            ++presses;
-            if (press_hook != nullptr) {
-                press_hook();
-            }
+            Pressed(TouchToScreen(e.x, e.y));
         } else {
-            gesture = nav::Classify(down_point.x, down_point.y, last_point.x, last_point.y,
-                                    kHeight);
-            gesture_new = gesture != nav::Gesture::kTap;
+            Lifted();
         }
         last_down = e.down;
         data->continue_reading = more > 0;
@@ -284,6 +323,33 @@ void HoldPanel(bool hold) {
     have_pending = false;    // the next LVGL change draws it all again
     frame_on_glass = false;  // the glass shows something else now
     xSemaphoreGive(pending_mutex);
+}
+
+esp_err_t Touch(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1) {
+    if (pointer == nullptr) {
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+    if (x0 >= kWidth || x1 >= kWidth || y0 >= kHeight || y1 >= kHeight) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    Lock();
+    const bool busy = fake.active || last_down;
+    if (!busy) {
+        const bool tap = x0 == x1 && y0 == y1;
+        fake = {{x0, y0}, {x1, y1}, static_cast<uint8_t>(tap ? 2 : 10), 0, true};
+    }
+    Unlock();
+    return busy ? ESP_ERR_INVALID_STATE : ESP_OK;
+}
+
+bool CopyScreen(uint8_t *out) {
+    if (screen == nullptr) {
+        return false;
+    }
+    Lock();
+    memcpy(out, screen + kPaletteBytes, kScreenBytes);
+    Unlock();
+    return true;
 }
 
 void Lock() { xSemaphoreTakeRecursive(mutex, portMAX_DELAY); }

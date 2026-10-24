@@ -47,6 +47,20 @@ void SetTypist(esp_err_t (*type)(const char *text));
 // nothing while the PIN pad is up.
 void Navigate(nav::Input input);
 
+// The LVGL screen as ui_logic.h has it (I1, 1 white, rows of kRowBytes, MSB
+// the leftmost): `out` takes kScreenBytes. False: no display.
+bool CopyScreen(uint8_t *out);
+
+// Console `ui demo fido <n>`: n made-up keys (up to 30) added to the shown
+// U2F / FIDO2 list, only on the screen (the store is not touched); 0 none.
+void SetFidoDemo(uint8_t count);
+// Console `ui click` / `ui swipe`: a made-up finger from (x0, y0) to (x1, y1)
+// (the same point: a tap) on the portrait screen, played in ~200 ms as the
+// touch would be. ESP_ERR_INVALID_STATE: a finger (real or not) is down.
+esp_err_t Touch(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1);
+// Console `ui show`: that screen, as its swipe would open it.
+void ShowScreen(nav::Mode mode);
+
 // Called from the ui task when a finger goes down (power::NoteActivity).
 void SetPressHook(void (*hook)());
 

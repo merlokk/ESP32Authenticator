@@ -8,6 +8,8 @@
 #include "esp_app_desc.h"
 #include "esp_chip_info.h"
 #include "esp_console.h"
+#include "esp_crc.h"
+#include "esp_heap_caps.h"
 #include "esp_idf_version.h"
 #include "esp_log.h"
 #include "esp_ota_ops.h"
@@ -23,6 +25,7 @@
 #include "totp_cmd.h"
 #include "power.h"
 #include "ui.h"
+#include "ui_logic.h"
 #include "fido_cmd.h"
 #include "pass_cmd.h"
 #include "nvs_cmd.h"
@@ -86,6 +89,87 @@ int CmdUi(int argc, char **argv) {
             ui::PreviewWallpaper(mode == config::WallpaperMode::kGrey, &shown);
         printf("%s: %s\n", shown[0] != '\0' ? shown : "wallpaper", esp_err_to_name(err));
         return err == ESP_OK ? 0 : 1;
+    }
+    const bool click = argc == 4 && strcmp(argv[1], "click") == 0;
+    if (click || (argc == 6 && strcmp(argv[1], "swipe") == 0)) {
+        int v[4] = {};
+        for (int i = 0; i < argc - 2; ++i) {
+            v[i] = atoi(argv[i + 2]);
+        }
+        if (click) {
+            v[2] = v[0];
+            v[3] = v[1];
+        }
+        for (const int c : v) {
+            if (c < 0) {
+                printf("usage: ui click <x> <y> | ui swipe <x0> <y0> <x1> <y1> (0..479, 0..799)\n");
+                return 1;
+            }
+        }
+        const esp_err_t err = ui::Touch(static_cast<uint16_t>(v[0]), static_cast<uint16_t>(v[1]),
+                                        static_cast<uint16_t>(v[2]), static_cast<uint16_t>(v[3]));
+        if (err != ESP_OK) {
+            printf("%s\n", err == ESP_ERR_INVALID_ARG    ? "off the screen (0..479, 0..799)"
+                           : err == ESP_ERR_INVALID_STATE ? "a finger is down"
+                                                          : "no touch");
+            return 1;
+        }
+        return 0;
+    }
+    if (argc == 3 && strcmp(argv[1], "key") == 0) {
+        const char *keys[] = {"left", "right", "home"};  // nav::Input's order
+        for (int i = 0; i < 3; ++i) {
+            if (strcmp(argv[2], keys[i]) == 0) {
+                ui::Navigate(static_cast<ui::nav::Input>(i));
+                return 0;
+            }
+        }
+        printf("usage: ui key left|right|home\n");
+        return 1;
+    }
+    if (argc == 3 && strcmp(argv[1], "show") == 0) {
+        const char *names[] = {"list", "settings", "fido"};  // nav::Mode's order
+        for (int i = 0; i < 3; ++i) {
+            if (strcmp(argv[2], names[i]) == 0) {
+                ui::ShowScreen(static_cast<ui::nav::Mode>(i));
+                return 0;
+            }
+        }
+        printf("usage: ui show list|settings|fido\n");
+        return 1;
+    }
+    if (argc >= 3 && strcmp(argv[1], "demo") == 0 && strcmp(argv[2], "fido") == 0) {
+        const int n = argc == 4 ? atoi(argv[3]) : 10;
+        if (n < 0 || n > 30) {
+            printf("usage: ui demo fido [0..30]\n");
+            return 1;
+        }
+        ui::SetFidoDemo(static_cast<uint8_t>(n));
+        printf("%d made-up key(s) in the U2F / FIDO2 list (screen only)\n", n);
+        return 0;
+    }
+    if (argc == 2 && strcmp(argv[1], "screenshot") == 0) {
+        // 48 KB: PSRAM, not the console's stack.
+        constexpr size_t kBytes = ui::kScreenBytes;
+        auto *shot = static_cast<uint8_t *>(
+            heap_caps_malloc(kBytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+        if (shot == nullptr || !ui::CopyScreen(shot)) {
+            printf("%s\n", shot == nullptr ? "no memory" : "no display");
+            heap_caps_free(shot);
+            return 1;
+        }
+        printf("screenshot %u %u 1bit\n", static_cast<unsigned>(ui::kWidth),
+               static_cast<unsigned>(ui::kHeight));
+        PrintBase64Lines(shot, kBytes);
+        printf("end %u bytes, crc32 %08" PRIx32 "\n", static_cast<unsigned>(kBytes),
+               esp_crc32_le(0, shot, kBytes));
+        heap_caps_free(shot);
+        return 0;
+    }
+    if (argc == 3 && strcmp(argv[1], "demo") == 0 && strcmp(argv[2], "off") == 0) {
+        ui::SetFidoDemo(0);
+        printf("no made-up keys\n");
+        return 0;
     }
     ui::PrintInfo();
     return 0;
@@ -410,8 +494,14 @@ const esp_console_cmd_t kCommands[] = {
         .command = "ui",
         .help = "LVGL display: [info] size, refreshes, the last one, the ui task's free stack | "
                 "wallpaper [grey|bw]: draw a random power-off wallpaper now, as display.wallpaper in "
-                "config.json or as given (stays on)",
-        .hint = "[wallpaper [grey|bw]]",
+                "config.json or as given (stays on) | demo fido [n] / demo off: n (10) made-up keys in the "
+                "U2F / FIDO2 list, on the screen only | show list|settings|fido: that screen | "
+                "click <x> <y> / swipe <x0> <y0> <x1> <y1>: a made-up finger (portrait px) | "
+                "key left|right|home: as the button | "
+                "screenshot: the screen as base64 (utils/screenshot.py makes a PNG)",
+        .hint = "[wallpaper [grey|bw] | show <screen> | key <key> | click <x> <y> | "
+                "swipe <x0> <y0> <x1> <y1> | "
+                "demo fido [n] | demo off | screenshot]",
         .func = &CmdUi,
         .argtable = nullptr,
         .func_w_context = nullptr,

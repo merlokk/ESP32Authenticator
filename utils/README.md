@@ -17,6 +17,7 @@ All tools take `-p <port>` (e.g. `COM6`) and exit with 1 when the device reports
 | `spiffs.py` | SPIFFS files |
 | `wallpaper.py` | power-off wallpapers (PNG) in `/sdcard/wallpapers` |
 | `ble.py` | BLE stack, pairing, host switching, keyboard |
+| `screenshot.py` | the e-ink screen as a PNG (`ui screenshot`) |
 
 ## console.py
 
@@ -81,6 +82,16 @@ python utils/ble.py -p COM6 kb --stdin < file.txt
 - `pair`: opens the pairing window and waits; prints `passkey nnnnnn` (enter it on the host) and `paired with <addr>`.
 - `use`: switch hosts (`#` from `bonds`); keys are released on the old host first.
 - `kb`: types text on the connected host (US layout, ASCII). Quoting and escaping for the console are done here, and long text is split into several commands (console line limit 256).
+
+## screenshot.py
+
+```powershell
+python utils/screenshot.py -p COM7 [out.png]   # default screen-<time>.png
+```
+
+- `ui screenshot`: LVGL's 1-bit portrait screen (480x800) as base64 with
+  length and CRC32; written as a 1-bit greyscale PNG (no Pillow). Driving the
+  screen (`ui show`, `ui key`, `ui click`, `ui swipe`): [testing-on-device.md](../testing-on-device.md#screen).
 
 ## Notes
 

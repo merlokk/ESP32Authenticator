@@ -81,6 +81,7 @@ uint32_t toast_at = 0;
 uint32_t looked_at = 0;
 int tapped_tab = -1;  // OnTab: for Poll (the matrix is not changed in its own event)
 bool back_tapped = false;  // OnBack: for Poll (the arrow is deleted with the page)
+int open_mode = -1;        // ShowScreen (console): the nav::Mode to open, for Poll
 bool fido_wait = false;    // a FIDO2 request waits for the button: its store is busy
 char tab_text[nav::kTabs][16];
 const char *tab_map[nav::kTabs + 1];
@@ -436,6 +437,51 @@ uint32_t fido_looked_at = 0;
 fido_ctap_credential_t *fido_keys = nullptr;
 uint16_t *fido_order = nullptr;
 size_t fido_capacity = 0;
+uint8_t fido_demo = 0;  // made-up keys added to the list (ui demo fido)
+
+// The made-up keys: site, user, display name, algorithm, kind.
+struct Demo {
+    const char *site;
+    const char *user;
+    const char *display;
+    int32_t alg;
+    bool u2f;
+    bool discoverable;
+};
+constexpr Demo kDemo[] = {
+    {"github.com", "octocat", "The Octocat", -7, false, true},
+    {"google.com", "john.doe@gmail.com", "John Doe", -7, false, true},
+    {"microsoft.com", "john@outlook.com", "", -7, false, true},
+    {"login.microsoftonline.com", "john.doe@contoso.onmicrosoft.com", "John Doe", -7, false,
+     true},
+    {"amazon.com", "", "John", -7, false, true},
+    {"U2F 3dec69ac", "", "", -7, true, false},
+    {"dropbox.com", "jdoe", "", -7, false, false},
+    {"accounts.firefox.com", "john.doe@mail.example", "", -8, false, true},
+    {"gitlab.com", "jdoe", "John Doe", -8, false, true},
+    {"cloudflare.com", "admin@example.org", "", -7, false, false},
+};
+
+// The made-up keys after the real ones in fido_keys (dated a day apart).
+void AddDemo(size_t *count) {
+    constexpr size_t kKinds = sizeof kDemo / sizeof kDemo[0];
+    for (uint8_t i = 0; i < fido_demo && *count < fido_capacity; ++i) {
+        const Demo &d = kDemo[i % kKinds];
+        fido_ctap_credential_t &c = fido_keys[(*count)++];
+        memset(&c, 0, sizeof c);
+        if (i < kKinds) {
+            snprintf(c.rp_id, sizeof c.rp_id, "%s", d.site);
+        } else {
+            snprintf(c.rp_id, sizeof c.rp_id, "%u.%s", static_cast<unsigned>(i / kKinds), d.site);
+        }
+        snprintf(c.user_name, sizeof c.user_name, "%s", d.user);
+        snprintf(c.display_name, sizeof c.display_name, "%s", d.display);
+        c.alg = d.alg;
+        c.u2f = d.u2f;
+        c.discoverable = d.discoverable;
+        c.origin.created_utc = i % 4 == 3 ? 0 : 1767225600 + i * 86400LL;  // 2026-01-01 on
+    }
+}
 
 FidoSeen FidoLook() {
     fido_ctap_info_t info;
@@ -472,6 +518,7 @@ esp_err_t FidoLoad(size_t *count, FidoSeen *seen) {
     if (err != ESP_OK) {
         return err;
     }
+    AddDemo(count);
     fido_list::Sort(fido_order, *count, [](uint16_t a, uint16_t b) {
         const fido_ctap_credential_t &x = fido_keys[a];
         const fido_ctap_credential_t &y = fido_keys[b];
@@ -751,6 +798,10 @@ void Poll(lv_timer_t *) {
             changed |= nav_state.Apply(static_cast<nav::Input>(in));
         }
     }
+    if (open_mode >= 0) {
+        changed |= nav_state.Open(static_cast<nav::Mode>(open_mode));
+        open_mode = -1;
+    }
     if (back_tapped) {
         changed |= nav_state.Back();
         back_tapped = false;
@@ -824,6 +875,19 @@ void StartScreens() {
 }
 
 void SetStatusSource(void (*fn)(status::Status *out)) { source = fn; }
+
+void SetFidoDemo(uint8_t count) {
+    Lock();
+    fido_demo = count;
+    fido_seen.err = ESP_FAIL;  // drawn again at the next look
+    Unlock();
+}
+
+void ShowScreen(nav::Mode mode) {
+    Lock();
+    open_mode = static_cast<int>(mode);
+    Unlock();
+}
 
 void SetTypist(esp_err_t (*type)(const char *text)) { typist = type; }
 

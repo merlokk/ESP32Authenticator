@@ -36,10 +36,7 @@ idf.py -p COM6 flash
 - If the app does not start after flashing, run
   `python -m esptool -p COM6 --before no-reset --after watchdog-reset chip-id`
   (esptool is in the IDF Python env: run it inside the profile).
-- Console silent (commands time out, writes to COM6 block): the app is hung or
-  boot-looping. Read the port without writing (pyserial, DTR/RTS low) to get
-  the boot log and panic backtrace, then decode it:
-  `xtensa-esp32s3-elf-addr2line -pfiaC -e build/esp32-authenticator.elf <addr...>`.
+- Console silent, panics, checks after a flash: [testing-on-device.md](testing-on-device.md).
 - On the X4 Pro the app `.bin` is flashed through the CrossPoint unlocker-tool
   (see [architecture.md](architecture.md)).
 
@@ -69,6 +66,7 @@ python utils/ble.py -p COM6 use <#|addr|any>
 python utils/ble.py -p COM6 unpair <#|addr|all>
 python utils/ble.py -p COM6 kb "text"          # or kb --stdin; quoting and splitting
                                                 # into console lines is done for you
+python utils/screenshot.py -p COM7 [out.png]   # the e-ink screen as a PNG
 ```
 
 ## Tests
@@ -89,63 +87,8 @@ and {fmt} are fetched on the first run; the build tree is
 `~/.cache/esp32auth-lionkey-build` in WSL. The regex filters test names
 (`CtapGetInfo`).
 
-`tests/fido2/`: CTAP2 authenticator suite (pytest + python-fido2,
-`pip install -r tests/fido2/requirements.txt`). Transport-agnostic, checked
-against a reference USB key (YubiKey). On Windows both transports need an
-administrator terminal (FIDO HID and the GATT FIDO service are hidden otherwise).
-
-- `--transport hid` (default): USB CTAPHID.
-- `--transport ble --device <address|name>`: FIDO over BLE (`ble_transport.py`,
-  bleak). Pair the device with the PC first (`ble pair`, passkey in Windows
-  Bluetooth settings). A bonded device already connected to the PC does not
-  advertise: pass its address, the scan is skipped.
-- Power cycle (replug, reset tests): on USB the user replugs the key; over BLE
-  `--console COM6` sends `reboot` to our firmware, waits for `ble info` to say
-  `state on` (the console drops commands right after boot), reconnects.
-  Without `--console` these tests are skipped on BLE.
-- `test_transport.py` (marker `transport`): PING on both transports, BLE
-  framing errors. If getInfo fails (no CTAP2 core yet), only these run.
-
-```powershell
-cd tests/fido2
-python -m pytest [-k name] [--transport ble] [--device YubiKey|<address>] [--console COM6] [--pin 1234] [--set-pin] [--destructive] [--fill] [--reset]
-```
-
-- Never changes the PIN; sets one only with `--set-pin`, resets only with `--reset`.
-- Non-resident credentials of the test RPs (`ctap-test*.example`) can stay on
-  our firmware after a run (U2F ones show as `U2F 3dec69ac`): check with `fido2 list`, remove with
-  `fido2 delete <id>` (the store holds the board's `fido_max_credentials`; a run
-  leaves ~6, a full store fails with KEY_STORE_FULL / U2F 0x6986).
-- PIN: asked at start when the key has one (or `--pin` / `FIDO_PIN`); empty
-  skips the PIN, UV and discoverable-credential tests. These use only the test
-  RPs `ctap-test*.example` and delete their credentials.
-- `--set-pin`: on a key without a PIN, asks for a new one twice and sets it
-  (only a FIDO reset removes it); refuses if a PIN is already set.
-- `--destructive`: one wrong PIN (retries restored by the right PIN); 3 wrong
-  in a row must give PIN_AUTH_BLOCKED even for the right PIN, then a power
-  cycle and the right PIN restores the retries (needs >= 6 left; if the power
-  cycle fails, enter the right PIN in the next run to restore them).
-  Also the empty CBOR request (runs late): YubiKey 5.8 never answers and stays
-  CHANNEL_BUSY, the test power-cycles it and fails (expected on YubiKey).
-- `--fill` (`test_fill.py`, runs late): discoverable credentials for
-  `ctap-test-fill.example` until KEY_STORE_FULL; the count must match
-  getCredsMetadata's remaining, then all are deleted. One touch each: on our
-  firmware `config test presence on` first (and `off` after). With reboots
-  (`--console`) on a PIN-locked store also `config test pin <PIN>` (and `off`).
-- `--reset` (asks to type RESET): authenticatorReset tests, run last. Make
-  credentials, power cycle, reset at once with a touch (within 10 s of
-  power-up: YubiKey, our firmware), check PIN and credentials are gone; then
-  a reset 12 s after the first one must be refused (cancelled if the key asks
-  for a touch instead). LionKey restarts its 10 s window after a reset.
-- Elevated from a normal shell (the elevated window cannot run a script
-  from Claude's temp folder): `Start-Process pwsh -Verb RunAs -ArgumentList
-  '-NoProfile','-Command','& <script in the repo>'`.
-- X4 Pro over BLE (2026-10-23, `--console COM7 --destructive --fill`): 103
-  passed, 5 skipped (`--reset`); the store filled at 125 credentials.
-- Hang guards: 5 s per HID report, 40 s per request (then CANCEL), 180 s per
-  test (stack dump and exit). Run Python with `-u` when piping the output.
-- Touches: one for the shared credential, one each for `exclude_list` and
-  `assertion_with_touch`, one for the discoverable credential.
+On the board (console, screen, `config test`, the FIDO2 suite `tests/fido2/`):
+[testing-on-device.md](testing-on-device.md).
 
 ## Web site
 
@@ -157,8 +100,7 @@ Up when `web` says `running`; `web` prints the address(es).
 - On a home network: `wifi set <ssid> <password>`, `web on`, then the IP from
   `web` / `wifi info`.
 - Open site by default; `web login <user> <password>` locks every route.
-- Quick API checks: `curl http://<ip>/api/status`, `/api/settings`,
-  `/api/wifi/scan`.
+- Quick API checks: [testing-on-device.md](testing-on-device.md#web-site).
 - Front page: network (address, MAC, internet), BLE and the FIDO2 store
   (credentials used of 10, PIN, counter), device; the bars show what is used.
 - Passwords page: unlock with the PIN, find, add, edit (password and TOTP
@@ -222,7 +164,7 @@ Opening the port with RTS asserted resets the chip.
 | `light [info]` / `light <1..100> [warmth]` / `light warmth <0..100>` / `light on\|off` | the frontlight: on/off, level, PWM duty per string / set the level (warmth 0 cool .. 100 warm, saved to `frontlight`) and light it / now only, not saved. Off at boot; Power x2 toggles. Fades 250 ms |
 | `epd [info]` / `epd test [orient\|corners\|edges\|checker\|black\|white\|grey] [full\|fast]` / `epd sleep` | the e-ink panel: controller, both probe passes (FLG, VER), the stock screenType, refreshes and the last duration (full, fast or grey) / draw a test frame (orient: which way is up; corners, edges: what the bezel hides; grey: four bands black to white, UC8179 only) / deep sleep, the picture stays |
 | `touch [info]` / `touch watch [s]` | the GT911: address, product, firmware, panel size, vendor, config head (version, output size, contacts, INT mode), frames and read errors, Home / each new frame that differs from the last for 1..120 s (repeats only counted: printing ~100 frames a second jammed the USB console until a replug): status, contacts raw and decoded (id, x, y, size) |
-| `ui [info]` / `ui wallpaper [grey\|bw]` | LVGL display: size, refreshes, the last one, the turn time, the ui task's free stack, touch (up/down, last point, presses) / draw a random power-off wallpaper now (as `display.wallpaper`, or as given), staying on |
+| `ui [info]` / `ui wallpaper [grey\|bw]` / `ui show\|key\|click\|swipe\|screenshot\|demo ...` | LVGL display: size, refreshes, the last one, the turn time, the ui task's free stack, touch (up/down, last point, presses) / draw a random power-off wallpaper now (as `display.wallpaper`, or as given), staying on / drive and read the screen: [testing-on-device.md](testing-on-device.md#screen) |
 | `off [lock] [wake <s>]` | power-off: a wallpaper, deep sleep; Power wakes (a reboot). Also Power held, idle (`power.idleMinutes`); the vault key kept for `power.keepPinHours`, `lock` (also Power x3): not; `wake`: a timer wakes it too (tests) |
 | `keys [info]` / `keys watch [s]` | the buttons: GPIO, raw and debounced level, held time, queue / events from now on for 1..120 s (default 10): pressed, released, long, click xN |
 | `battery [info]` | gauge (CW2017 at 0x63, profile, last init action), voltage (mV), level (%), charging (STAT pin) |
@@ -255,7 +197,7 @@ entry for `pin.lockMinutes` (config.json), also across a reboot.
 | `devstatus` | `version`, `info`, `board`, `date`, `battery`, `sd`, `led info`, `wifi info`, `web`, `ble info`, `fido2 info` in one dump (also the site's Device status page; its "Full hardware info" button shows `hwinfo`) |
 | `config show` | current config as JSON, passwords masked (networks, AP, web) |
 | `config info` | file path, source (file / built-in defaults), why the file was not used |
-| `config test [pin <6 digits>\|off \| presence on\|off]` | development: `test.pin` (the vault unlocks at boot) and `test.autoPresence` (FIDO2 without the button), saved; the PIN is never shown. For test runs (`tests/fido2` with reboots, the fill test); turn both off after |
+| `config test [pin <6 digits>\|off \| presence on\|off]` | development: `test.pin` and `test.autoPresence`, saved ([testing-on-device.md](testing-on-device.md#configjson-test)) |
 | `config power [idle <0..1440 min>] [keep <0..168 h>] [rail on\|off]` | off when idle (0: never; never on USB) / a wake this soon after the sleep needs no PIN (0: always) / GPIO1 held through the sleep (off: on the battery the power drops), saved |
 | `config wallpaper [grey\|bw]` | the power-off wallpaper: 4 grey levels (where the panel has them) or black and white (`display.wallpaper`), saved |
 | `config reload` / `config save` | re-read config.json (keeps values on error) and apply Wi-Fi (incl. internet check), web, time and LED settings / write current values |

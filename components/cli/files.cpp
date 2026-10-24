@@ -384,6 +384,14 @@ constexpr Subcommand kSubcommands[] = {
 
 }  // namespace
 
+void PrintBase64Lines(const uint8_t *data, size_t len) {
+    constexpr size_t kLineBytes = 57;
+    for (size_t i = 0; i < len; i += kLineBytes) {
+        PrintBase64(data + i, len - i < kLineBytes ? len - i : kLineBytes);
+        fputc('\n', stdout);
+    }
+}
+
 int ReceiveFile(const char *path, size_t want_length, uint32_t want_crc, bool check) {
     FILE *f = fopen(path, "wb");
     if (f == nullptr) {

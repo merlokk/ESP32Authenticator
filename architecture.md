@@ -67,11 +67,8 @@ Reference ESP-IDF + LVGL project: `../../ai-remote/approver-esp32` ([GitHub](htt
   long after a sleep a wake needs no PIN; `holdRail` (default true): GPIO1
   held high through the sleep (false: on the battery the power drops, no
   drain, the kept PIN lost).
-- `test`: development aids. `test.pin` (empty or 6 digits) unlocks the vault
-  at boot; masked by `config show`, never on the site. `test.autoPresence`
-  (default false): FIDO2 / U2F user presence is confirmed without the button
-  (a log warning each time; `fido2 info` says so; not the reset's 5 s hold);
-  read at every request, so `config set` takes effect at once. Never on a
+- `test`: development aids (`pin`, `autoPresence`), see
+  [testing-on-device.md](testing-on-device.md#configjson-test). Never on a
   device with real secrets.
 - `Data` is over a kilobyte: parsing stages it on the heap, never on a task
   stack (main 3.5 KB, console and httpd 4 KB; a stack copy overflowed main
@@ -102,7 +99,7 @@ Reference ESP-IDF + LVGL project: `../../ai-remote/approver-esp32` ([GitHub](htt
   "display": {"wallpaper": "grey"},
   "power": {"idleMinutes": 10, "keepPinHours": 0, "holdRail": true},
   "pin": {"lockMinutes": 10, "wipe": "", "complexity": true},
-  "test": {"pin": ""}
+  "test": {"pin": "", "autoPresence": false}
 }
 ```
 

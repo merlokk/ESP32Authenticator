@@ -23,4 +23,7 @@ int CmdSpiffs(int argc, char **argv);
 // file is removed. Prints "ok <n> bytes, crc32 <x>" or "error: ...".
 int ReceiveFile(const char *path, size_t want_length, uint32_t want_crc, bool check);
 
+// Prints `len` bytes as base64, 76 chars a line (as spiffs catbase64).
+void PrintBase64Lines(const uint8_t *data, size_t len);
+
 }  // namespace console

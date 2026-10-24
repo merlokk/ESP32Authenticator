@@ -67,6 +67,9 @@ LionKey fork (CTAP 2.2/2.3 features, EdDSA, U2F): [lionkey-update-plan.md](lionk
 
 Credential store encryption, PSRAM store, SD for hundreds of keys (analysis): [storage-encryption.md](storage-encryption.md).
 
+Testing on the board (console, screen screenshots and made-up touches,
+`config test`, the FIDO2 suite): [testing-on-device.md](testing-on-device.md).
+
 ## Hardware
 
 Pinout, display controllers, devices: [hardware.md](hardware.md).

@@ -308,6 +308,11 @@ void test_nav_swipes(void) {
     TEST_ASSERT_TRUE(n.mode() == Mode::kList);
     TEST_ASSERT_EQUAL_UINT8(1, n.page());
     TEST_ASSERT_FALSE(n.Back());
+    // A screen by name (console ui show): the pages stay.
+    TEST_ASSERT_TRUE(n.Open(Mode::kFido));
+    TEST_ASSERT_FALSE(n.Open(Mode::kFido));
+    TEST_ASSERT_TRUE(n.Open(Mode::kList));
+    TEST_ASSERT_EQUAL_UINT8(1, n.page());
     // Home closes them too.
     n.Swipe(Gesture::kUpFromBottom);
     TEST_ASSERT_TRUE(n.Apply(ui::nav::Input::kHome));
