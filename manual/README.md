@@ -1,5 +1,7 @@
 # ESP32Authenticator: user manual
 
+<img src="img/device.jpg" width="300" align="right">
+
 A password manager and a FIDO2 / U2F security key on the XTEINK X4 Pro.
 It types logins, passwords and TOTP codes into a computer or a phone as a
 Bluetooth keyboard, and signs in to sites as a Bluetooth FIDO2 key.
@@ -7,6 +9,8 @@ Bluetooth keyboard, and signs in to sites as a Bluetooth FIDO2 key.
 Buttons: **Left** and **Right** on the side edges, **Home** (the touch key
 under the glass), **Power**, and **Reset** (the small one on the top edge,
 on the right).
+
+<br clear="right">
 
 ## PIN
 
