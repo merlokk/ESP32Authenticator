@@ -1335,7 +1335,7 @@ lv_obj_t *ChoiceRow(int32_t y, const char *name, const char *value, bool check,
     lv_obj_add_event_cb(row, cb, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<intptr_t>(id)));
     lv_obj_t *n = Label(row, &lv_font_montserrat_24);
     lv_label_set_text(n, name);
-    lv_obj_set_pos(n, 12, (kNetRow - 30) / 2);
+    lv_obj_align(n, LV_ALIGN_LEFT_MID, 12, 0);  // stays in the middle when the row is made lower
     if (value != nullptr) {
         lv_obj_t *v = Label(row, &lv_font_montserrat_20);
         lv_label_set_text(v, value);
