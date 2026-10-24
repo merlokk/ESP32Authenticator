@@ -13,6 +13,7 @@
 #include "wifi_view_logic.h"
 #include "ble_view_logic.h"
 #include "display_view_logic.h"
+#include "time_view_logic.h"
 #include "touch_cal_logic.h"
 
 namespace ui {
@@ -104,6 +105,20 @@ struct DisplayHooks {
     const char *(*set)(display_view::Setting setting, uint16_t value);
 };
 void SetDisplayHooks(const DisplayHooks *hooks);
+
+// The Date & time window (time_view_logic.h), filled by the device.
+struct TimeHooks {
+    // What it shows. ui task, every 2 s while shown: keep it quick.
+    void (*view)(time_view::View *out);
+    // The zone table (zones.h).
+    size_t (*zone_count)();
+    const char *(*zone_name)(size_t index);
+    // The rest in the ui's own task, saying what happened.
+    const char *(*set_zone)(const char *name);
+    const char *(*set_sync)(uint8_t hours);
+    const char *(*set_time)(const time_view::Manual &local);
+};
+void SetTimeHooks(const TimeHooks *hooks);
 
 // The touch's calibration (touch_cal_logic.h), applied to every real touch;
 // saved by `save` (the ui's own task) when Settings > Touchscreen keeps a new one.

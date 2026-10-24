@@ -31,6 +31,7 @@
 #include "store_io.h"
 #include "timesync.h"
 #include "timezone.h"
+#include "clock_math.h"
 #include "ui.h"
 #include "vault.h"
 #include "web_server.h"
@@ -487,7 +488,11 @@ void SettingsDescribe(ui::settings::Page page, bool summary, char *out, size_t s
         case Page::kWifiScan:
         case Page::kWifiPassword:
         case Page::kBlePair:
-        case Page::kDisplayChoice: break;
+        case Page::kDisplayChoice:
+        case Page::kTimeSync:
+        case Page::kTimeRegion:
+        case Page::kTimeZone:
+        case Page::kTimeSet: break;
     }
 }
 
@@ -716,6 +721,88 @@ const char *DisplaySet(ui::display_view::Setting setting, uint16_t value) {
 
 const ui::DisplayHooks kDisplayHooks = {DisplayView, DisplaySet};
 
+// --- The Date & time window (ui::TimeHooks) ------------------------------------------
+
+void TimeView(ui::time_view::View *out) {
+    namespace tv = ui::time_view;
+    *out = {};
+    const time_t now = time(nullptr);
+    out->time_set = rtc::Believable(now);
+    struct tm local = {};
+    localtime_r(&now, &local);
+    strftime(out->clock, sizeof out->clock, "%H:%M", &local);
+    strftime(out->date, sizeof out->date, "%A, %d %B %Y", &local);
+    out->now[tv::kYear] = static_cast<uint16_t>(local.tm_year + 1900);
+    out->now[tv::kMonth] = static_cast<uint16_t>(local.tm_mon + 1);
+    out->now[tv::kDay] = static_cast<uint16_t>(local.tm_mday);
+    out->now[tv::kHour] = static_cast<uint16_t>(local.tm_hour);
+    out->now[tv::kMinute] = static_cast<uint16_t>(local.tm_min);
+    const config::Time &t = config::Get().time;
+    snprintf(out->zone, sizeof out->zone, "%s", t.zone[0] != '\0' ? t.zone : "UTC");
+    const int offset = tz::OffsetSeconds();
+    const int a = offset < 0 ? -offset : offset;
+    snprintf(out->offset, sizeof out->offset, "UTC%c%02d:%02d%s", offset < 0 ? '-' : '+', a / 3600,
+             a / 60 % 60, tz::IsDaylightSaving() ? ", summer" : "");
+    snprintf(out->server, sizeof out->server, "%s", t.server);
+    out->sync_hours = t.sync_hours;
+    const timesync::Status s = timesync::Get();
+    if (s.syncing) {
+        snprintf(out->last_sync, sizeof out->last_sync, "now");
+    } else if (!s.ever_synced) {
+        snprintf(out->last_sync, sizeof out->last_sync, "never");
+    } else if (s.since_last_ms < 3600u * 1000) {
+        snprintf(out->last_sync, sizeof out->last_sync, "%u min ago",
+                 static_cast<unsigned>(s.since_last_ms / 60000));
+    } else {
+        snprintf(out->last_sync, sizeof out->last_sync, "%u h ago",
+                 static_cast<unsigned>(s.since_last_ms / 3600000));
+    }
+}
+
+size_t ZoneCount() { return tz::Count(); }
+
+const char *ZoneName(size_t index) { return tz::At(index).name; }
+
+// As the console's `date zone`.
+const char *TimeSetZone(const char *name) {
+    config::Time &t = config::Get().time;
+    if (tz::ApplyZone(name) != ESP_OK) {
+        return "not a zone";
+    }
+    snprintf(t.zone, sizeof t.zone, "%s", name);
+    return config::Save() == ESP_OK ? "zone set" : "in use, but config.json is not saved";
+}
+
+// As the console's `date hours`.
+const char *TimeSetSync(uint8_t hours) {
+    config::Get().time.sync_hours = hours;
+    timesync::Apply();
+    return config::Save() == ESP_OK ? "saved" : "in use, but config.json is not saved";
+}
+
+// As the console's `date set` (local time): the system clock, then the board's.
+const char *TimeSetClock(const ui::time_view::Manual &m) {
+    namespace tv = ui::time_view;
+    struct tm local = {};
+    local.tm_year = m.value[tv::kYear] - 1900;
+    local.tm_mon = m.value[tv::kMonth] - 1;
+    local.tm_mday = m.value[tv::kDay];
+    local.tm_hour = m.value[tv::kHour];
+    local.tm_min = m.value[tv::kMinute];
+    local.tm_isdst = -1;  // libc decides from the zone
+    const time_t seconds = mktime(&local);
+    if (!rtc::Believable(seconds)) {
+        return "not a believable time";
+    }
+    const timeval set = {.tv_sec = seconds, .tv_usec = 0};
+    settimeofday(&set, nullptr);
+    return rtc::StoreSystemTime(boards::Clock()) == ESP_OK ? "the time is set"
+                                                            : "set, but not on the board's clock";
+}
+
+const ui::TimeHooks kTimeHooks = {TimeView,    ZoneCount,   ZoneName,
+                                  TimeSetZone, TimeSetSync, TimeSetClock};
+
 // Settings > Touchscreen keeps a new calibration (the ui's own task).
 esp_err_t SaveTouch(const ui::touch_cal::Calibration &c) {
     config::Get().display.touch = {c.x_scale, c.x_offset, c.y_scale, c.y_offset};
@@ -764,6 +851,7 @@ extern "C" void app_main() {
     ui::SetWifiHooks(&kWifiHooks);
     ui::SetBleHooks(&kBleHooks);
     ui::SetDisplayHooks(&kDisplayHooks);
+    ui::SetTimeHooks(&kTimeHooks);
     {
         const config::TouchCalibration &t = config::Get().display.touch;
         ui::SetTouchCalibration({t.x_scale, t.x_offset, t.y_scale, t.y_offset}, SaveTouch);

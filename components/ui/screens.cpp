@@ -133,6 +133,9 @@ enum class JobKind : uint8_t {
     kBlePair,     // the pairing window opened (`flag`) or closed
     kSaveTouch,   // `calibration` into config.json
     kDisplaySet,  // Display & power: `setting` to `id`
+    kTimeZone,    // the zone named in `password`
+    kTimeSync,    // sync every `id` hours
+    kTimeSet,     // the clock to `manual` (local)
 };
 
 struct Job {
@@ -146,6 +149,7 @@ struct Job {
     char password[wifi_view::kPasswordSize];  // wiped after use
     touch_cal::Calibration calibration;
     display_view::Setting setting;
+    time_view::Manual manual;
 };
 
 // A job with only its kind set.
@@ -1955,6 +1959,308 @@ bool PollDisplay() {
     return changed;
 }
 
+// --- Settings: Date & time ---------------------------------------------------------
+
+const TimeHooks *time_hooks = nullptr;
+time_view::View time_shown;
+time_view::View time_now;
+uint8_t zone_region = 0;   // the cities page's region
+uint8_t zone_page = 0;     // its page
+uint8_t zone_list[96];     // the region's zones (table indices)
+uint8_t zone_count = 0;
+time_view::Manual manual;  // the hand page's numbers
+lv_obj_t *manual_value[time_view::kFields] = {};
+int time_row_tapped = -1;  // 0 zone, 1 sync, 2 by hand
+int sync_tapped = -1;
+int region_tapped = -1;
+int city_tapped = -1;
+int pager_tapped = 0;   // -1 back, 1 forward
+int manual_tapped = -1;  // field * 2 + (1: plus)
+bool manual_save = false;
+
+void OnTimeRow(lv_event_t *event) {
+    if (LastWasTap()) {
+        time_row_tapped = static_cast<int>(reinterpret_cast<intptr_t>(lv_event_get_user_data(event)));
+    }
+}
+
+void OnSyncOption(lv_event_t *event) {
+    if (LastWasTap()) {
+        sync_tapped = static_cast<int>(reinterpret_cast<intptr_t>(lv_event_get_user_data(event)));
+    }
+}
+
+void OnRegion(lv_event_t *event) {
+    if (LastWasTap()) {
+        region_tapped = static_cast<int>(reinterpret_cast<intptr_t>(lv_event_get_user_data(event)));
+    }
+}
+
+void OnCity(lv_event_t *event) {
+    if (LastWasTap()) {
+        city_tapped = static_cast<int>(reinterpret_cast<intptr_t>(lv_event_get_user_data(event)));
+    }
+}
+
+void OnPager(lv_event_t *event) {
+    if (LastWasTap()) {
+        pager_tapped = static_cast<int>(reinterpret_cast<intptr_t>(lv_event_get_user_data(event)));
+    }
+}
+
+// - / + : no tap check (a quick second press is still a press).
+void OnManual(lv_event_t *event) {
+    manual_tapped = static_cast<int>(reinterpret_cast<intptr_t>(lv_event_get_user_data(event)));
+}
+
+void OnManualSave(lv_event_t *) {
+    if (LastWasTap()) {
+        manual_save = true;
+    }
+}
+
+// A row that only shows: its name, its value.
+void InfoRow(int32_t y, const char *name, const char *value) {
+    lv_obj_t *row = Panel(content, y, kNetRow);
+    lv_obj_set_style_border_width(row, 1, 0);
+    lv_obj_t *n = Label(row, &lv_font_montserrat_24);
+    lv_label_set_text(n, name);
+    lv_obj_set_pos(n, 12, (kNetRow - 30) / 2);
+    lv_obj_t *v = Label(row, &lv_font_montserrat_20);
+    lv_label_set_long_mode(v, LV_LABEL_LONG_MODE_DOTS);
+    lv_obj_set_style_text_align(v, LV_TEXT_ALIGN_RIGHT, 0);
+    lv_obj_set_size(v, 260, 26);
+    lv_label_set_text(v, value);
+    lv_obj_align(v, LV_ALIGN_RIGHT_MID, -12, 0);
+}
+
+// The region's zones into zone_list.
+void ListZones(uint8_t region) {
+    zone_count = 0;
+    const size_t n = time_hooks->zone_count();
+    for (size_t i = 0; i < n && zone_count < sizeof zone_list; ++i) {
+        if (time_view::RegionOf(time_hooks->zone_name(i)) == region) {
+            zone_list[zone_count++] = static_cast<uint8_t>(i);
+        }
+    }
+}
+
+// The clock big, then the zone, the sync, the server, the last sync, by hand.
+void ShowTime() {
+    TitleBar("Date & time");
+    time_hooks->view(&time_shown);
+    const time_view::View &v = time_shown;
+    lv_obj_t *clock = Label(content, &lv_font_montserrat_48);
+    lv_label_set_text(clock, v.time_set ? v.clock : "--:--");
+    lv_obj_align(clock, LV_ALIGN_TOP_MID, 0, kTitleHeight + 12);
+    lv_obj_t *date = Label(content, &lv_font_montserrat_24);
+    lv_label_set_text(date, v.time_set ? v.date : "The clock is not set.");
+    lv_obj_align(date, LV_ALIGN_TOP_MID, 0, kTitleHeight + 76);
+    lv_obj_t *off = Label(content, &lv_font_montserrat_20);
+    lv_label_set_text(off, v.offset);
+    lv_obj_align(off, LV_ALIGN_TOP_MID, 0, kTitleHeight + 110);
+    int32_t y = kTitleHeight + 150;
+    char text[48];
+    time_view::City(v.zone, text, sizeof text);
+    ChoiceRow(y, "Time zone", text, false, OnTimeRow, 0);
+    y += kNetRow;
+    time_view::SyncLabel(v.sync_hours, text, sizeof text);
+    ChoiceRow(y, "Sync", text, false, OnTimeRow, 1);
+    y += kNetRow;
+    InfoRow(y, "Server", v.server[0] != '\0' ? v.server : "none");
+    y += kNetRow;
+    InfoRow(y, "Last sync", v.last_sync);
+    y += kNetRow;
+    ChoiceRow(y, "Set the time by hand", "", false, OnTimeRow, 2);
+    lv_obj_t *b = AskButton(content, kRowWidth - 48, "Sync the time now");
+    lv_obj_align(b, LV_ALIGN_BOTTOM_MID, 0, -16);
+    lv_obj_add_event_cb(b, OnAction, LV_EVENT_CLICKED, nullptr);
+}
+
+void ShowTimeSync() {
+    TitleBar("Sync");
+    const int in_use = time_view::SyncIndex(time_shown.sync_hours);
+    int32_t y = kTitleHeight;
+    for (uint8_t i = 0; i < time_view::kSyncCount; ++i, y += kNetRow) {
+        ChoiceRow(y, time_view::kSync[i].label, nullptr, i == in_use, OnSyncOption, i);
+    }
+    lv_obj_t *note = Label(content, &lv_font_montserrat_20);
+    lv_label_set_long_mode(note, LV_LABEL_LONG_MODE_WRAP);
+    lv_obj_set_width(note, kRowWidth - 24);
+    lv_label_set_text(note, "Over Wi-Fi, from the server; the board's clock keeps the time between.");
+    lv_obj_set_pos(note, 12, y + 16);
+}
+
+void ShowTimeRegion() {
+    TitleBar("Time zone");
+    const uint8_t in_use = time_view::RegionOf(time_shown.zone);
+    int32_t y = kTitleHeight;
+    char count[8];
+    for (uint8_t r = 0; r < time_view::kRegionCount; ++r, y += kNetRow) {
+        ListZones(r);
+        snprintf(count, sizeof count, "%u", static_cast<unsigned>(zone_count));
+        lv_obj_t *row = ChoiceRow(y, time_view::kRegions[r], count, false, OnRegion, r);
+        if (r == in_use) {
+            lv_obj_t *mark = Label(row, &lv_font_montserrat_24);
+            lv_label_set_text(mark, LV_SYMBOL_OK);
+            lv_obj_align(mark, LV_ALIGN_LEFT_MID, 200, 0);
+        }
+    }
+}
+
+// The region's cities, kZoneRows a page; ‹ "1 / 3" › under them.
+void ShowTimeZone() {
+    TitleBar(time_view::kRegions[zone_region]);
+    ListZones(zone_region);
+    const uint8_t pages = static_cast<uint8_t>((zone_count + time_view::kZoneRows - 1) / time_view::kZoneRows);
+    if (zone_page >= pages) {
+        zone_page = 0;
+    }
+    int32_t y = kTitleHeight;
+    char city[48];
+    for (uint8_t i = 0; i < time_view::kZoneRows; ++i, y += kNetRow) {
+        const unsigned at = zone_page * time_view::kZoneRows + i;
+        if (at >= zone_count) {
+            break;
+        }
+        const char *name = time_hooks->zone_name(zone_list[at]);
+        time_view::City(name, city, sizeof city);
+        ChoiceRow(y, city, nullptr, time_view::Same(name, time_shown.zone), OnCity,
+                  static_cast<int>(at));
+    }
+    if (pages < 2) {
+        return;
+    }
+    lv_obj_t *back = AskButton(content, 120, LV_SYMBOL_LEFT);
+    lv_obj_align(back, LV_ALIGN_BOTTOM_LEFT, 12, -12);
+    lv_obj_add_event_cb(back, OnPager, LV_EVENT_CLICKED, reinterpret_cast<void *>(intptr_t{-1}));
+    lv_obj_t *forward = AskButton(content, 120, LV_SYMBOL_RIGHT);
+    lv_obj_align(forward, LV_ALIGN_BOTTOM_RIGHT, -12, -12);
+    lv_obj_add_event_cb(forward, OnPager, LV_EVENT_CLICKED, reinterpret_cast<void *>(intptr_t{1}));
+    char text[12];
+    snprintf(text, sizeof text, "%u / %u", zone_page + 1u, static_cast<unsigned>(pages));
+    lv_obj_t *p = Label(content, &lv_font_montserrat_24);
+    lv_label_set_text(p, text);
+    lv_obj_align(p, LV_ALIGN_BOTTOM_MID, 0, -34);
+}
+
+void ShowManualValue(uint8_t f) {
+    char text[8];
+    snprintf(text, sizeof text, f == time_view::kYear ? "%u" : "%02u",
+             static_cast<unsigned>(manual.value[f]));
+    lv_label_set_text(manual_value[f], text);
+}
+
+// Year .. minute, each with - and +; Save sets the clock (local time).
+void ShowTimeSet() {
+    TitleBar("Set the time");
+    constexpr int32_t kRow = 84;
+    int32_t y = kTitleHeight + 8;
+    for (uint8_t f = 0; f < time_view::kFields; ++f, y += kRow) {
+        lv_obj_t *row = Panel(content, y, kRow);
+        lv_obj_set_style_border_width(row, 1, 0);
+        lv_obj_t *n = Label(row, &lv_font_montserrat_24);
+        lv_label_set_text(n, time_view::FieldName(static_cast<time_view::Field>(f)));
+        lv_obj_set_pos(n, 12, (kRow - 30) / 2);
+        lv_obj_t *minus = AskButton(row, 80, LV_SYMBOL_MINUS);
+        lv_obj_align(minus, LV_ALIGN_RIGHT_MID, -232, 0);
+        lv_obj_add_event_cb(minus, OnManual, LV_EVENT_CLICKED,
+                            reinterpret_cast<void *>(static_cast<intptr_t>(f * 2)));
+        manual_value[f] = Label(row, &lv_font_montserrat_32);
+        lv_obj_set_width(manual_value[f], 110);
+        lv_obj_set_style_text_align(manual_value[f], LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_align(manual_value[f], LV_ALIGN_RIGHT_MID, -112, 0);
+        ShowManualValue(f);
+        lv_obj_t *plus = AskButton(row, 80, LV_SYMBOL_PLUS);
+        lv_obj_align(plus, LV_ALIGN_RIGHT_MID, -14, 0);
+        lv_obj_add_event_cb(plus, OnManual, LV_EVENT_CLICKED,
+                            reinterpret_cast<void *>(static_cast<intptr_t>(f * 2 + 1)));
+    }
+    char text[64];
+    snprintf(text, sizeof text, "Local time, %s.", time_shown.zone);
+    Stub(nullptr, text, y + 8);
+    lv_obj_t *b = AskButton(content, kRowWidth - 48, "Save");
+    lv_obj_align(b, LV_ALIGN_BOTTOM_MID, 0, -16);
+    lv_obj_add_event_cb(b, OnManualSave, LV_EVENT_CLICKED, nullptr);
+}
+
+// The taps of the Date & time pages (Poll). True when the page is to be drawn again.
+bool PollTime() {
+    bool changed = false;
+    auto open = [&](settings::Page p) {
+        changed |= nav_state.OpenSettings(static_cast<uint8_t>(p));
+    };
+    if (time_row_tapped >= 0) {
+        const int row = time_row_tapped;
+        time_row_tapped = -1;
+        if (row == 0) {
+            open(settings::Page::kTimeRegion);
+        } else if (row == 1) {
+            open(settings::Page::kTimeSync);
+        } else {
+            for (uint8_t f = 0; f < time_view::kFields; ++f) {
+                manual.value[f] = time_shown.now[f];
+            }
+            if (manual.value[time_view::kYear] < time_view::kFirstYear) {
+                manual = {{2026, 1, 1, 12, 0}};  // the clock not set: somewhere to start
+            }
+            open(settings::Page::kTimeSet);
+        }
+    }
+    if (sync_tapped >= 0) {
+        if (sync_tapped < time_view::kSyncCount) {
+            Job job = MakeJob(JobKind::kTimeSync);
+            job.id = time_view::kSync[sync_tapped].value;
+            time_shown.sync_hours = time_view::kSync[sync_tapped].value;
+            SendJob(job);
+            changed |= nav_state.Back();
+        }
+        sync_tapped = -1;
+    }
+    if (region_tapped >= 0) {
+        zone_region = static_cast<uint8_t>(region_tapped);
+        zone_page = 0;
+        region_tapped = -1;
+        open(settings::Page::kTimeZone);
+    }
+    if (pager_tapped != 0) {
+        ListZones(zone_region);
+        const int pages = (zone_count + time_view::kZoneRows - 1) / time_view::kZoneRows;
+        zone_page = static_cast<uint8_t>((zone_page + pages + pager_tapped) % (pages > 0 ? pages : 1));
+        pager_tapped = 0;
+        changed = true;
+    }
+    if (city_tapped >= 0) {
+        ListZones(zone_region);
+        if (city_tapped < zone_count) {
+            Job job = MakeJob(JobKind::kTimeZone);
+            snprintf(job.password, sizeof job.password, "%s", time_hooks->zone_name(zone_list[city_tapped]));
+            snprintf(time_shown.zone, sizeof time_shown.zone, "%.40s", job.password);
+            SendJob(job);
+            open(settings::Page::kTime);
+        }
+        city_tapped = -1;
+    }
+    if (manual_tapped >= 0) {
+        const auto f = static_cast<time_view::Field>(manual_tapped / 2);
+        time_view::Step(manual, f, manual_tapped % 2 == 1 ? 1 : -1);
+        manual_tapped = -1;
+        for (uint8_t i = 0; i < time_view::kFields; ++i) {
+            if (manual_value[i] != nullptr) {
+                ShowManualValue(i);  // the day may move with the month
+            }
+        }
+    }
+    if (manual_save) {
+        manual_save = false;
+        Job job = MakeJob(JobKind::kTimeSet);
+        job.manual = manual;
+        SendJob(job);
+        changed |= nav_state.Back();
+    }
+    return changed;
+}
+
 // --- Settings: the touch's calibration ---------------------------------------------
 
 bool cal_active = false;  // the crosses are up: no calibration in use
@@ -2114,6 +2420,16 @@ void ShowSettings() {
         ShowBluetooth();
         return;
     }
+    if (time_hooks != nullptr) {
+        switch (page) {
+            case settings::Page::kTime: ShowTime(); return;
+            case settings::Page::kTimeSync: ShowTimeSync(); return;
+            case settings::Page::kTimeRegion: ShowTimeRegion(); return;
+            case settings::Page::kTimeZone: ShowTimeZone(); return;
+            case settings::Page::kTimeSet: ShowTimeSet(); return;
+            default: break;
+        }
+    }
     if (display_hooks != nullptr && page == settings::Page::kDisplay) {
         ShowDisplay();
         return;
@@ -2239,6 +2555,7 @@ void Show() {
         CloseAsk();
     }
     light_switch = nullptr;  // deleted with the page
+    memset(manual_value, 0, sizeof manual_value);
     WipePassword();
     CloseSheet();
     if (nav_state.mode() != nav::Mode::kSettings) {
@@ -2413,6 +2730,11 @@ void TypeTask(void *) {
                 case JobKind::kBleUse: said = ble_hooks->use(job.flag ? nullptr : job.ssid); break;
                 case JobKind::kBleForget: said = ble_hooks->forget(job.ssid); break;
                 case JobKind::kBlePair: said = ble_hooks->pair(job.flag); break;
+                case JobKind::kTimeZone: said = time_hooks->set_zone(job.password); break;
+                case JobKind::kTimeSync:
+                    said = time_hooks->set_sync(static_cast<uint8_t>(job.id));
+                    break;
+                case JobKind::kTimeSet: said = time_hooks->set_time(job.manual); break;
                 case JobKind::kDisplaySet:
                     said = display_hooks->set(job.setting, static_cast<uint16_t>(job.id));
                     break;
@@ -2542,6 +2864,9 @@ void Poll(lv_timer_t *) {
     if (nav_state.mode() == nav::Mode::kSettings && display_hooks != nullptr) {
         changed |= PollDisplay();
     }
+    if (nav_state.mode() == nav::Mode::kSettings && time_hooks != nullptr) {
+        changed |= PollTime();
+    }
     // Settings' texts (Wi-Fi joined, the clock); the switch follows Power x2.
     // Not under a sheet, nor over a password being typed or a scan.
     if (nav_state.mode() == nav::Mode::kSettings && settings_hooks != nullptr && HomeShown() &&
@@ -2549,6 +2874,8 @@ void Poll(lv_timer_t *) {
         settings_page != settings::Page::kWifiScan && settings_page != settings::Page::kBlePair &&
         settings_page != settings::Page::kTouch &&
         settings_page != settings::Page::kDisplayChoice &&
+        settings_page != settings::Page::kTimeSync && settings_page != settings::Page::kTimeRegion &&
+        settings_page != settings::Page::kTimeZone && settings_page != settings::Page::kTimeSet &&
         lv_tick_elaps(settings_looked_at) >= kSettingsMs) {
         settings_looked_at = lv_tick_get();
         if (settings_page == settings::Page::kWifi && wifi_hooks != nullptr) {
@@ -2557,6 +2884,9 @@ void Poll(lv_timer_t *) {
         } else if (settings_page == settings::Page::kBluetooth && ble_hooks != nullptr) {
             ble_hooks->view(&ble_now);
             changed |= !ble_view::Equal(ble_now, ble_shown);
+        } else if (settings_page == settings::Page::kTime && time_hooks != nullptr) {
+            time_hooks->view(&time_now);
+            changed |= !time_view::Equal(time_now, time_shown);
         } else if (settings_page == settings::Page::kDisplay && display_hooks != nullptr) {
             display_hooks->view(&display_now);
             changed |= !display_view::Equal(display_now, display_shown);
@@ -2654,6 +2984,8 @@ void SetWifiHooks(const WifiHooks *hooks) { wifi_hooks = hooks; }
 void SetBleHooks(const BleHooks *hooks) { ble_hooks = hooks; }
 
 void SetDisplayHooks(const DisplayHooks *hooks) { display_hooks = hooks; }
+
+void SetTimeHooks(const TimeHooks *hooks) { time_hooks = hooks; }
 
 void Navigate(nav::Input input) {
     if (inputs != nullptr) {

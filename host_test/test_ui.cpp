@@ -12,6 +12,7 @@
 #include "touch_cal_logic.h"
 #include "ble_view_logic.h"
 #include "display_view_logic.h"
+#include "time_view_logic.h"
 #include "list_logic.h"
 #include "nav_logic.h"
 #include "pin_pad_logic.h"
@@ -719,6 +720,67 @@ void test_display_view(void) {
     TEST_ASSERT_FALSE(dv::Equal(a, b));
 }
 
+void test_time_view(void) {
+    namespace tv = ui::time_view;
+    namespace st = ui::settings;
+    TEST_ASSERT_TRUE(st::Parent(st::Page::kTimeZone) == st::Page::kTimeRegion);
+    TEST_ASSERT_TRUE(st::Parent(st::Page::kTimeRegion) == st::Page::kTime);
+    TEST_ASSERT_TRUE(st::Parent(st::Page::kTimeSet) == st::Page::kTime);
+
+    TEST_ASSERT_EQUAL_UINT8(0, tv::RegionOf("Europe/Kyiv"));
+    TEST_ASSERT_EQUAL_UINT8(1, tv::RegionOf("Asia/Nicosia"));
+    TEST_ASSERT_EQUAL_UINT8(2, tv::RegionOf("America/Argentina/Buenos_Aires"));
+    TEST_ASSERT_EQUAL_UINT8(tv::kOther, tv::RegionOf("UTC"));
+    TEST_ASSERT_EQUAL_UINT8(tv::kOther, tv::RegionOf("Europ"));
+    TEST_ASSERT_EQUAL_UINT8(tv::kOther, tv::RegionOf("Etc/UTC"));
+    char city[24];
+    tv::City("America/Argentina/Buenos_Aires", city, sizeof city);
+    TEST_ASSERT_EQUAL_STRING("Buenos Aires", city);
+    tv::City("CET", city, sizeof city);
+    TEST_ASSERT_EQUAL_STRING("CET", city);
+
+    char text[24];
+    tv::SyncLabel(6, text, sizeof text);
+    TEST_ASSERT_EQUAL_STRING("Every 6 hours", text);
+    tv::SyncLabel(3, text, sizeof text);
+    TEST_ASSERT_EQUAL_STRING("Every 3 hours", text);
+    TEST_ASSERT_EQUAL_INT(0, tv::SyncIndex(0));
+    TEST_ASSERT_EQUAL_INT(-1, tv::SyncIndex(3));
+
+    TEST_ASSERT_EQUAL_UINT8(29, tv::DaysIn(2028, 2));
+    TEST_ASSERT_EQUAL_UINT8(28, tv::DaysIn(2026, 2));
+    TEST_ASSERT_EQUAL_UINT8(31, tv::DaysIn(2026, 12));
+    tv::Manual m = {{2026, 1, 31, 23, 59}};
+    tv::Step(m, tv::kMinute, 1);
+    TEST_ASSERT_EQUAL_UINT16(0, m.value[tv::kMinute]);  // round, the hour stays
+    TEST_ASSERT_EQUAL_UINT16(23, m.value[tv::kHour]);
+    tv::Step(m, tv::kHour, 1);
+    TEST_ASSERT_EQUAL_UINT16(0, m.value[tv::kHour]);
+    tv::Step(m, tv::kMonth, 1);  // 31 January -> February: the 28th
+    TEST_ASSERT_EQUAL_UINT16(2, m.value[tv::kMonth]);
+    TEST_ASSERT_EQUAL_UINT16(28, m.value[tv::kDay]);
+    tv::Step(m, tv::kDay, 1);
+    TEST_ASSERT_EQUAL_UINT16(1, m.value[tv::kDay]);
+    tv::Step(m, tv::kDay, -1);
+    TEST_ASSERT_EQUAL_UINT16(28, m.value[tv::kDay]);
+    tv::Step(m, tv::kMonth, -2);
+    TEST_ASSERT_EQUAL_UINT16(12, m.value[tv::kMonth]);
+    tv::Step(m, tv::kYear, -3);
+    TEST_ASSERT_EQUAL_UINT16(2099, m.value[tv::kYear]);  // 2026 - 3 past 2024: round
+    tv::Step(m, tv::kYear, 1);
+    TEST_ASSERT_EQUAL_UINT16(2024, m.value[tv::kYear]);
+    m = {{2028, 2, 29, 0, 0}};
+    tv::Step(m, tv::kYear, 1);  // no 29 February in 2029
+    TEST_ASSERT_EQUAL_UINT16(28, m.value[tv::kDay]);
+
+    tv::View a = {};
+    tv::View b = a;
+    b.now[tv::kMinute] = 5;
+    TEST_ASSERT_TRUE(tv::Equal(a, b));
+    b.sync_hours = 6;
+    TEST_ASSERT_FALSE(tv::Equal(a, b));
+}
+
 void test_list_rows(void) {
     using ui::list::Zone;
     TEST_ASSERT_TRUE(ui::list::ZoneAt(0, 472) == Zone::kTypeUser);
@@ -784,6 +846,7 @@ void RegisterUiTests(void) {
     RUN_TEST(test_touch_calibration);
     RUN_TEST(test_ble_view);
     RUN_TEST(test_display_view);
+    RUN_TEST(test_time_view);
     RUN_TEST(test_list_rows);
     RUN_TEST(test_status_fido_prompt);
 }

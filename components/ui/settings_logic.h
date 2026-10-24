@@ -24,6 +24,10 @@ enum class Page : uint8_t {
     kBlePair,       // Bluetooth's "Pair a new host": the window, the passkey
     kTouch,         // the touch's calibration: five crosses
     kDisplayChoice, // Display & power: one setting's choices
+    kTimeSync,      // Date & time: how often to sync
+    kTimeRegion,    // Date & time: the zone's region
+    kTimeZone,      // Date & time: the region's cities
+    kTimeSet,       // Date & time: the time by hand
 };
 
 // Where a page's back arrow goes.
@@ -32,6 +36,8 @@ constexpr Page Parent(Page p) {
            : p == Page::kWifiPassword ? Page::kWifiScan
            : p == Page::kBlePair      ? Page::kBluetooth
            : p == Page::kDisplayChoice ? Page::kDisplay
+           : p == Page::kTimeSync || p == Page::kTimeRegion || p == Page::kTimeSet ? Page::kTime
+           : p == Page::kTimeZone ? Page::kTimeRegion
                                       : Page::kMain;
 }
 
@@ -55,6 +61,10 @@ constexpr const char *Title(Page p) {
         case Page::kBlePair: return "Pair a new host";
         case Page::kTouch: return "Touchscreen";
         case Page::kDisplayChoice: return "Display & power";
+        case Page::kTimeSync: return "Sync";
+        case Page::kTimeRegion: return "Time zone";
+        case Page::kTimeZone: return "Time zone";
+        case Page::kTimeSet: return "Set the time";
     }
     return "";
 }

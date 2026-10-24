@@ -301,7 +301,8 @@ quarter opens Settings (the frontlight, then pages; `settings_logic.h`, the
 texts and actions from `main.cpp` through `ui::SettingsHooks`; the Wi-Fi
 window: `wifi_view_logic.h`, `ui::WifiHooks`, the scan and the saves in the
 ui's own task; Bluetooth: `ble_view_logic.h`, `ui::BleHooks`; Display &
-power: `display_view_logic.h`, `ui::DisplayHooks`; the touch's
+power: `display_view_logic.h`, `ui::DisplayHooks`; Date & time:
+`time_view_logic.h`, `ui::TimeHooks`; the touch's
 calibration: `touch_cal_logic.h`, applied to every real touch in `ui.cpp`), up from the bottom quarter the U2F / FIDO2
 keys (`fido_ctap_list`, by site A to Z, 6 a page: site, user, made / alg /
 kind; its pages flipped by Left / Right or the bar under it (‹, "1 / 2", ›, in the tabs' place); the count in its title; looked at
