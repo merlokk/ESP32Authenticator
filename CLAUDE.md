@@ -60,6 +60,8 @@ screen design: [x4-design.md](x4-design.md).
 Stack (ESP-IDF, BLE, Wi-Fi, web), config, tests, flash layout: [architecture.md](architecture.md).
 Wi-Fi and the web site are ported from approver-esp32 (see [sources.md](sources.md)).
 
+User manual with screenshots: [manual/README.md](manual/README.md).
+
 ## Build
 
 ESP-IDF setup, build/flash, tests, web site access, CLI: [build.md](build.md).
