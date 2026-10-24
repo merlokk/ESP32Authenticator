@@ -475,7 +475,9 @@ void SettingsDescribe(ui::settings::Page page, bool summary, char *out, size_t s
         case Page::kSecurity: DescribeSecurity(summary, out, size); break;
         case Page::kTime: DescribeTime(summary, out, size); break;
         case Page::kAbout: DescribeAbout(summary, out, size); break;
-        case Page::kMain: break;
+        case Page::kMain:
+        case Page::kWifiScan:
+        case Page::kWifiPassword: break;
     }
 }
 
@@ -495,6 +497,103 @@ const char *SettingsAct(ui::settings::Action action) {
     }
     return "";
 }
+
+// --- The Wi-Fi window (ui::WifiHooks) -------------------------------------------------
+
+void WifiView(ui::wifi_view::View *out) {
+    namespace wv = ui::wifi_view;
+    *out = {};
+    const wifimgr::Snapshot w = wifimgr::Get();
+    const config::Wifi &cfg = config::Get().wifi;
+    out->active = cfg.active;
+    const bool online = w.state == wifimgr::State::kOnline;
+    const bool ap = w.state == wifimgr::State::kAp || w.state == wifimgr::State::kApWindow ||
+                    w.state == wifimgr::State::kIdle;
+    const char *state = w.state == wifimgr::State::kOff ? "Off"
+                        : online ? (w.internet == wifimgr::Internet::kOffline ? "No internet"
+                                                                              : "Online")
+                        : ap     ? "Access point"
+                                 : "Connecting...";
+    snprintf(out->state, sizeof out->state, "%s", state);
+    if (online) {
+        Ip(w.radio.ip, out->detail, sizeof out->detail);
+    } else if (ap) {
+        char ip[16];
+        Ip(w.radio.ap_ip, ip, sizeof ip);
+        snprintf(out->detail, sizeof out->detail, "%s %s", w.radio.ap_ssid, ip);
+    }
+    out->joined = wv::kNone;
+    for (uint8_t i = 0; i < cfg.network_count && i < wv::kMaxSaved; ++i) {
+        snprintf(out->saved[i].ssid, sizeof out->saved[i].ssid, "%s", cfg.networks[i].ssid);
+        out->saved[i].refused = w.auth_failed[i];
+        if (online && w.network == i) {
+            out->joined = static_cast<int8_t>(i);
+        }
+    }
+    out->saved_count = cfg.network_count < wv::kMaxSaved ? cfg.network_count : wv::kMaxSaved;
+}
+
+size_t WifiScan(ui::wifi_view::Nearby *out, size_t capacity) {
+    static wifi::ScanResult found[wifi::kMaxScanResults];  // off the caller's stack
+    size_t count = 0;
+    if (wifimgr::Scan(found, wifi::kMaxScanResults, &count) != ESP_OK) {
+        return 0;
+    }
+    const size_t n = count < capacity ? count : capacity;
+    for (size_t i = 0; i < n; ++i) {
+        snprintf(out[i].ssid, sizeof out[i].ssid, "%s", found[i].ssid);
+        out[i].rssi = found[i].rssi;
+        out[i].secured = found[i].secured;
+    }
+    return n;
+}
+
+// Saved, then handed to the manager (as the console's `wifi`).
+const char *WifiSave(const char *done) {
+    wifimgr::Apply();
+    return config::Save() == ESP_OK ? done : "applied, but config.json is not saved";
+}
+
+const char *WifiSetActive(bool on) {
+    config::Get().wifi.active = on;
+    return WifiSave(on ? "Wi-Fi on" : "Wi-Fi off");
+}
+
+const char *WifiJoin(const char *ssid, const char *password) {
+    config::Wifi &w = config::Get().wifi;
+    if (password != nullptr) {
+        char error[config::kErrorSize] = {};
+        if (!config::SetNetwork(&w, ssid, password, error, sizeof error)) {
+            return strstr(error, "full") != nullptr ? "4 networks saved: forget one first"
+                                                    : "the password does not fit (8..63)";
+        }
+    }
+    // Tried first: moved to the top of the list.
+    uint8_t at = 0;
+    for (; at < w.network_count && strcmp(w.networks[at].ssid, ssid) != 0; ++at) {
+    }
+    if (at == w.network_count) {
+        return "no such saved network";
+    }
+    static config::Network moved;  // ~200 bytes: off the stack
+    moved = w.networks[at];
+    for (uint8_t i = at; i > 0; --i) {
+        w.networks[i] = w.networks[i - 1];
+    }
+    w.networks[0] = moved;
+    memset(&moved, 0, sizeof moved);
+    w.active = true;
+    return WifiSave("connecting...");
+}
+
+const char *WifiForget(const char *ssid) {
+    if (!config::RemoveNetwork(&config::Get().wifi, ssid)) {
+        return "no such saved network";
+    }
+    return WifiSave("forgotten");
+}
+
+const ui::WifiHooks kWifiHooks = {WifiView, WifiScan, WifiSetActive, WifiJoin, WifiForget};
 
 const ui::SettingsHooks kSettingsHooks = {SettingsLight, SettingsSetLight, SettingsSaveLight,
                                           SettingsDescribe, SettingsAct};
@@ -533,6 +632,7 @@ extern "C" void app_main() {
     ui::SetStatusSource(StatusSource);
     ui::SetTypist(ble_kb::Type);
     ui::SetSettingsHooks(&kSettingsHooks);
+    ui::SetWifiHooks(&kWifiHooks);
 
     ble_kb::Register();  // BLE profiles, before the stack starts
     ble_kb::SetTypingHook([] {

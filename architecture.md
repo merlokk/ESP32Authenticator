@@ -298,7 +298,9 @@ Left / Right pressed flip the pages (round), Home: page 1 (`ui::Navigate`,
 queued from the keypad task; nothing under the PIN pad or while FIDO2
 waits). The touch reports the finger's moves too: a swipe down from the top
 quarter opens Settings (the frontlight, then pages; `settings_logic.h`, the
-texts and actions from `main.cpp` through `ui::SettingsHooks`), up from the bottom quarter the U2F / FIDO2
+texts and actions from `main.cpp` through `ui::SettingsHooks`; the Wi-Fi
+window: `wifi_view_logic.h`, `ui::WifiHooks`, the scan and the saves in the
+ui's own task), up from the bottom quarter the U2F / FIDO2
 keys (`fido_ctap_list`, by site A to Z, 6 a page: site, user, made / alg /
 kind; its pages flipped by Left / Right or the bar under it (‹, "1 / 2", ›, in the tabs' place); the count in its title; looked at
 each 2 s, not while a request waits; a swipe left on a key: its trash can,

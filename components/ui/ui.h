@@ -10,6 +10,7 @@
 #include "nav_logic.h"
 #include "settings_logic.h"
 #include "status_logic.h"
+#include "wifi_view_logic.h"
 
 namespace ui {
 
@@ -60,6 +61,21 @@ struct SettingsHooks {
     const char *(*act)(settings::Action action);
 };
 void SetSettingsHooks(const SettingsHooks *hooks);
+
+// The Wi-Fi window (wifi_view_logic.h), filled and carried out by the device.
+struct WifiHooks {
+    // What it shows. ui task, every 2 s while shown: keep it quick.
+    void (*view)(wifi_view::View *out);
+    // The rest in the ui's own task (each may take seconds), saying what
+    // happened. The networks nearby: their count (0: none or failed).
+    size_t (*scan)(wifi_view::Nearby *out, size_t capacity);
+    const char *(*set_active)(bool on);
+    // The network saved (with `password`; nullptr: the kept one) and tried
+    // first; Wi-Fi on.
+    const char *(*join)(const char *ssid, const char *password);
+    const char *(*forget)(const char *ssid);
+};
+void SetWifiHooks(const WifiHooks *hooks);
 // Left / Right / Home (nav_logic.h), from any task: queued for the ui task;
 // nothing while the PIN pad is up.
 void Navigate(nav::Input input);

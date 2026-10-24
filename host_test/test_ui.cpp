@@ -8,6 +8,7 @@
 
 #include "fido_list_logic.h"
 #include "settings_logic.h"
+#include "wifi_view_logic.h"
 #include "list_logic.h"
 #include "nav_logic.h"
 #include "pin_pad_logic.h"
@@ -513,6 +514,64 @@ void test_settings_pages(void) {
     TEST_ASSERT_EQUAL_UINT8(55, st::Warmth(55));
 }
 
+void test_wifi_view(void) {
+    namespace wv = ui::wifi_view;
+    namespace st = ui::settings;
+    ui::nav::Nav n;
+    n.Swipe(ui::nav::Gesture::kDownFromTop);
+    n.OpenSettings(static_cast<uint8_t>(st::Page::kWifi));
+    n.OpenSettings(static_cast<uint8_t>(st::Page::kWifiScan));
+    n.OpenSettings(static_cast<uint8_t>(st::Page::kWifiPassword));
+    TEST_ASSERT_TRUE(n.Back());  // the password: the scan
+    TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(st::Page::kWifiScan), n.settings_page());
+    n.Back();
+    TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(st::Page::kWifi), n.settings_page());
+    n.Back();
+    TEST_ASSERT_EQUAL_UINT8(0, n.settings_page());
+
+    wv::Nearby list[6] = {{"cafe", -80, true}, {"", -40, true},    {"home", -60, true},
+                          {"cafe", -50, true}, {"open", -70, false}, {"far", -90, true}};
+    TEST_ASSERT_EQUAL_UINT(4, wv::Tidy(list, 6, 9));
+    TEST_ASSERT_EQUAL_STRING("cafe", list[0].ssid);  // its strongest
+    TEST_ASSERT_EQUAL_INT8(-50, list[0].rssi);
+    TEST_ASSERT_EQUAL_STRING("home", list[1].ssid);
+    TEST_ASSERT_EQUAL_STRING("open", list[2].ssid);
+    TEST_ASSERT_EQUAL_STRING("far", list[3].ssid);
+    TEST_ASSERT_EQUAL_UINT(2, wv::Tidy(list, 4, 2));
+
+    TEST_ASSERT_EQUAL_UINT8(4, wv::Bars(-40));
+    TEST_ASSERT_EQUAL_UINT8(2, wv::Bars(-70));
+    TEST_ASSERT_EQUAL_UINT8(0, wv::Bars(-95));
+
+    wv::View v = {};
+    v.saved_count = 1;
+    TEST_ASSERT_TRUE(v.saved[0].ssid[0] == 0);
+    v.saved[0] = {"home", false};
+    v.joined = wv::kNone;
+    const wv::Nearby home = {"home", -60, true};
+    const wv::Nearby cafe = {"cafe", -60, true};
+    const wv::Nearby open = {"open", -60, false};
+    TEST_ASSERT_TRUE(wv::OnTap(v, home) == wv::Join::kSaved);
+    TEST_ASSERT_TRUE(wv::OnTap(v, cafe) == wv::Join::kPassword);
+    TEST_ASSERT_TRUE(wv::OnTap(v, open) == wv::Join::kOpen);
+    TEST_ASSERT_EQUAL_INT8(0, wv::SavedIndex(v, "home"));
+    TEST_ASSERT_EQUAL_INT8(wv::kNone, wv::SavedIndex(v, "hom"));
+
+    wv::View w = v;
+    TEST_ASSERT_TRUE(wv::Equal(v, w));
+    w.saved[0].refused = true;
+    TEST_ASSERT_FALSE(wv::Equal(v, w));
+    w = v;
+    w.joined = 0;
+    TEST_ASSERT_FALSE(wv::Equal(v, w));
+
+    TEST_ASSERT_FALSE(wv::PasswordOk("1234567"));
+    TEST_ASSERT_TRUE(wv::PasswordOk("12345678"));
+    TEST_ASSERT_TRUE(wv::PasswordOk("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"));
+    TEST_ASSERT_FALSE(wv::PasswordOk("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdeg"));
+    TEST_ASSERT_FALSE(wv::PasswordOk(""));
+}
+
 void test_list_rows(void) {
     using ui::list::Zone;
     TEST_ASSERT_TRUE(ui::list::ZoneAt(0, 472) == Zone::kTypeUser);
@@ -574,6 +633,7 @@ void RegisterUiTests(void) {
     RUN_TEST(test_nav_classify);
     RUN_TEST(test_fido_remove);
     RUN_TEST(test_settings_pages);
+    RUN_TEST(test_wifi_view);
     RUN_TEST(test_list_rows);
     RUN_TEST(test_status_fido_prompt);
 }

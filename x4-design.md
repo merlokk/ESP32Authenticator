@@ -52,7 +52,12 @@ Portrait, 480x800. The panel scans landscape (hardware.md): `ui_logic.h` turns t
   page with its summary and ">": Wi-Fi, Bluetooth, Display & power, Security,
   Date & time, About. A page lists "label  value" lines (looked at every
   2 s) and may have one button: Power off, Lock now, Sync the time now; its
-  arrow goes back to Settings. Read-only for now: editing on the site.
+  arrow goes back to Settings. Wi-Fi is a window of its own: a switch, the
+  state, the saved networks (a tap: Connect, i.e. tried first, or Forget),
+  "Add a network": a scan (strongest first, padlock, signal bars, "saved"),
+  a tap joins a saved or open one or asks the password on the keyboard
+  (OK joins, saved to config.json). The other pages are read-only for now:
+  editing on the site.
 - **U2F / FIDO2 list**: a swipe up from the bottom quarter; the keys by site
   (A to Z), 6 a page: site, user, "made <date>, <alg>, resident / U2F";
   Left / Right or the bar under it (‹, "1 / 2", ›) flip the pages, the title says the count; its

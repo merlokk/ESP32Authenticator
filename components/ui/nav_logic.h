@@ -12,6 +12,8 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "settings_logic.h"
+
 namespace ui::nav {
 
 enum class Mode : uint8_t {
@@ -161,10 +163,11 @@ class Nav {
     }
 
     // The back arrow of Settings / FIDO2: the list, at the page it was on; on
-    // a Settings page, Settings. True when it changed.
+    // a Settings page, the page above it. True when it changed.
     constexpr bool Back() {
         if (mode_ == Mode::kSettings && settings_page_ != 0) {
-            settings_page_ = 0;
+            settings_page_ = static_cast<uint8_t>(
+                settings::Parent(static_cast<settings::Page>(settings_page_)));
             return true;
         }
         const bool changed = mode_ != Mode::kList;

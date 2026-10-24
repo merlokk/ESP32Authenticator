@@ -119,6 +119,10 @@ enum class JobKind : uint8_t {
     kDeleteKey,  // the FIDO2 key `key`
     kSaveLight,  // the frontlight's level into config.json
     kAct,        // a Settings page's `action`
+    kWifiScan,
+    kWifiActive,  // Wi-Fi on (`flag`) or off
+    kWifiJoin,    // `ssid` with `password` (`flag`: the kept one)
+    kWifiForget,  // `ssid`
 };
 
 struct Job {
@@ -127,7 +131,17 @@ struct Job {
     list::Zone zone;
     uint8_t key[FIDO_CTAP_CRED_ID_SIZE];
     settings::Action action;
+    bool flag;
+    char ssid[wifi_view::kSsidSize];
+    char password[wifi_view::kPasswordSize];  // wiped after use
 };
+
+// A job with only its kind set.
+Job MakeJob(JobKind kind) {
+    Job job = {};
+    job.kind = kind;
+    return job;
+}
 QueueHandle_t jobs = nullptr;
 StaticQueue_t jobs_storage;
 uint8_t jobs_buffer[4 * sizeof(Job)];
@@ -307,7 +321,9 @@ void OnRow(lv_event_t *event) {
         Toast("no TOTP for this record");
         return;
     }
-    const Job job = {JobKind::kType, r.id, zone, {}, settings::Action::kNone};
+    Job job = MakeJob(JobKind::kType);
+    job.id = r.id;
+    job.zone = zone;
     if (xQueueSend(jobs, &job, 0) != pdTRUE) {
         Toast("busy typing");
     }
@@ -750,7 +766,7 @@ void AskRemove() {
 
 // Yes held long enough: the key goes to the typing task to be deleted.
 void DeleteAsked() {
-    Job job = {JobKind::kDeleteKey, 0, list::Zone::kTypeUser, {}, settings::Action::kNone};
+    Job job = MakeJob(JobKind::kDeleteKey);
     memcpy(job.key, asked.id, sizeof job.key);
     Toast(xQueueSend(jobs, &job, 0) == pdTRUE ? "deleting the key..." : "busy typing");
     CloseAsk();
@@ -1087,8 +1103,478 @@ void ShowSettingsPage(settings::Page page) {
     }
 }
 
+// --- Settings: Wi-Fi ---------------------------------------------------------------
+
+constexpr int32_t kNetRow = 64;
+constexpr size_t kScanCapacity = 20;  // raw results, tidied to kMaxNearby
+const WifiHooks *wifi_hooks = nullptr;
+wifi_view::View wifi_shown;
+wifi_view::View wifi_now;
+// The scan: written by the ui's own task under Lock; drawn when its count changes.
+wifi_view::Nearby nearby[kScanCapacity];
+size_t nearby_count = 0;
+bool scanning = false;
+uint32_t scans = 0;
+uint32_t scans_shown = 0;
+char join_ssid[wifi_view::kSsidSize];  // the password page's network
+lv_obj_t *password_area = nullptr;
+lv_obj_t *sheet = nullptr;  // a saved network's Connect / Forget
+int8_t sheet_index = wifi_view::kNone;
+// Taps, for Poll.
+bool wifi_switch_tapped = false;
+int8_t saved_tapped = wifi_view::kNone;
+int8_t nearby_tapped = wifi_view::kNone;
+bool add_tapped = false;
+bool rescan_tapped = false;
+int sheet_choice = 0;  // 1 connect, 2 forget, 3 cancel
+bool password_ready = false;
+bool password_cancel = false;
+
+// The ui's own task: a scan (seconds), then the list.
+void WifiScanJob() {
+    static wifi_view::Nearby found[kScanCapacity];  // off the task's stack
+    size_t n = wifi_hooks->scan(found, kScanCapacity);
+    n = wifi_view::Tidy(found, n, wifi_view::kMaxNearby);
+    Lock();
+    memcpy(nearby, found, n * sizeof found[0]);
+    nearby_count = n;
+    scanning = false;
+    ++scans;
+    if (n == 0) {
+        Toast("no networks found");
+    }
+    Unlock();
+}
+
+void StartScan() {
+    if (scanning) {
+        return;
+    }
+    const Job job = MakeJob(JobKind::kWifiScan);
+    scanning = xQueueSend(jobs, &job, 0) == pdTRUE;
+    if (!scanning) {
+        Toast("busy typing");
+    }
+}
+
+void SendWifiJob(Job &job) {
+    if (xQueueSend(jobs, &job, 0) != pdTRUE) {
+        Toast("busy typing");
+    }
+    vault::Wipe(&job, sizeof job);
+}
+
+void OnWifiSwitch(lv_event_t *) { wifi_switch_tapped = true; }
+
+void OnSaved(lv_event_t *event) {
+    if (LastWasTap()) {
+        saved_tapped = static_cast<int8_t>(reinterpret_cast<intptr_t>(lv_event_get_user_data(event)));
+    }
+}
+
+void OnNearby(lv_event_t *event) {
+    if (LastWasTap()) {
+        nearby_tapped = static_cast<int8_t>(reinterpret_cast<intptr_t>(lv_event_get_user_data(event)));
+    }
+}
+
+void OnAdd(lv_event_t *) {
+    if (LastWasTap()) {
+        add_tapped = true;
+    }
+}
+
+void OnRescan(lv_event_t *) {
+    if (LastWasTap()) {
+        rescan_tapped = true;
+    }
+}
+
+void OnSheet(lv_event_t *event) {
+    sheet_choice = static_cast<int>(reinterpret_cast<intptr_t>(lv_event_get_user_data(event)));
+}
+
+void OnPassword(lv_event_t *event) {
+    if (lv_event_get_code(event) == LV_EVENT_READY) {
+        password_ready = true;
+    } else {
+        password_cancel = true;
+    }
+}
+
+// Signal bars (Bars of 4), bottom aligned, at x, y (their top).
+void AddBars(lv_obj_t *parent, int32_t x, int32_t y, uint8_t bars) {
+    for (uint8_t i = 0; i < 4; ++i) {
+        lv_obj_t *b = lv_obj_create(parent);
+        lv_obj_remove_style_all(b);
+        lv_obj_remove_flag(b, LV_OBJ_FLAG_CLICKABLE);
+        const int32_t h = 6 + 4 * i;
+        lv_obj_set_size(b, 6, h);
+        lv_obj_set_pos(b, x + 9 * i, y + 18 - h);
+        lv_obj_set_style_border_width(b, 1, 0);
+        lv_obj_set_style_border_color(b, lv_color_black(), 0);
+        lv_obj_set_style_bg_color(b, lv_color_black(), 0);
+        lv_obj_set_style_bg_opa(b, i < bars ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
+    }
+}
+
+// A padlock, 16 x 20, at x, y.
+void AddLock(lv_obj_t *parent, int32_t x, int32_t y) {
+    lv_obj_t *shackle = lv_obj_create(parent);
+    lv_obj_remove_style_all(shackle);
+    lv_obj_remove_flag(shackle, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_size(shackle, 12, 14);
+    lv_obj_set_pos(shackle, x + 2, y);
+    lv_obj_set_style_border_width(shackle, 2, 0);
+    lv_obj_set_style_border_color(shackle, lv_color_black(), 0);
+    lv_obj_set_style_radius(shackle, 6, 0);
+    lv_obj_t *body = lv_obj_create(parent);
+    lv_obj_remove_style_all(body);
+    lv_obj_remove_flag(body, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_size(body, 16, 12);
+    lv_obj_set_pos(body, x, y + 8);
+    lv_obj_set_style_bg_color(body, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(body, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(body, 2, 0);
+}
+
+lv_obj_t *SectionHead(int32_t y, const char *text) {
+    lv_obj_t *l = Label(content, &lv_font_montserrat_20);
+    lv_label_set_text(l, text);
+    lv_obj_set_pos(l, 12, y);
+    return l;
+}
+
+// The switch, the state, the saved networks, "Add a network".
+void ShowWifi() {
+    TitleBar("Wi-Fi");
+    wifi_hooks->view(&wifi_shown);
+    const wifi_view::View &v = wifi_shown;
+    int32_t y = kTitleHeight;
+    lv_obj_t *top = Panel(content, y, kLightRow);
+    lv_obj_set_style_border_width(top, 1, 0);
+    lv_obj_t *name = Label(top, &lv_font_montserrat_28);
+    lv_label_set_text(name, "Wi-Fi");
+    lv_obj_set_pos(name, 12, (kLightRow - 34) / 2);
+    lv_obj_t *sw = Switch(top, v.active);
+    lv_obj_align(sw, LV_ALIGN_TOP_RIGHT, -12, (kLightRow - 44) / 2);
+    lv_obj_add_event_cb(sw, OnWifiSwitch, LV_EVENT_VALUE_CHANGED, nullptr);
+    y += kLightRow;
+
+    lv_obj_t *state = Panel(content, y, 52);
+    lv_obj_set_style_border_width(state, 2, 0);
+    lv_obj_t *s = Label(state, &lv_font_montserrat_24);
+    lv_label_set_text(s, v.state);
+    lv_obj_set_pos(s, 12, 10);
+    lv_obj_t *d = Label(state, &lv_font_montserrat_20);
+    lv_label_set_long_mode(d, LV_LABEL_LONG_MODE_DOTS);
+    lv_obj_set_style_text_align(d, LV_TEXT_ALIGN_RIGHT, 0);
+    lv_obj_set_size(d, 260, 26);
+    lv_label_set_text(d, v.detail);
+    lv_obj_align(d, LV_ALIGN_RIGHT_MID, -12, 0);
+    y += 52 + 16;
+
+    SectionHead(y, "SAVED NETWORKS");
+    y += 32;
+    if (v.saved_count == 0) {
+        lv_obj_t *none = Label(content, &lv_font_montserrat_24);
+        lv_label_set_text(none, "none yet");
+        lv_obj_set_pos(none, 12, y + 14);
+        y += kNetRow;
+    }
+    for (uint8_t i = 0; i < v.saved_count && i < wifi_view::kMaxSaved; ++i, y += kNetRow) {
+        lv_obj_t *row = Panel(content, y, kNetRow);
+        lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_set_style_border_width(row, 1, 0);
+        lv_obj_add_event_cb(row, OnSaved, LV_EVENT_CLICKED, reinterpret_cast<void *>(intptr_t{i}));
+        lv_obj_t *ssid = Label(row, &lv_font_montserrat_24);
+        lv_label_set_long_mode(ssid, LV_LABEL_LONG_MODE_DOTS);
+        lv_obj_set_size(ssid, 250, 30);
+        lv_label_set_text(ssid, v.saved[i].ssid);
+        lv_obj_set_pos(ssid, 12, (kNetRow - 30) / 2);
+        const char *note = v.joined == i         ? "connected"
+                           : v.saved[i].refused ? "wrong password"
+                                                : "";
+        lv_obj_t *n = Label(row, &lv_font_montserrat_20);
+        lv_label_set_text(n, note);
+        lv_obj_align(n, LV_ALIGN_RIGHT_MID, -44, 0);
+        lv_obj_t *more = Label(row, &lv_font_montserrat_24);
+        lv_label_set_text(more, LV_SYMBOL_RIGHT);
+        lv_obj_align(more, LV_ALIGN_RIGHT_MID, -12, 0);
+    }
+    if (v.saved_count < wifi_view::kMaxSaved) {
+        lv_obj_t *add = Panel(content, y, kNetRow);
+        lv_obj_add_flag(add, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_set_style_border_width(add, 1, 0);
+        lv_obj_add_event_cb(add, OnAdd, LV_EVENT_CLICKED, nullptr);
+        lv_obj_t *l = Label(add, &lv_font_montserrat_24);
+        lv_label_set_text(l, LV_SYMBOL_PLUS "  Add a network");
+        lv_obj_set_pos(l, 12, (kNetRow - 30) / 2);
+    } else {
+        lv_obj_t *full = Label(content, &lv_font_montserrat_20);
+        lv_label_set_text(full, "4 saved at most: forget one to add another.");
+        lv_obj_set_pos(full, 12, y + 12);
+    }
+}
+
+// The networks nearby, strongest first; "Scan again".
+void ShowWifiScan() {
+    TitleBar("Add a network");
+    scans_shown = scans;
+    int32_t y = kTitleHeight;
+    if (nearby_count == 0) {
+        Stub(nullptr, scanning ? "Looking for networks..." : "No networks found.", y + 24);
+    }
+    for (uint8_t i = 0; i < nearby_count; ++i, y += kNetRow) {
+        const wifi_view::Nearby &n = nearby[i];
+        lv_obj_t *row = Panel(content, y, kNetRow);
+        lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_set_style_border_width(row, 1, 0);
+        lv_obj_add_event_cb(row, OnNearby, LV_EVENT_CLICKED, reinterpret_cast<void *>(intptr_t{i}));
+        lv_obj_t *ssid = Label(row, &lv_font_montserrat_24);
+        lv_label_set_long_mode(ssid, LV_LABEL_LONG_MODE_DOTS);
+        lv_obj_set_size(ssid, 300, 30);
+        lv_label_set_text(ssid, n.ssid);
+        lv_obj_set_pos(ssid, 12, (kNetRow - 30) / 2);
+        if (wifi_view::SavedIndex(wifi_shown, n.ssid) != wifi_view::kNone) {
+            lv_obj_t *saved = Label(row, &lv_font_montserrat_20);
+            lv_label_set_text(saved, "saved");
+            lv_obj_align(saved, LV_ALIGN_RIGHT_MID, -100, 0);
+        }
+        if (n.secured) {
+            AddLock(row, kRowWidth - 82, (kNetRow - 20) / 2);
+        }
+        AddBars(row, kRowWidth - 50, (kNetRow - 18) / 2, wifi_view::Bars(n.rssi));
+    }
+    lv_obj_t *b = AskButton(content, kRowWidth - 48, scanning ? "Scanning..." : "Scan again");
+    lv_obj_align(b, LV_ALIGN_BOTTOM_MID, 0, -16);
+    lv_obj_add_event_cb(b, OnRescan, LV_EVENT_CLICKED, nullptr);
+}
+
+// E-ink keys: white, framed; the mode keys inverted; no pressed look.
+void StyleKeyboard(lv_obj_t *kb) {
+    lv_obj_set_style_bg_color(kb, lv_color_white(), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(kb, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_border_width(kb, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(kb, 4, LV_PART_MAIN);
+    lv_obj_set_style_pad_gap(kb, 5, LV_PART_MAIN);
+    const lv_style_selector_t kStates[] = {LV_STATE_DEFAULT, LV_STATE_PRESSED, LV_STATE_FOCUSED,
+                                           LV_STATE_FOCUS_KEY};
+    for (const lv_style_selector_t state : kStates) {
+        const auto part = static_cast<lv_style_selector_t>(LV_PART_ITEMS) | state;
+        lv_obj_set_style_bg_color(kb, lv_color_white(), part);
+        lv_obj_set_style_bg_opa(kb, LV_OPA_COVER, part);
+        lv_obj_set_style_border_width(kb, 2, part);
+        lv_obj_set_style_border_color(kb, lv_color_black(), part);
+        lv_obj_set_style_outline_width(kb, 0, part);
+        lv_obj_set_style_shadow_width(kb, 0, part);
+        lv_obj_set_style_radius(kb, 6, part);
+        lv_obj_set_style_text_color(kb, lv_color_black(), part);
+        lv_obj_set_style_text_font(kb, &lv_font_montserrat_24, part);
+        const auto checked = part | LV_STATE_CHECKED;
+        lv_obj_set_style_bg_color(kb, lv_color_black(), checked);
+        lv_obj_set_style_text_color(kb, lv_color_white(), checked);
+    }
+    lv_obj_set_style_outline_width(kb, 0, LV_STATE_FOCUSED);
+}
+
+// The password on the keyboard: its OK joins, its keyboard key goes back.
+void ShowWifiPassword() {
+    TitleBar(join_ssid);
+    password_area = lv_textarea_create(content);
+    lv_obj_remove_style_all(password_area);
+    lv_textarea_set_one_line(password_area, true);
+    lv_textarea_set_password_mode(password_area, true);
+    lv_textarea_set_password_show_time(password_area, 0);
+    lv_textarea_set_password_bullet(password_area, "*");  // the font's bullet is a dot
+    lv_textarea_set_max_length(password_area, wifi_view::kPasswordSize - 1);
+    lv_textarea_set_placeholder_text(password_area, "password");
+    lv_obj_set_size(password_area, kRowWidth - 24, 60);
+    lv_obj_set_pos(password_area, 12, kTitleHeight + 16);
+    lv_obj_set_style_text_font(password_area, &lv_font_montserrat_28, 0);
+    lv_obj_set_style_text_color(password_area, lv_color_black(), 0);
+    lv_obj_set_style_border_width(password_area, 2, 0);
+    lv_obj_set_style_border_color(password_area, lv_color_black(), 0);
+    lv_obj_set_style_radius(password_area, 8, 0);
+    lv_obj_set_style_pad_hor(password_area, 12, 0);
+    lv_obj_set_style_pad_ver(password_area, 12, 0);
+    // A steady cursor: no blinking refreshes.
+    lv_obj_set_style_anim_duration(password_area, 0, LV_PART_CURSOR);
+    lv_obj_set_style_border_side(password_area, LV_BORDER_SIDE_LEFT, LV_PART_CURSOR);
+    lv_obj_set_style_border_width(password_area, 2, LV_PART_CURSOR);
+    lv_obj_set_style_border_color(password_area, lv_color_black(), LV_PART_CURSOR);
+    lv_obj_add_state(password_area, LV_STATE_FOCUSED);
+
+    lv_obj_t *hint = Label(content, &lv_font_montserrat_20);
+    lv_label_set_long_mode(hint, LV_LABEL_LONG_MODE_WRAP);
+    lv_obj_set_width(hint, kRowWidth - 24);
+    lv_label_set_text(hint, "8..63 characters. " LV_SYMBOL_OK ": join, " LV_SYMBOL_KEYBOARD
+                            ": back.");
+    lv_obj_set_pos(hint, 12, kTitleHeight + 90);
+
+    lv_obj_t *kb = lv_keyboard_create(content);
+    StyleKeyboard(kb);
+    lv_obj_set_size(kb, kRowWidth, 440);
+    lv_obj_align(kb, LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_keyboard_set_textarea(kb, password_area);
+    lv_obj_add_event_cb(kb, OnPassword, LV_EVENT_READY, nullptr);
+    lv_obj_add_event_cb(kb, OnPassword, LV_EVENT_CANCEL, nullptr);
+}
+
+// The typed password out of LVGL's heap.
+void WipePassword() {
+    if (password_area != nullptr) {
+        auto *text = const_cast<char *>(lv_textarea_get_text(password_area));
+        if (text != nullptr) {
+            memset(text, 0, strlen(text));
+        }
+        password_area = nullptr;
+    }
+}
+
+void CloseSheet() {
+    if (sheet != nullptr) {
+        lv_obj_delete(sheet);
+        sheet = nullptr;
+    }
+}
+
+// A saved network: Connect (when not on it), Forget, Cancel.
+void ShowSheet(int8_t index) {
+    sheet_index = index;
+    sheet = lv_obj_create(home);  // takes the taps around the box
+    lv_obj_remove_style_all(sheet);
+    lv_obj_add_flag(sheet, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_remove_flag(sheet, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_pos(sheet, 0, kContentTop);
+    lv_obj_set_size(sheet, kWidth, kHeight - kContentTop);
+    lv_obj_t *box = lv_obj_create(sheet);
+    lv_obj_remove_style_all(box);
+    lv_obj_remove_flag(box, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_remove_flag(box, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_size(box, kRowWidth - 32, LV_SIZE_CONTENT);
+    lv_obj_set_style_bg_color(box, lv_color_white(), 0);
+    lv_obj_set_style_bg_opa(box, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(box, 3, 0);
+    lv_obj_set_style_border_color(box, lv_color_black(), 0);
+    lv_obj_set_style_radius(box, 16, 0);
+    lv_obj_set_style_pad_all(box, 20, 0);
+    lv_obj_set_style_pad_row(box, 14, 0);
+    lv_obj_set_flex_flow(box, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(box, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_center(box);
+    constexpr int32_t kInner = kRowWidth - 32 - 2 * 20 - 2 * 3;
+    lv_obj_t *t = Label(box, &lv_font_montserrat_28);
+    lv_label_set_long_mode(t, LV_LABEL_LONG_MODE_DOTS);
+    lv_obj_set_width(t, kInner);
+    lv_label_set_text(t, wifi_shown.saved[index].ssid);
+    if (wifi_shown.joined != index) {
+        lv_obj_t *c = AskButton(box, kInner - 4, "Connect");
+        lv_obj_add_event_cb(c, OnSheet, LV_EVENT_CLICKED, reinterpret_cast<void *>(intptr_t{1}));
+    }
+    lv_obj_t *f = AskButton(box, kInner - 4, "Forget this network");
+    lv_obj_add_event_cb(f, OnSheet, LV_EVENT_CLICKED, reinterpret_cast<void *>(intptr_t{2}));
+    lv_obj_t *c = AskButton(box, kInner - 4, "Cancel");
+    lv_obj_add_event_cb(c, OnSheet, LV_EVENT_CLICKED, reinterpret_cast<void *>(intptr_t{3}));
+}
+
+// The Wi-Fi window's taps (Poll). True when the page is to be drawn again.
+bool PollWifi() {
+    bool changed = false;
+    if (wifi_switch_tapped) {
+        wifi_switch_tapped = false;
+        Job job = MakeJob(JobKind::kWifiActive);
+        job.flag = !wifi_shown.active;
+        SendWifiJob(job);
+    }
+    if (saved_tapped != wifi_view::kNone) {
+        if (sheet == nullptr && saved_tapped < wifi_shown.saved_count) {
+            ShowSheet(saved_tapped);
+        }
+        saved_tapped = wifi_view::kNone;
+    }
+    if (sheet_choice != 0) {
+        const int choice = sheet_choice;
+        sheet_choice = 0;
+        if (choice != 3 && sheet_index >= 0 && sheet_index < wifi_shown.saved_count) {
+            Job job = MakeJob(choice == 1 ? JobKind::kWifiJoin : JobKind::kWifiForget);
+            job.flag = true;  // the kept password
+            snprintf(job.ssid, sizeof job.ssid, "%s", wifi_shown.saved[sheet_index].ssid);
+            SendWifiJob(job);
+        }
+        CloseSheet();
+    }
+    if (add_tapped) {
+        add_tapped = false;
+        nearby_count = 0;
+        StartScan();
+        changed |= nav_state.OpenSettings(static_cast<uint8_t>(settings::Page::kWifiScan));
+    }
+    if (rescan_tapped) {
+        rescan_tapped = false;
+        if (!scanning) {
+            StartScan();
+            changed = true;  // "Scanning..."
+        }
+    }
+    if (nearby_tapped != wifi_view::kNone) {
+        const int8_t i = nearby_tapped;
+        nearby_tapped = wifi_view::kNone;
+        if (i < static_cast<int8_t>(nearby_count)) {
+            const wifi_view::Nearby &n = nearby[i];
+            const wifi_view::Join how = wifi_view::OnTap(wifi_shown, n);
+            if (how == wifi_view::Join::kPassword) {
+                snprintf(join_ssid, sizeof join_ssid, "%s", n.ssid);
+                changed |= nav_state.OpenSettings(static_cast<uint8_t>(settings::Page::kWifiPassword));
+            } else {
+                Job job = MakeJob(JobKind::kWifiJoin);
+                job.flag = how == wifi_view::Join::kSaved;
+                snprintf(job.ssid, sizeof job.ssid, "%s", n.ssid);
+                SendWifiJob(job);
+                changed |= nav_state.OpenSettings(static_cast<uint8_t>(settings::Page::kWifi));
+            }
+        }
+    }
+    if (password_cancel) {
+        password_cancel = false;
+        changed |= nav_state.Back();
+    }
+    if (password_ready) {
+        password_ready = false;
+        if (password_area != nullptr) {
+            const char *typed = lv_textarea_get_text(password_area);
+            if (!wifi_view::PasswordOk(typed)) {
+                Toast("8..63 characters, or 64 hex digits");
+            } else {
+                Job job = MakeJob(JobKind::kWifiJoin);
+                snprintf(job.ssid, sizeof job.ssid, "%s", join_ssid);
+                snprintf(job.password, sizeof job.password, "%s", typed);
+                SendWifiJob(job);
+                changed |= nav_state.OpenSettings(static_cast<uint8_t>(settings::Page::kWifi));
+            }
+        }
+    }
+    const auto page = static_cast<settings::Page>(nav_state.settings_page());
+    if (page == settings::Page::kWifiScan && scans != scans_shown) {
+        changed = true;
+    }
+    return changed;
+}
+
 void ShowSettings() {
     const auto page = static_cast<settings::Page>(nav_state.settings_page());
+    if (wifi_hooks != nullptr && page == settings::Page::kWifi) {
+        ShowWifi();
+        return;
+    }
+    if (wifi_hooks != nullptr && page == settings::Page::kWifiScan) {
+        ShowWifiScan();
+        return;
+    }
+    if (wifi_hooks != nullptr && page == settings::Page::kWifiPassword) {
+        ShowWifiPassword();
+        return;
+    }
     if (settings_hooks == nullptr) {
         TitleBar("Settings");
         Stub(nullptr, "Not on this device.", kTitleHeight + 24);
@@ -1190,6 +1676,8 @@ void Show() {
         CloseAsk();
     }
     light_switch = nullptr;  // deleted with the page
+    WipePassword();
+    CloseSheet();
     lv_obj_clean(content);
     lv_obj_set_height(content, (nav_state.mode() == nav::Mode::kSettings ? kScreenBottom
                                                                            : kContentBottom) -
@@ -1342,6 +1830,22 @@ void TypeTask(void *) {
             Unlock();
             continue;
         }
+        if (job.kind == JobKind::kWifiScan) {
+            WifiScanJob();
+            continue;
+        }
+        if (job.kind >= JobKind::kWifiActive) {
+            const char *said = job.kind == JobKind::kWifiActive ? wifi_hooks->set_active(job.flag)
+                               : job.kind == JobKind::kWifiJoin
+                                   ? wifi_hooks->join(job.ssid, job.flag ? nullptr : job.password)
+                                   : wifi_hooks->forget(job.ssid);
+            vault::Wipe(&job, sizeof job);
+            Lock();
+            settings_looked_at = lv_tick_get() - kSettingsMs;
+            Toast(said);
+            Unlock();
+            continue;
+        }
         const char *said = TypeJob(job);
         vault::Wipe(&type_record, sizeof type_record);
         Lock();
@@ -1430,24 +1934,35 @@ void Poll(lv_timer_t *) {
     }
     if (action_tapped) {
         action_tapped = false;
-        const Job job = {JobKind::kAct, 0, list::Zone::kTypeUser, {},
-                         settings::PageAction(static_cast<settings::Page>(nav_state.settings_page()))};
+        Job job = MakeJob(JobKind::kAct);
+        job.action = settings::PageAction(static_cast<settings::Page>(nav_state.settings_page()));
         if (xQueueSend(jobs, &job, 0) != pdTRUE) {
             Toast("busy typing");
         }
     }
     if (light_save) {
         light_save = false;
-        const Job job = {JobKind::kSaveLight, 0, list::Zone::kTypeUser, {}, settings::Action::kNone};
+        const Job job = MakeJob(JobKind::kSaveLight);
         xQueueSend(jobs, &job, 0);  // full: the next slider let go saves it
     }
+    const auto settings_page = static_cast<settings::Page>(nav_state.settings_page());
+    if (nav_state.mode() == nav::Mode::kSettings && wifi_hooks != nullptr) {
+        changed |= PollWifi();
+    }
     // Settings' texts (Wi-Fi joined, the clock); the switch follows Power x2.
+    // Not under a sheet, nor over a password being typed or a scan.
     if (nav_state.mode() == nav::Mode::kSettings && settings_hooks != nullptr && HomeShown() &&
-        !FingerDown() && lv_tick_elaps(settings_looked_at) >= kSettingsMs) {
+        !FingerDown() && sheet == nullptr && settings_page != settings::Page::kWifiPassword &&
+        settings_page != settings::Page::kWifiScan &&
+        lv_tick_elaps(settings_looked_at) >= kSettingsMs) {
         settings_looked_at = lv_tick_get();
-        SettingsText(static_cast<settings::Page>(nav_state.settings_page()), settings_now,
-                     sizeof settings_now);
-        changed |= strcmp(settings_now, settings_shown) != 0;
+        if (settings_page == settings::Page::kWifi && wifi_hooks != nullptr) {
+            wifi_hooks->view(&wifi_now);
+            changed |= !wifi_view::Equal(wifi_now, wifi_shown);
+        } else {
+            SettingsText(settings_page, settings_now, sizeof settings_now);
+            changed |= strcmp(settings_now, settings_shown) != 0;
+        }
         bool on = false;
         uint8_t brightness = 0;
         uint8_t warmth = 0;
@@ -1532,6 +2047,8 @@ void ShowScreen(nav::Mode mode) {
 void SetTypist(esp_err_t (*type)(const char *text)) { typist = type; }
 
 void SetSettingsHooks(const SettingsHooks *hooks) { settings_hooks = hooks; }
+
+void SetWifiHooks(const WifiHooks *hooks) { wifi_hooks = hooks; }
 
 void Navigate(nav::Input input) {
     if (inputs != nullptr) {

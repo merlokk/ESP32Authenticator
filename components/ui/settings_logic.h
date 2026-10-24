@@ -19,7 +19,16 @@ enum class Page : uint8_t {
     kSecurity,
     kTime,
     kAbout,
+    kWifiScan,      // Wi-Fi's "Add a network": the ones nearby
+    kWifiPassword,  // a network's password, on the keyboard
 };
+
+// Where a page's back arrow goes.
+constexpr Page Parent(Page p) {
+    return p == Page::kWifiScan ? Page::kWifi
+           : p == Page::kWifiPassword ? Page::kWifiScan
+                                      : Page::kMain;
+}
 
 // The main page's rows, under the frontlight.
 inline constexpr Page kRows[] = {Page::kWifi,     Page::kBluetooth, Page::kDisplay,
@@ -35,6 +44,8 @@ constexpr const char *Title(Page p) {
         case Page::kSecurity: return "Security";
         case Page::kTime: return "Date & time";
         case Page::kAbout: return "About";
+        case Page::kWifiScan: return "Add a network";
+        case Page::kWifiPassword: return "Password";
     }
     return "";
 }
