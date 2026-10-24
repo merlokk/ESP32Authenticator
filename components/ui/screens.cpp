@@ -145,6 +145,9 @@ enum class JobKind : uint8_t {
     kWebMode,     // web.mode `id`
     kWebWrite,    // web.write `flag`
     kWebLogin,    // the login `ssid` / `password` (`flag`), or none
+    kWifiChoice,  // the Wi-Fi setting `which` (wifi_view::Choice) to `id`
+    kWifiText,    // the Wi-Fi field `which` (wifi_view::Field) to `password`
+    kWifiStatic,  // the network `ssid`'s address `static_ip`
 };
 
 struct Job {
@@ -159,6 +162,8 @@ struct Job {
     touch_cal::Calibration calibration;
     display_view::Setting setting;
     time_view::Manual manual;
+    uint8_t which;
+    wifi_view::StaticIp static_ip;
 };
 
 // A job with only its kind set.
@@ -1162,6 +1167,53 @@ int sheet_choice = 0;  // a dialog's answer (dialog::Choose ids), for the pages'
 bool password_ready = false;
 bool password_cancel = false;
 
+wifi_view::Choice wifi_choice = wifi_view::Choice::kMode;  // the choice page's
+wifi_view::Field wifi_field = wifi_view::Field::kApName;    // the typed page's
+wifi_view::StaticIp static_edit;  // the IP page's copy, saved whole
+char static_ssid[wifi_view::kSsidSize];  // whose
+char hidden_ssid[wifi_view::kSsidSize];  // the hidden network's name, typed first
+bool hidden_on_password = false;
+int more_row_tapped = -1;    // 0 mode, 1 name, 2 password, 3 channel, 4 rounds, 5 window, 6 hostname
+int choice_tapped = -1;
+int static_row_tapped = -1;  // 0 the switch, 1..4 address, netmask, gateway, DNS
+bool static_save = false;
+bool more_tapped = false;
+bool hidden_tapped = false;
+
+void OnMore(lv_event_t *) {
+    if (LastWasTap()) {
+        more_tapped = true;
+    }
+}
+
+void OnMoreRow(lv_event_t *event) {
+    if (LastWasTap()) {
+        more_row_tapped = static_cast<int>(reinterpret_cast<intptr_t>(lv_event_get_user_data(event)));
+    }
+}
+
+void OnWifiChoice(lv_event_t *event) {
+    if (LastWasTap()) {
+        choice_tapped = static_cast<int>(reinterpret_cast<intptr_t>(lv_event_get_user_data(event)));
+    }
+}
+
+void OnStaticRow(lv_event_t *event) {
+    static_row_tapped = static_cast<int>(reinterpret_cast<intptr_t>(lv_event_get_user_data(event)));
+}
+
+void OnStaticSave(lv_event_t *) {
+    if (LastWasTap()) {
+        static_save = true;
+    }
+}
+
+void OnHidden(lv_event_t *) {
+    if (LastWasTap()) {
+        hidden_tapped = true;
+    }
+}
+
 // The ui's own task: a scan (seconds), then the list.
 void WifiScanJob() {
     static wifi_view::Nearby found[kScanCapacity];  // off the task's stack
@@ -1322,7 +1374,11 @@ void ShowWifi() {
     lv_obj_set_size(d, 260, 26);
     lv_label_set_text(d, v.detail);
     lv_obj_align(d, LV_ALIGN_RIGHT_MID, -12, 0);
-    y += 52 + 16;
+    y += 52;
+    char mode[48];
+    snprintf(mode, sizeof mode, "%s", wifi_view::ModeLabel(v.mode));
+    ChoiceRow(y, "Mode and access point", mode, false, OnMore, 0);
+    y += kNetRow + 16;
 
     SectionHead(y, "SAVED NETWORKS");
     y += 32;
@@ -1396,8 +1452,11 @@ void ShowWifiScan() {
         }
         AddBars(row, kRowWidth - 50, (kNetRow - 18) / 2, wifi_view::Bars(n.rssi));
     }
-    lv_obj_t *b = AskButton(content, kRowWidth - 48, scanning ? "Scanning..." : "Scan again");
-    lv_obj_align(b, LV_ALIGN_BOTTOM_MID, 0, -16);
+    lv_obj_t *other = AskButton(content, 180, "Other...");
+    lv_obj_align(other, LV_ALIGN_BOTTOM_LEFT, 16, -16);
+    lv_obj_add_event_cb(other, OnHidden, LV_EVENT_CLICKED, nullptr);
+    lv_obj_t *b = AskButton(content, kRowWidth - 228, scanning ? "Scanning..." : "Scan again");
+    lv_obj_align(b, LV_ALIGN_BOTTOM_RIGHT, -16, -16);
     lv_obj_add_event_cb(b, OnRescan, LV_EVENT_CLICKED, nullptr);
 }
 
@@ -1431,7 +1490,7 @@ void StyleKeyboard(lv_obj_t *kb) {
 // A line typed on the keyboard (password_area, wiped when the page goes):
 // `initial` in it, hidden as * when `masked`; OK and the keyboard key set
 // password_ready / password_cancel (the page's Poll takes them).
-void KeyboardPage(const char *title, const char *placeholder, const char *initial, bool masked,
+lv_obj_t *KeyboardPage(const char *title, const char *placeholder, const char *initial, bool masked,
                   uint32_t max_length, const char *hint_text) {
     TitleBar(title);
     password_area = lv_textarea_create(content);
@@ -1441,7 +1500,8 @@ void KeyboardPage(const char *title, const char *placeholder, const char *initia
     lv_textarea_set_password_show_time(password_area, 0);
     lv_textarea_set_password_bullet(password_area, "*");  // the font's bullet is a dot
     lv_textarea_set_max_length(password_area, max_length);
-    lv_textarea_set_placeholder_text(password_area, placeholder);
+    // No placeholder: on one bit it looks typed (the hint under says what goes in).
+    (void)placeholder;
     lv_textarea_set_text(password_area, initial);
     lv_obj_set_size(password_area, kRowWidth - 24, 60);
     lv_obj_set_pos(password_area, 12, kTitleHeight + 16);
@@ -1472,6 +1532,7 @@ void KeyboardPage(const char *title, const char *placeholder, const char *initia
     lv_keyboard_set_textarea(kb, password_area);
     lv_obj_add_event_cb(kb, OnPassword, LV_EVENT_READY, nullptr);
     lv_obj_add_event_cb(kb, OnPassword, LV_EVENT_CANCEL, nullptr);
+    return kb;
 }
 
 // The password on the keyboard: its OK joins, its keyboard key goes back.
@@ -1502,9 +1563,10 @@ void OpenSheet(const char *title, const SheetButton *buttons, size_t count) {
 // A saved network: Connect (when not on it), Forget, Cancel.
 void ShowSheet(int8_t index) {
     sheet_index = index;
-    const SheetButton all[] = {{"Connect", 1}, {"Forget this network", 2}, {"Cancel", 3}};
+    const SheetButton all[] = {
+        {"Connect", 1}, {"IP address", 4}, {"Forget this network", 2}, {"Cancel", 3}};
     const bool joined = wifi_shown.joined == index;
-    OpenSheet(wifi_shown.saved[index].ssid, joined ? all + 1 : all, joined ? 2 : 3);
+    OpenSheet(wifi_shown.saved[index].ssid, joined ? all + 1 : all, joined ? 3 : 4);
 }
 
 // The Wi-Fi window's taps (Poll). True when the page is to be drawn again.
@@ -1525,7 +1587,13 @@ bool PollWifi() {
     if (sheet_choice != 0 && nav_state.settings_page() == static_cast<uint8_t>(settings::Page::kWifi)) {
         const int choice = sheet_choice;
         sheet_choice = 0;
-        if (choice != 3 && sheet_index >= 0 && sheet_index < wifi_shown.saved_count) {
+        const bool ours = sheet_index >= 0 && sheet_index < wifi_shown.saved_count;
+        if (choice == 4 && ours) {
+            snprintf(static_ssid, sizeof static_ssid, "%s", wifi_shown.saved[sheet_index].ssid);
+            static_edit = {};
+            wifi_hooks->get_static(static_cast<uint8_t>(sheet_index), &static_edit);
+            changed |= nav_state.OpenSettings(static_cast<uint8_t>(settings::Page::kWifiStatic));
+        } else if ((choice == 1 || choice == 2) && ours) {
             Job job = MakeJob(choice == 1 ? JobKind::kWifiJoin : JobKind::kWifiForget);
             job.flag = true;  // the kept password
             snprintf(job.ssid, sizeof job.ssid, "%s", wifi_shown.saved[sheet_index].ssid);
@@ -1880,6 +1948,255 @@ bool PollBle() {
         changed = true;
     }
     return changed;
+}
+
+// --- Settings: Wi-Fi's mode and access point, a network's IP, a hidden network ---
+
+const char *ChoiceLabel(wifi_view::Choice c, uint16_t value, char *out, size_t size) {
+    const int i = wifi_view::ChoiceIndex(c, value);
+    size_t n = 0;
+    const wifi_view::Option *o = wifi_view::Options(c, &n);
+    if (c == wifi_view::Choice::kMode) {
+        snprintf(out, size, "%s", wifi_view::ModeLabel(static_cast<uint8_t>(value)));
+    } else if (i >= 0) {
+        snprintf(out, size, "%s", o[i].label);
+    } else {
+        snprintf(out, size, "%u", static_cast<unsigned>(value));
+    }
+    return out;
+}
+
+uint16_t ChoiceValue(wifi_view::Choice c) {
+    const wifi_view::View &v = wifi_shown;
+    return c == wifi_view::Choice::kMode      ? v.mode
+           : c == wifi_view::Choice::kChannel ? v.channel
+           : c == wifi_view::Choice::kRounds  ? v.rounds
+                                              : v.window;
+}
+
+// The mode, the access point (name, password, channel, when it opens, how
+// long it stays), the hostname.
+void ShowWifiMore() {
+    TitleBar("Mode and access point");
+    wifi_hooks->view(&wifi_shown);
+    const wifi_view::View &v = wifi_shown;
+    char text[48];
+    int32_t y = kTitleHeight;
+    ChoiceRow(y, "Mode", ChoiceLabel(wifi_view::Choice::kMode, v.mode, text, sizeof text), false,
+              OnMoreRow, 0);
+    y += kNetRow + 12;
+    SectionHead(y, "ACCESS POINT");
+    y += 32;
+    ChoiceRow(y, "Name", v.ap_name, false, OnMoreRow, 1);
+    y += kNetRow;
+    ChoiceRow(y, "Password", v.ap_password ? "set" : "open", false, OnMoreRow, 2);
+    y += kNetRow;
+    ChoiceRow(y, "Channel", ChoiceLabel(wifi_view::Choice::kChannel, v.channel, text, sizeof text),
+              false, OnMoreRow, 3);
+    y += kNetRow;
+    ChoiceRow(y, "Opens", ChoiceLabel(wifi_view::Choice::kRounds, v.rounds, text, sizeof text),
+              false, OnMoreRow, 4);
+    y += kNetRow;
+    ChoiceRow(y, "Stays", ChoiceLabel(wifi_view::Choice::kWindow, v.window, text, sizeof text),
+              false, OnMoreRow, 5);
+    y += kNetRow + 12;
+    ChoiceRow(y, "Hostname", v.hostname, false, OnMoreRow, 6);
+    y += kNetRow;
+    lv_obj_t *note = Label(content, &lv_font_montserrat_20);
+    lv_label_set_long_mode(note, LV_LABEL_LONG_MODE_WRAP);
+    lv_obj_set_width(note, kRowWidth - 24);
+    lv_label_set_text(note, v.mode == wifi_view::kModeClient
+                                ? "Join a network: the access point opens only when no saved "
+                                  "network answers, and closes again."
+                                : "The access point is always up.");
+    lv_obj_set_pos(note, 12, y + 10);
+}
+
+void ShowWifiChoice() {
+    TitleBar(wifi_view::ChoiceTitle(wifi_choice));
+    size_t n = 0;
+    const wifi_view::Option *o = wifi_view::Options(wifi_choice, &n);
+    const int in_use = wifi_view::ChoiceIndex(wifi_choice, ChoiceValue(wifi_choice));
+    // 13 channels: two columns would be tighter; a row each, 52 px.
+    const int32_t row = n > 9 ? 52 : kNetRow;
+    int32_t y = kTitleHeight;
+    for (size_t i = 0; i < n; ++i, y += row) {
+        lv_obj_t *r = ChoiceRow(y, o[i].label, nullptr, static_cast<int>(i) == in_use, OnWifiChoice,
+                                static_cast<int>(i));
+        lv_obj_set_height(r, row);
+    }
+}
+
+// A typed field (the access point's, the hostname, an address, a hidden
+// network's): its keyboard, digits first for the addresses.
+void ShowWifiText(wifi_view::Field f, const char *initial) {
+    const wifi_view::FieldSpec spec = wifi_view::Spec(f);
+    char hint[160];
+    snprintf(hint, sizeof hint, "%s " LV_SYMBOL_OK ": save, " LV_SYMBOL_KEYBOARD ": back.",
+             spec.hint);
+    lv_obj_t *kb = KeyboardPage(spec.title, spec.placeholder, initial, spec.masked, spec.max, hint);
+    if (spec.numeric) {
+        lv_keyboard_set_mode(kb, LV_KEYBOARD_MODE_NUMBER);
+    }
+}
+
+// A saved network's address: DHCP or static, the fields, Save.
+void ShowWifiStatic() {
+    TitleBar("IP address");
+    int32_t y = kTitleHeight;
+    lv_obj_t *who = Label(content, &lv_font_montserrat_24);
+    lv_label_set_long_mode(who, LV_LABEL_LONG_MODE_DOTS);
+    lv_obj_set_width(who, kRowWidth - 24);
+    lv_label_set_text(who, static_ssid);
+    lv_obj_set_pos(who, 12, y + 12);
+    y += 52;
+    lv_obj_t *row = Panel(content, y, kNetRow);
+    lv_obj_set_style_border_width(row, 1, 0);
+    lv_obj_t *l = Label(row, &lv_font_montserrat_24);
+    lv_label_set_text(l, "Static address");
+    lv_obj_set_pos(l, 12, (kNetRow - 30) / 2);
+    lv_obj_t *sw = Switch(row, static_edit.enabled);
+    lv_obj_align(sw, LV_ALIGN_RIGHT_MID, -12, 0);
+    lv_obj_add_event_cb(sw, OnStaticRow, LV_EVENT_VALUE_CHANGED, reinterpret_cast<void *>(intptr_t{0}));
+    y += kNetRow;
+    if (static_edit.enabled) {
+        const wifi_view::Field fields[4] = {wifi_view::Field::kAddress, wifi_view::Field::kNetmask,
+                                            wifi_view::Field::kGateway, wifi_view::Field::kDns};
+        for (uint8_t i = 0; i < 4; ++i, y += kNetRow) {
+            const char *value = wifi_view::StaticField(static_edit, fields[i]);
+            ChoiceRow(y, wifi_view::Spec(fields[i]).title, value[0] != '\0' ? value : "not set",
+                      false, OnStaticRow, i + 1);
+        }
+    } else {
+        lv_obj_t *note = Label(content, &lv_font_montserrat_20);
+        lv_label_set_long_mode(note, LV_LABEL_LONG_MODE_WRAP);
+        lv_obj_set_width(note, kRowWidth - 24);
+        lv_label_set_text(note, "The router gives the address (DHCP).");
+        lv_obj_set_pos(note, 12, y + 12);
+    }
+    lv_obj_t *b = AskButton(content, kRowWidth - 48, "Save");
+    lv_obj_align(b, LV_ALIGN_BOTTOM_MID, 0, -16);
+    lv_obj_add_event_cb(b, OnStaticSave, LV_EVENT_CLICKED, nullptr);
+}
+
+// Mode and access point, the IP page and the hidden network (Poll). True
+// when the page is to be drawn again.
+bool PollWifiMore() {
+    bool changed = false;
+    const auto page = static_cast<settings::Page>(nav_state.settings_page());
+    auto open = [&](settings::Page p) {
+        changed |= nav_state.OpenSettings(static_cast<uint8_t>(p));
+    };
+    if (more_tapped) {
+        more_tapped = false;
+        open(settings::Page::kWifiMore);
+    }
+    if (more_row_tapped >= 0) {
+        const int row = more_row_tapped;
+        more_row_tapped = -1;
+        if (row == 0 || (row >= 3 && row <= 5)) {
+            wifi_choice = row == 0   ? wifi_view::Choice::kMode
+                          : row == 3 ? wifi_view::Choice::kChannel
+                          : row == 4 ? wifi_view::Choice::kRounds
+                                     : wifi_view::Choice::kWindow;
+            open(settings::Page::kWifiChoice);
+        } else {
+            wifi_field = row == 1   ? wifi_view::Field::kApName
+                         : row == 2 ? wifi_view::Field::kApPassword
+                                    : wifi_view::Field::kHostname;
+            open(settings::Page::kWifiText);
+        }
+    }
+    if (choice_tapped >= 0) {
+        size_t n = 0;
+        const wifi_view::Option *o = wifi_view::Options(wifi_choice, &n);
+        if (static_cast<size_t>(choice_tapped) < n) {
+            Job job = MakeJob(JobKind::kWifiChoice);
+            job.which = static_cast<uint8_t>(wifi_choice);
+            job.id = o[choice_tapped].value;
+            SendJob(job);
+            changed |= nav_state.Back();
+        }
+        choice_tapped = -1;
+    }
+    if (hidden_tapped) {
+        hidden_tapped = false;
+        hidden_on_password = false;
+        hidden_ssid[0] = '\0';
+        open(settings::Page::kWifiHidden);
+    }
+    if (static_row_tapped >= 0 && page == settings::Page::kWifiStatic) {
+        const int row = static_row_tapped;
+        static_row_tapped = -1;
+        if (row == 0) {
+            static_edit.enabled = !static_edit.enabled;
+            changed = true;
+        } else {
+            const wifi_view::Field fields[4] = {wifi_view::Field::kAddress, wifi_view::Field::kNetmask,
+                                                wifi_view::Field::kGateway, wifi_view::Field::kDns};
+            wifi_field = fields[(row - 1) & 3];
+            open(settings::Page::kWifiStaticText);
+        }
+    }
+    if (static_save) {
+        static_save = false;
+        const char *wrong = wifi_view::CheckStatic(static_edit);
+        if (wrong != nullptr) {
+            Toast(wrong);
+        } else {
+            Job job = MakeJob(JobKind::kWifiStatic);
+            snprintf(job.ssid, sizeof job.ssid, "%s", static_ssid);
+            job.static_ip = static_edit;
+            SendJob(job);
+            changed |= nav_state.Back();
+        }
+    }
+    // The keyboard pages: OK and back.
+    const bool typed = page == settings::Page::kWifiText || page == settings::Page::kWifiStaticText ||
+                       page == settings::Page::kWifiHidden;
+    if (!typed) {
+        return changed;
+    }
+    if (password_cancel) {
+        password_cancel = false;
+        changed |= nav_state.Back();
+    }
+    if (!password_ready || password_area == nullptr) {
+        return changed;
+    }
+    password_ready = false;
+    const char *value = lv_textarea_get_text(password_area);
+    const wifi_view::Field f =
+        page == settings::Page::kWifiHidden
+            ? (hidden_on_password ? wifi_view::Field::kHiddenPassword : wifi_view::Field::kHiddenSsid)
+            : wifi_field;
+    const char *wrong = wifi_view::Check(f, value);
+    if (wrong != nullptr) {
+        Toast(wrong);
+        return changed;
+    }
+    if (page == settings::Page::kWifiStaticText) {
+        char *field = wifi_view::StaticField(static_edit, f);
+        if (field != nullptr) {
+            snprintf(field, wifi_view::kIpSize, "%s", value);
+        }
+        return nav_state.Back() || changed;
+    }
+    if (page == settings::Page::kWifiHidden && !hidden_on_password) {
+        snprintf(hidden_ssid, sizeof hidden_ssid, "%s", value);
+        hidden_on_password = true;
+        return true;  // the password page
+    }
+    Job job = MakeJob(page == settings::Page::kWifiHidden ? JobKind::kWifiJoin : JobKind::kWifiText);
+    job.which = static_cast<uint8_t>(f);
+    snprintf(job.ssid, sizeof job.ssid, "%s", hidden_ssid);
+    snprintf(job.password, sizeof job.password, "%s", value);
+    SendAndWipe(job);
+    if (page == settings::Page::kWifiHidden) {
+        hidden_ssid[0] = '\0';
+        return nav_state.OpenSettings(static_cast<uint8_t>(settings::Page::kWifi)) || changed;
+    }
+    return nav_state.Back() || changed;
 }
 
 // --- Settings: Display & power -----------------------------------------------------
@@ -3098,6 +3415,27 @@ void ShowSettings() {
         ShowWifiPassword();
         return;
     }
+    if (wifi_hooks != nullptr) {
+        switch (page) {
+            case settings::Page::kWifiMore: ShowWifiMore(); return;
+            case settings::Page::kWifiChoice: ShowWifiChoice(); return;
+            case settings::Page::kWifiText:
+                ShowWifiText(wifi_field, wifi_field == wifi_view::Field::kApName    ? wifi_shown.ap_name
+                                         : wifi_field == wifi_view::Field::kHostname ? wifi_shown.hostname
+                                                                                    : "");
+                return;
+            case settings::Page::kWifiStatic: ShowWifiStatic(); return;
+            case settings::Page::kWifiStaticText:
+                ShowWifiText(wifi_field, wifi_view::StaticField(static_edit, wifi_field));
+                return;
+            case settings::Page::kWifiHidden:
+                ShowWifiText(hidden_on_password ? wifi_view::Field::kHiddenPassword
+                                                : wifi_view::Field::kHiddenSsid,
+                             "");
+                return;
+            default: break;
+        }
+    }
     if (settings_hooks == nullptr) {
         TitleBar("Settings");
         Stub(nullptr, "Not on this device.", kTitleHeight + 24);
@@ -3392,6 +3730,14 @@ void TypeTask(void *) {
                     break;
                 case JobKind::kPinComplexity: said = security_hooks->set_complexity(job.flag); break;
                 case JobKind::kWebMode: said = web_hooks->set_mode(static_cast<uint8_t>(job.id)); break;
+                case JobKind::kWifiChoice:
+                    said = wifi_hooks->set_choice(static_cast<wifi_view::Choice>(job.which),
+                                                  static_cast<uint16_t>(job.id));
+                    break;
+                case JobKind::kWifiText:
+                    said = wifi_hooks->set_text(static_cast<wifi_view::Field>(job.which), job.password);
+                    break;
+                case JobKind::kWifiStatic: said = wifi_hooks->set_static(job.ssid, job.static_ip); break;
                 case JobKind::kWebWrite: said = web_hooks->set_write(job.flag); break;
                 case JobKind::kWebLogin:
                     said = web_hooks->set_login(job.flag ? job.ssid : nullptr,
@@ -3547,6 +3893,9 @@ void Poll(lv_timer_t *) {
     if (nav_state.mode() == nav::Mode::kSettings && wifi_hooks != nullptr) {
         changed |= PollWifi();
     }
+    if (nav_state.mode() == nav::Mode::kSettings && wifi_hooks != nullptr) {
+        changed |= PollWifiMore();
+    }
     if (nav_state.mode() == nav::Mode::kSettings && ble_hooks != nullptr) {
         changed |= PollBle();
     }
@@ -3580,7 +3929,11 @@ void Poll(lv_timer_t *) {
         settings_page != settings::Page::kSecurityLock &&
         settings_page != settings::Page::kSecurityPin && settings_page != settings::Page::kAbout &&
         settings_page != settings::Page::kWebMode && settings_page != settings::Page::kWebLogin &&
-        settings_page != settings::Page::kBleName &&
+        settings_page != settings::Page::kBleName && settings_page != settings::Page::kWifiMore &&
+        settings_page != settings::Page::kWifiChoice && settings_page != settings::Page::kWifiText &&
+        settings_page != settings::Page::kWifiStatic &&
+        settings_page != settings::Page::kWifiStaticText &&
+        settings_page != settings::Page::kWifiHidden &&
         lv_tick_elaps(settings_looked_at) >= kSettingsMs) {
         settings_looked_at = lv_tick_get();
         if (settings_page == settings::Page::kWifi && wifi_hooks != nullptr) {

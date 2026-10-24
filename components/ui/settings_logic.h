@@ -35,11 +35,20 @@ enum class Page : uint8_t {
     kWebLogin,      // Web site: the login on the keyboard
     kFido,          // Security: FIDO2 / U2F (its state, the keys, reset)
     kBleName,       // Bluetooth: the name on the keyboard
+    kWifiMore,      // Wi-Fi: mode and access point
+    kWifiChoice,    // Wi-Fi > Mode and access point: one setting's choices
+    kWifiText,      // Wi-Fi > Mode and access point: a typed field
+    kWifiStatic,    // Wi-Fi: a saved network's IP address
+    kWifiStaticText,  // Wi-Fi > IP address: a typed address
+    kWifiHidden,    // Wi-Fi > Add a network: one not broadcast (its name, its password)
 };
 
 // Where a page's back arrow goes.
 constexpr Page Parent(Page p) {
-    return p == Page::kWifiScan       ? Page::kWifi
+    return p == Page::kWifiScan || p == Page::kWifiMore || p == Page::kWifiStatic ? Page::kWifi
+           : p == Page::kWifiChoice || p == Page::kWifiText ? Page::kWifiMore
+           : p == Page::kWifiStaticText ? Page::kWifiStatic
+           : p == Page::kWifiHidden   ? Page::kWifiScan
            : p == Page::kWifiPassword ? Page::kWifiScan
            : p == Page::kBlePair || p == Page::kBleName ? Page::kBluetooth
            : p == Page::kDisplayChoice ? Page::kDisplay
@@ -82,6 +91,12 @@ constexpr const char *Title(Page p) {
         case Page::kWebLogin: return "Login";
         case Page::kFido: return "FIDO2 / U2F";
         case Page::kBleName: return "Name";
+        case Page::kWifiMore: return "Mode and access point";
+        case Page::kWifiChoice: return "Wi-Fi";
+        case Page::kWifiText: return "Wi-Fi";
+        case Page::kWifiStatic: return "IP address";
+        case Page::kWifiStaticText: return "IP address";
+        case Page::kWifiHidden: return "Other network";
     }
     return "";
 }

@@ -81,6 +81,12 @@ struct WifiHooks {
     // first; Wi-Fi on.
     const char *(*join)(const char *ssid, const char *password);
     const char *(*forget)(const char *ssid);
+    // A saved network's address (ui task); false: no such network.
+    bool (*get_static)(uint8_t index, wifi_view::StaticIp *out);
+    // The rest in the ui's own task, saying what happened.
+    const char *(*set_choice)(wifi_view::Choice choice, uint16_t value);
+    const char *(*set_text)(wifi_view::Field field, const char *value);
+    const char *(*set_static)(const char *ssid, const wifi_view::StaticIp &ip);
 };
 void SetWifiHooks(const WifiHooks *hooks);
 

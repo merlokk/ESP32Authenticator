@@ -615,7 +615,13 @@ void SettingsDescribe(ui::settings::Page page, bool summary, char *out, size_t s
         case Page::kSecurityPin:
         case Page::kWebMode:
         case Page::kWebLogin:
-        case Page::kBleName: break;
+        case Page::kBleName:
+        case Page::kWifiMore:
+        case Page::kWifiChoice:
+        case Page::kWifiText:
+        case Page::kWifiStatic:
+        case Page::kWifiStaticText:
+        case Page::kWifiHidden: break;
         case Page::kFido: DescribeFido(summary, out, size); break;
         case Page::kWeb:
             if (summary) {
@@ -692,6 +698,13 @@ void WifiView(ui::wifi_view::View *out) {
         }
     }
     out->saved_count = cfg.network_count < wv::kMaxSaved ? cfg.network_count : wv::kMaxSaved;
+    out->mode = static_cast<uint8_t>(cfg.mode);
+    snprintf(out->ap_name, sizeof out->ap_name, "%s", cfg.ap_ssid);
+    out->ap_password = cfg.ap_password[0] != '\0';
+    out->channel = cfg.ap_channel;
+    out->rounds = cfg.rounds;
+    out->window = cfg.ap_window_seconds;
+    snprintf(out->hostname, sizeof out->hostname, "%s", cfg.hostname);
 }
 
 size_t WifiScan(ui::wifi_view::Nearby *out, size_t capacity) {
@@ -859,6 +872,7 @@ void DisplayView(ui::display_view::View *out) {
             case dv::Setting::kWallpaper:
                 out->value[i] = c.display.wallpaper == config::WallpaperMode::kBw ? 1 : 0;
                 break;
+            case dv::Setting::kHoldRail: out->value[i] = c.power.hold_rail ? 1 : 0; break;
         }
     }
 }
@@ -873,6 +887,7 @@ const char *DisplaySet(ui::display_view::Setting setting, uint16_t value) {
         case dv::Setting::kWallpaper:
             c.display.wallpaper = value == 1 ? config::WallpaperMode::kBw : config::WallpaperMode::kGrey;
             break;
+        case dv::Setting::kHoldRail: c.power.hold_rail = value == 1; break;
     }
     return config::Save() == ESP_OK ? "saved" : "in use, but config.json is not saved";
 }
@@ -1112,7 +1127,92 @@ esp_err_t SaveTouch(const ui::touch_cal::Calibration &c) {
     return config::Save();
 }
 
-const ui::WifiHooks kWifiHooks = {WifiView, WifiScan, WifiSetActive, WifiJoin, WifiForget};
+bool WifiGetStatic(uint8_t index, ui::wifi_view::StaticIp *out) {
+    const config::Wifi &w = config::Get().wifi;
+    if (index >= w.network_count) {
+        return false;
+    }
+    const config::StaticIp &ip = w.networks[index].ip;
+    out->enabled = ip.enabled;
+    snprintf(out->address, sizeof out->address, "%s", ip.address);
+    snprintf(out->netmask, sizeof out->netmask, "%s", ip.netmask);
+    snprintf(out->gateway, sizeof out->gateway, "%s", ip.gateway);
+    snprintf(out->dns, sizeof out->dns, "%s", ip.dns1);
+    return true;
+}
+
+// As the console's `wifi mode`, `wifi ap`, `wifi set ...`: saved, then applied.
+const char *WifiSetChoice(ui::wifi_view::Choice choice, uint16_t value) {
+    namespace wv = ui::wifi_view;
+    config::Wifi &w = config::Get().wifi;
+    switch (choice) {
+        case wv::Choice::kMode:
+            w.mode = static_cast<config::WifiMode>(value);
+            w.active = true;
+            break;
+        case wv::Choice::kChannel: w.ap_channel = static_cast<uint8_t>(value); break;
+        case wv::Choice::kRounds: w.rounds = static_cast<uint8_t>(value); break;
+        case wv::Choice::kWindow: w.ap_window_seconds = value; break;
+    }
+    return WifiSave("saved");
+}
+
+const char *WifiSetText(ui::wifi_view::Field field, const char *value) {
+    namespace wv = ui::wifi_view;
+    config::Wifi &w = config::Get().wifi;
+    switch (field) {
+        case wv::Field::kApName:
+            if (!config::ValidSsid(value)) {
+                return "1..32 characters";
+            }
+            snprintf(w.ap_ssid, sizeof w.ap_ssid, "%s", value);
+            break;
+        case wv::Field::kApPassword:
+            if (!config::ValidApPassword(value)) {
+                return "8..63 characters, or empty";
+            }
+            snprintf(w.ap_password, sizeof w.ap_password, "%s", value);
+            break;
+        case wv::Field::kHostname:
+            if (!wv::HostnameOk(value)) {
+                return "1..32 of a-z, 0-9, '-'";
+            }
+            snprintf(w.hostname, sizeof w.hostname, "%s", value);
+            break;
+        default: return "not here";
+    }
+    return WifiSave("saved");
+}
+
+// A network's address, checked whole (config::CheckStaticIp) before it is kept.
+const char *WifiSetStatic(const char *ssid, const ui::wifi_view::StaticIp &in) {
+    config::Wifi &w = config::Get().wifi;
+    uint8_t at = 0;
+    for (; at < w.network_count && strcmp(w.networks[at].ssid, ssid) != 0; ++at) {
+    }
+    if (at == w.network_count) {
+        return "no such saved network";
+    }
+    config::StaticIp ip = w.networks[at].ip;  // dns2 kept
+    ip.enabled = in.enabled;
+    if (in.enabled || in.address[0] != '\0') {  // DHCP: the typed address is kept for later
+        snprintf(ip.address, sizeof ip.address, "%s", in.address);
+        snprintf(ip.netmask, sizeof ip.netmask, "%s", in.netmask);
+        snprintf(ip.gateway, sizeof ip.gateway, "%s", in.gateway);
+        snprintf(ip.dns1, sizeof ip.dns1, "%s", in.dns);
+    }
+    static char error[config::kErrorSize];
+    if (!config::CheckStaticIp(ip, error, sizeof error)) {
+        return error;
+    }
+    w.networks[at].ip = ip;
+    return WifiSave(in.enabled ? "static address saved" : "DHCP");
+}
+
+const ui::WifiHooks kWifiHooks = {WifiView,      WifiScan,      WifiSetActive, WifiJoin,
+                                  WifiForget,    WifiGetStatic, WifiSetChoice, WifiSetText,
+                                  WifiSetStatic};
+
 
 const ui::SettingsHooks kSettingsHooks = {SettingsLight, SettingsSetLight, SettingsSaveLight,
                                           SettingsDescribe, SettingsAct};

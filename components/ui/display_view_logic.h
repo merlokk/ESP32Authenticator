@@ -16,9 +16,11 @@ enum class Setting : uint8_t {
     kIdle,       // power.idleMinutes: off after this long idle, 0 never
     kKeepPin,    // power.keepPinHours: no PIN after a sleep this short, 0 always
     kWallpaper,  // display.wallpaper: 0 grey, 1 black & white
+    kHoldRail,   // power.holdRail: 1 the peripherals' power kept through a sleep
 };
 
-inline constexpr Setting kSettings[] = {Setting::kIdle, Setting::kKeepPin, Setting::kWallpaper};
+inline constexpr Setting kSettings[] = {Setting::kIdle, Setting::kKeepPin, Setting::kWallpaper,
+                                        Setting::kHoldRail};
 inline constexpr uint8_t kSettingCount = sizeof kSettings / sizeof kSettings[0];
 
 struct Option {
@@ -32,21 +34,25 @@ inline constexpr Option kKeepPin[] = {{0, "Always"},    {1, "After 1 hour"},  {4
                                       {8, "After 8 hours"}, {24, "After a day"}, {72, "After 3 days"},
                                       {168, "After a week"}};
 inline constexpr Option kWallpaper[] = {{0, "Grey"}, {1, "Black & white"}};
+// Off: no drain while asleep, but the PIN kept through a sleep is lost.
+inline constexpr Option kHoldRail[] = {{1, "Kept"}, {0, "Off"}};
 
 constexpr const Option *Options(Setting s, size_t *count) {
     switch (s) {
         case Setting::kIdle: *count = sizeof kIdle / sizeof kIdle[0]; return kIdle;
         case Setting::kKeepPin: *count = sizeof kKeepPin / sizeof kKeepPin[0]; return kKeepPin;
         case Setting::kWallpaper: *count = sizeof kWallpaper / sizeof kWallpaper[0]; return kWallpaper;
+        case Setting::kHoldRail: *count = sizeof kHoldRail / sizeof kHoldRail[0]; return kHoldRail;
     }
     *count = 0;
     return nullptr;
 }
 
 constexpr const char *Title(Setting s) {
-    return s == Setting::kIdle      ? "Power off after"
-           : s == Setting::kKeepPin ? "PIN after sleep"
-                                    : "Wallpaper";
+    return s == Setting::kIdle       ? "Power off after"
+           : s == Setting::kKeepPin  ? "PIN after sleep"
+           : s == Setting::kWallpaper ? "Wallpaper"
+                                     : "Power in sleep";
 }
 
 // The choice in use; -1 when the value is none of them (set on the site).

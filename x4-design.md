@@ -59,10 +59,14 @@ Portrait, 480x800. The panel scans landscape (hardware.md): `ui_logic.h` turns t
   Display & power, Security, Date & time, About. A page lists "label  value" lines (looked at every
   2 s) and may have one button: Power off, Lock now, Sync the time now; its
   arrow goes back to Settings. Wi-Fi is a window of its own: a switch, the
-  state, the saved networks (a tap: Connect, i.e. tried first, or Forget),
-  "Add a network": a scan (strongest first, padlock, signal bars, "saved"),
-  a tap joins a saved or open one or asks the password on the keyboard
-  (OK joins, saved to config.json). Bluetooth too: a switch (now and at
+  state, Mode and access point (the mode: client / access point / both; the
+  access point's name, password, channel, after how many rounds it opens
+  and how long it stays; the hostname), the saved networks (a tap: Connect,
+  i.e. tried first; IP address: DHCP or static, the fields on a digit
+  keyboard, checked whole on Save; Forget), "Add a network": a scan
+  (strongest first, padlock, signal bars, "saved"), a tap joins a saved or
+  open one or asks the password on the keyboard (OK joins, saved to
+  config.json); "Other...": a hidden network, its name then its password. Bluetooth too: a switch (now and at
   boot), the state, the name (a tap: change it on the keyboard, or the
   board's; applied at once, `ble.name`), the paired hosts (a tap: Use only this host /
   Let any paired host in, Forget), "Pair a new host": a 60 s window, what to
@@ -71,7 +75,8 @@ Portrait, 480x800. The panel scans landscape (hardware.md): `ui_logic.h` turns t
   `display.touch` in config.json), Save / Again / Use the default; a fit far
   off (a tap beside a cross) is refused. Display & power: the battery, then
   Power off after (never .. 1 hour), PIN after sleep (always .. a week),
-  Wallpaper (grey / black & white): a tap lists the choices with a check at
+  Wallpaper (grey / black & white), Power in sleep (kept / off:
+  `power.holdRail`, off loses the kept PIN): a tap lists the choices with a check at
   the one in use, a tap keeps one (config.json); what the Power button does;
   Power off. Date & time: the clock big with the date and the offset; Time
   zone (a region, then its cities A to Z, 9 a page with < 1 / 3 >), Sync (never ..

@@ -730,7 +730,7 @@ void test_display_view(void) {
     for (const dv::Option &o : dv::kKeepPin) {
         TEST_ASSERT_TRUE(o.value <= 168);
     }
-    dv::View a = {50, false, {10, 8, 0}};
+    dv::View a = {50, false, {10, 8, 0, 1}};
     dv::View b = a;
     TEST_ASSERT_TRUE(dv::Equal(a, b));
     b.value[1] = 4;
@@ -966,6 +966,67 @@ void test_fido_prompt(void) {
     TEST_ASSERT_EQUAL_STRING("A FIDO2 request", fp::Title(fp::Kind::kOther));
 }
 
+void test_wifi_settings(void) {
+    namespace wv = ui::wifi_view;
+    namespace st = ui::settings;
+    TEST_ASSERT_TRUE(st::Parent(st::Page::kWifiText) == st::Page::kWifiMore);
+    TEST_ASSERT_TRUE(st::Parent(st::Page::kWifiStaticText) == st::Page::kWifiStatic);
+    TEST_ASSERT_TRUE(st::Parent(st::Page::kWifiStatic) == st::Page::kWifi);
+    TEST_ASSERT_TRUE(st::Parent(st::Page::kWifiHidden) == st::Page::kWifiScan);
+    TEST_ASSERT_EQUAL_INT(2, wv::ChoiceIndex(wv::Choice::kWindow, 120));
+    TEST_ASSERT_EQUAL_INT(5, wv::ChoiceIndex(wv::Choice::kChannel, 6));
+    TEST_ASSERT_EQUAL_INT(-1, wv::ChoiceIndex(wv::Choice::kRounds, 4));
+    TEST_ASSERT_EQUAL_STRING("Both", wv::ModeLabel(wv::kModeBoth));
+    // Every choice fits config.json's ranges.
+    size_t n = 0;
+    const wv::Option *o = wv::Options(wv::Choice::kRounds, &n);
+    for (size_t i = 0; i < n; ++i) {
+        TEST_ASSERT_TRUE(o[i].value >= 1 && o[i].value <= 10);
+    }
+    o = wv::Options(wv::Choice::kWindow, &n);
+    for (size_t i = 0; i < n; ++i) {
+        TEST_ASSERT_TRUE(o[i].value >= 30 && o[i].value <= 3600);
+    }
+
+    TEST_ASSERT_TRUE(wv::Ipv4Ok("192.168.1.50"));
+    TEST_ASSERT_TRUE(wv::Ipv4Ok("0.0.0.0"));
+    TEST_ASSERT_FALSE(wv::Ipv4Ok("192.168.1"));
+    TEST_ASSERT_FALSE(wv::Ipv4Ok("192.168.1.256"));
+    TEST_ASSERT_FALSE(wv::Ipv4Ok("192.168.01.1"));  // a leading zero
+    TEST_ASSERT_FALSE(wv::Ipv4Ok("1.2.3.4.5"));
+    TEST_ASSERT_FALSE(wv::Ipv4Ok("1.2.3.4 "));
+    TEST_ASSERT_FALSE(wv::Ipv4Ok(""));
+    TEST_ASSERT_TRUE(wv::HostnameOk("esp32-auth"));
+    TEST_ASSERT_FALSE(wv::HostnameOk("-esp"));
+    TEST_ASSERT_FALSE(wv::HostnameOk("esp_32"));
+    TEST_ASSERT_NULL(wv::Check(wv::Field::kApPassword, ""));  // open
+    TEST_ASSERT_NOT_NULL(wv::Check(wv::Field::kApPassword, "short"));
+    TEST_ASSERT_NULL(wv::Check(wv::Field::kHiddenPassword, ""));
+    TEST_ASSERT_NULL(wv::Check(wv::Field::kDns, ""));
+    TEST_ASSERT_NOT_NULL(wv::Check(wv::Field::kGateway, ""));
+    TEST_ASSERT_NOT_NULL(wv::Check(wv::Field::kHiddenSsid, ""));
+    TEST_ASSERT_TRUE(wv::Spec(wv::Field::kAddress).numeric);
+    TEST_ASSERT_TRUE(wv::Spec(wv::Field::kApPassword).masked);
+
+    wv::StaticIp ip = {};
+    TEST_ASSERT_NULL(wv::CheckStatic(ip));  // DHCP
+    ip.enabled = true;
+    TEST_ASSERT_EQUAL_STRING("the IP address is missing", wv::CheckStatic(ip));
+    strcpy(wv::StaticField(ip, wv::Field::kAddress), "192.168.1.50");
+    strcpy(wv::StaticField(ip, wv::Field::kNetmask), "255.255.255.0");
+    TEST_ASSERT_EQUAL_STRING("the gateway is missing", wv::CheckStatic(ip));
+    strcpy(wv::StaticField(ip, wv::Field::kGateway), "192.168.1.1");
+    TEST_ASSERT_NULL(wv::CheckStatic(ip));
+    TEST_ASSERT_NULL(wv::StaticField(ip, wv::Field::kHostname));
+
+    namespace dv = ui::display_view;
+    TEST_ASSERT_EQUAL_UINT8(4, dv::kSettingCount);
+    char text[24];
+    dv::Label(dv::Setting::kHoldRail, 1, text, sizeof text);
+    TEST_ASSERT_EQUAL_STRING("Kept", text);
+    TEST_ASSERT_EQUAL_STRING("Power in sleep", dv::Title(dv::Setting::kHoldRail));
+}
+
 void test_list_rows(void) {
     using ui::list::Zone;
     TEST_ASSERT_TRUE(ui::list::ZoneAt(0, 472) == Zone::kTypeUser);
@@ -1037,6 +1098,7 @@ void RegisterUiTests(void) {
     RUN_TEST(test_dialog_hold);
     RUN_TEST(test_settings_pages);
     RUN_TEST(test_wifi_view);
+    RUN_TEST(test_wifi_settings);
     RUN_TEST(test_touch_calibration);
     RUN_TEST(test_ble_view);
     RUN_TEST(test_display_view);
