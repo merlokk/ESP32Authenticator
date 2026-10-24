@@ -504,6 +504,26 @@ void test_parse_display() {
     TEST_ASSERT_TRUE(out.display.wallpaper == config::WallpaperMode::kBw);
     AssertParseFails(R"({"display": 1})", "display: expected an object");
     AssertParseFails(R"({"display": {"wallpaper": "gray"}})", "display.wallpaper");
+
+    // The touch's calibration: 1000 / 0 by default, kept through a save.
+    TEST_ASSERT_EQUAL_INT16(1000, out.display.touch.x_scale);
+    TEST_ASSERT_EQUAL_INT16(0, out.display.touch.y_offset);
+    TEST_ASSERT_TRUE_MESSAGE(
+        ParseText(R"({"display": {"touch": {"xScale": 1020, "xOffset": -7, "yScale": 990, "yOffset": 12}}})",
+                  &d, error, sizeof error),
+        error);
+    TEST_ASSERT_EQUAL_INT16(-7, d.display.touch.x_offset);
+    TEST_ASSERT_GREATER_THAN(0, config::Serialize(d, json, sizeof json));
+    config::FillDefaults(&out);
+    TEST_ASSERT_TRUE_MESSAGE(ParseText(json, &out, error, sizeof error), error);
+    TEST_ASSERT_EQUAL_INT16(1020, out.display.touch.x_scale);
+    TEST_ASSERT_EQUAL_INT16(-7, out.display.touch.x_offset);
+    TEST_ASSERT_EQUAL_INT16(990, out.display.touch.y_scale);
+    TEST_ASSERT_EQUAL_INT16(12, out.display.touch.y_offset);
+    AssertParseFails(R"({"display": {"touch": 3}})", "display.touch: expected an object");
+    AssertParseFails(R"({"display": {"touch": {"xScale": 400}}})", "display.touch.xScale");
+    AssertParseFails(R"({"display": {"touch": {"yOffset": -201}}})", "display.touch.yOffset");
+    AssertParseFails(R"({"display": {"touch": {"xOffset": 1.5}}})", "display.touch.xOffset");
 }
 
 void test_parse_power() {

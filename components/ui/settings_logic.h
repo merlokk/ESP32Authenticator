@@ -21,18 +21,22 @@ enum class Page : uint8_t {
     kAbout,
     kWifiScan,      // Wi-Fi's "Add a network": the ones nearby
     kWifiPassword,  // a network's password, on the keyboard
+    kBlePair,       // Bluetooth's "Pair a new host": the window, the passkey
+    kTouch,         // the touch's calibration: five crosses
 };
 
 // Where a page's back arrow goes.
 constexpr Page Parent(Page p) {
-    return p == Page::kWifiScan ? Page::kWifi
+    return p == Page::kWifiScan       ? Page::kWifi
            : p == Page::kWifiPassword ? Page::kWifiScan
+           : p == Page::kBlePair      ? Page::kBluetooth
                                       : Page::kMain;
 }
 
 // The main page's rows, under the frontlight.
-inline constexpr Page kRows[] = {Page::kWifi,     Page::kBluetooth, Page::kDisplay,
-                                 Page::kSecurity, Page::kTime,      Page::kAbout};
+inline constexpr Page kRows[] = {Page::kWifi,     Page::kBluetooth, Page::kTouch,
+                                 Page::kDisplay,  Page::kSecurity,  Page::kTime,
+                                 Page::kAbout};
 inline constexpr uint8_t kRowCount = sizeof kRows / sizeof kRows[0];
 
 constexpr const char *Title(Page p) {
@@ -46,6 +50,8 @@ constexpr const char *Title(Page p) {
         case Page::kAbout: return "About";
         case Page::kWifiScan: return "Add a network";
         case Page::kWifiPassword: return "Password";
+        case Page::kBlePair: return "Pair a new host";
+        case Page::kTouch: return "Touchscreen";
     }
     return "";
 }

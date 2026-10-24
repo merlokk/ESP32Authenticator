@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 
 #include "esp_err.h"
@@ -100,6 +101,15 @@ void PrintInfo();
 // Numbered bond list (numbers are what Unpair/UseBond take); marks the
 // connected and the target host.
 void PrintBonds();
+
+// The bonds in PrintBonds' order (addresses as Unpair/UseBond take them);
+// how many (0 while off).
+struct BondInfo {
+    char addr[18];
+    bool connected;
+    bool target;
+};
+size_t Bonds(BondInfo *out, size_t capacity);
 
 // Current connection: peer, security, MTU, parameters, RSSI.
 void PrintConnection();

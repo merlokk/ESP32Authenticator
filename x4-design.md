@@ -49,15 +49,21 @@ Portrait, 480x800. The panel scans landscape (hardware.md): `ui_logic.h` turns t
 - **Settings**: a swipe down from the top quarter; its back arrow, a swipe
   up or Home closes it. As on a phone: the frontlight on top (a switch,
   Level and Warmth sliders: lit at once, saved when let go), then a row per
-  page with its summary and ">": Wi-Fi, Bluetooth, Display & power, Security,
-  Date & time, About. A page lists "label  value" lines (looked at every
+  page with its summary and ">": Wi-Fi, Bluetooth, Touchscreen, Display &
+  power, Security, Date & time, About. A page lists "label  value" lines (looked at every
   2 s) and may have one button: Power off, Lock now, Sync the time now; its
   arrow goes back to Settings. Wi-Fi is a window of its own: a switch, the
   state, the saved networks (a tap: Connect, i.e. tried first, or Forget),
   "Add a network": a scan (strongest first, padlock, signal bars, "saved"),
   a tap joins a saved or open one or asks the password on the keyboard
-  (OK joins, saved to config.json). The other pages are read-only for now:
-  editing on the site.
+  (OK joins, saved to config.json). Bluetooth too: a switch (now and at
+  boot), the state and name, the paired hosts (a tap: Use only this host /
+  Let any paired host in, Forget), "Pair a new host": a 60 s window, what to
+  do on the host, the passkey in big digits. Touchscreen: five crosses one by
+  one, a straight line per axis through the raw taps (scale and offset,
+  `display.touch` in config.json), Save / Again / Use the default; a fit far
+  off (a tap beside a cross) is refused. The other pages are read-only for
+  now: editing on the site.
 - **U2F / FIDO2 list**: a swipe up from the bottom quarter; the keys by site
   (A to Z), 6 a page: site, user, "made <date>, <alg>, resident / U2F";
   Left / Right or the bar under it (‹, "1 / 2", ›) flip the pages, the title says the count; its

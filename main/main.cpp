@@ -475,9 +475,18 @@ void SettingsDescribe(ui::settings::Page page, bool summary, char *out, size_t s
         case Page::kSecurity: DescribeSecurity(summary, out, size); break;
         case Page::kTime: DescribeTime(summary, out, size); break;
         case Page::kAbout: DescribeAbout(summary, out, size); break;
+        case Page::kTouch:
+            if (summary) {
+                const config::TouchCalibration &t = config::Get().display.touch;
+                const bool calibrated = t.x_scale != 1000 || t.x_offset != 0 ||
+                                        t.y_scale != 1000 || t.y_offset != 0;
+                snprintf(out, size, "%s", calibrated ? "calibrated" : "as it comes");
+            }
+            break;
         case Page::kMain:
         case Page::kWifiScan:
-        case Page::kWifiPassword: break;
+        case Page::kWifiPassword:
+        case Page::kBlePair: break;
     }
 }
 
@@ -593,6 +602,82 @@ const char *WifiForget(const char *ssid) {
     return WifiSave("forgotten");
 }
 
+// --- The Bluetooth window (ui::BleHooks) ---------------------------------------------
+
+void BleView(ui::ble_view::View *out) {
+    namespace bv = ui::ble_view;
+    *out = {};
+    out->active = config::Get().ble.active;
+    out->on = ble::IsOn();
+    const bool connected = out->on && ble::ConnHandle() != BLE_HS_CONN_HANDLE_NONE;
+    const char *state = !out->on                         ? "Off"
+                        : ble::PairingSecondsLeft() > 0 ? "Pairing"
+                        : connected                     ? "Connected"
+                                                        : "Waiting for a host";
+    snprintf(out->state, sizeof out->state, "%s", state);
+    snprintf(out->name, sizeof out->name, "%s", ble::Name());
+    static ble::BondInfo bonds[bv::kMaxHosts];  // off the ui task's stack
+    const size_t n = ble::Bonds(bonds, bv::kMaxHosts);
+    for (size_t i = 0; i < n; ++i) {
+        snprintf(out->hosts[i].addr, sizeof out->hosts[i].addr, "%s", bonds[i].addr);
+        out->hosts[i].connected = bonds[i].connected;
+        out->hosts[i].target = bonds[i].target;
+    }
+    out->host_count = static_cast<uint8_t>(n);
+}
+
+bool BlePairingEvent(ui::ble_view::Pairing *what, uint32_t *passkey) {
+    ble::PairingEvent e = {};
+    if (!ble::WaitPairingEvent(&e, 0)) {
+        return false;
+    }
+    *what = e.type == ble::PairingEvent::kPasskey ? ui::ble_view::Pairing::kPasskey
+            : e.type == ble::PairingEvent::kPaired ? ui::ble_view::Pairing::kPaired
+                                                   : ui::ble_view::Pairing::kFailed;
+    *passkey = e.passkey;
+    return true;
+}
+
+uint32_t BlePairingLeft() { return ble::PairingSecondsLeft(); }
+
+// On or off now, and so at boot (as the console's `ble on` and `ble boot`).
+const char *BleSetActive(bool on) {
+    const esp_err_t err = on ? ble::On() : ble::Off();
+    config::Get().ble.active = on;
+    if (config::Save() != ESP_OK) {
+        return "config.json is not saved";
+    }
+    return err != ESP_OK ? "cannot switch Bluetooth" : on ? "Bluetooth on" : "Bluetooth off";
+}
+
+const char *BleUse(const char *addr) {
+    return ble::UseBond(addr) != ESP_OK ? "cannot"
+           : addr == nullptr          ? "any paired host may connect"
+                                      : "only this host may connect";
+}
+
+const char *BleForget(const char *addr) {
+    return ble::Unpair(addr) == ESP_OK ? "forgotten" : "cannot forget it";
+}
+
+const char *BlePair(bool start) {
+    if (!start) {
+        ble::StopPairing();
+        return "pairing closed";
+    }
+    return ble::StartPairing(ui::ble_view::kPairSeconds) == ESP_OK ? "pairing open"
+                                                                 : "cannot open pairing";
+}
+
+const ui::BleHooks kBleHooks = {BleView,  BlePairingEvent, BlePairingLeft, BleSetActive,
+                                BleUse,   BleForget,       BlePair};
+
+// Settings > Touchscreen keeps a new calibration (the ui's own task).
+esp_err_t SaveTouch(const ui::touch_cal::Calibration &c) {
+    config::Get().display.touch = {c.x_scale, c.x_offset, c.y_scale, c.y_offset};
+    return config::Save();
+}
+
 const ui::WifiHooks kWifiHooks = {WifiView, WifiScan, WifiSetActive, WifiJoin, WifiForget};
 
 const ui::SettingsHooks kSettingsHooks = {SettingsLight, SettingsSetLight, SettingsSaveLight,
@@ -633,6 +718,11 @@ extern "C" void app_main() {
     ui::SetTypist(ble_kb::Type);
     ui::SetSettingsHooks(&kSettingsHooks);
     ui::SetWifiHooks(&kWifiHooks);
+    ui::SetBleHooks(&kBleHooks);
+    {
+        const config::TouchCalibration &t = config::Get().display.touch;
+        ui::SetTouchCalibration({t.x_scale, t.x_offset, t.y_scale, t.y_offset}, SaveTouch);
+    }
 
     ble_kb::Register();  // BLE profiles, before the stack starts
     ble_kb::SetTypingHook([] {

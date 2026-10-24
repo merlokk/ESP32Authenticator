@@ -936,6 +936,25 @@ void PrintBonds() {
     printf("%d bond(s), max %d\n", count, CONFIG_BT_NIMBLE_MAX_BONDS);
 }
 
+size_t Bonds(BondInfo *out, size_t capacity) {
+    if (!on) {
+        return 0;
+    }
+    ble_addr_t peers[kMaxBonds];
+    int count = 0;
+    ble_store_util_bonded_peers(peers, &count, kMaxBonds);
+    ble_gap_conn_desc desc = {};
+    const bool connected =
+        conn_handle != BLE_HS_CONN_HANDLE_NONE && ble_gap_conn_find(conn_handle, &desc) == 0;
+    size_t n = 0;
+    for (int i = 0; i < count && n < capacity; ++i, ++n) {
+        FormatAddr(peers[i].val, out[n].addr);
+        out[n].connected = connected && ble_addr_cmp(&peers[i], &desc.peer_id_addr) == 0;
+        out[n].target = has_target && ble_addr_cmp(&peers[i], &target) == 0;
+    }
+    return n;
+}
+
 void PrintConnection() {
     if (!on) {
         printf("ble is off\n");

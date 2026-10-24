@@ -57,7 +57,8 @@ const char kDefaultJson[] = R"json({
     "warmth": 50
   },
   "display": {
-    "wallpaper": "grey"
+    "wallpaper": "grey",
+    "touch": {"xScale": 1000, "xOffset": 0, "yScale": 1000, "yOffset": 0}
   },
   "power": {
     "idleMinutes": 10,
@@ -254,9 +255,48 @@ bool ParseTime(const cJSON *section, Time *out, char *error, size_t size) {
     return true;
 }
 
+// Optional signed integer member in [min, max].
+bool GetInt(const cJSON *obj, const char *key, int32_t min, int32_t max, int16_t *out,
+            const char *where, char *error, size_t size) {
+    const cJSON *item = cJSON_GetObjectItemCaseSensitive(obj, key);
+    if (item == nullptr) {
+        return true;
+    }
+    const double value = cJSON_IsNumber(item) ? item->valuedouble : min - 1.0;
+    if (value < min || value > max || value != static_cast<double>(static_cast<int32_t>(value))) {
+        char text[kErrorSize];
+        snprintf(text, sizeof text, "%s.%s: an integer %d..%d", where, key,
+                 static_cast<int>(min), static_cast<int>(max));
+        SetError(error, size, text);
+        return false;
+    }
+    *out = static_cast<int16_t>(value);
+    return true;
+}
+
 bool ParseDisplay(const cJSON *section, Display *out, char *error, size_t size) {
-    return GetMode(section, "wallpaper", ParseWallpaperMode, &out->wallpaper, "grey, bw", "display",
-                   error, size);
+    if (!GetMode(section, "wallpaper", ParseWallpaperMode, &out->wallpaper, "grey, bw", "display",
+                 error, size)) {
+        return false;
+    }
+    const cJSON *touch = cJSON_GetObjectItemCaseSensitive(section, "touch");
+    if (touch == nullptr) {
+        return true;
+    }
+    if (!cJSON_IsObject(touch)) {
+        SetError(error, size, "display.touch: expected an object");
+        return false;
+    }
+    // All of it, or none (a calibration is one fit).
+    TouchCalibration t = out->touch;
+    if (!GetInt(touch, "xScale", 500, 1500, &t.x_scale, "display.touch", error, size) ||
+        !GetInt(touch, "xOffset", -200, 200, &t.x_offset, "display.touch", error, size) ||
+        !GetInt(touch, "yScale", 500, 1500, &t.y_scale, "display.touch", error, size) ||
+        !GetInt(touch, "yOffset", -200, 200, &t.y_offset, "display.touch", error, size)) {
+        return false;
+    }
+    out->touch = t;
+    return true;
 }
 
 bool ParsePower(const cJSON *section, Power *out, char *error, size_t size) {
@@ -734,6 +774,11 @@ size_t Serialize(const Data &d, char *out, size_t size) {
     cJSON_AddNumberToObject(light, "warmth", d.frontlight.warmth);
     cJSON *display = cJSON_AddObjectToObject(root, "display");
     cJSON_AddStringToObject(display, "wallpaper", Name(d.display.wallpaper));
+    cJSON *touch = cJSON_AddObjectToObject(display, "touch");
+    cJSON_AddNumberToObject(touch, "xScale", d.display.touch.x_scale);
+    cJSON_AddNumberToObject(touch, "xOffset", d.display.touch.x_offset);
+    cJSON_AddNumberToObject(touch, "yScale", d.display.touch.y_scale);
+    cJSON_AddNumberToObject(touch, "yOffset", d.display.touch.y_offset);
     cJSON *power = cJSON_AddObjectToObject(root, "power");
     cJSON_AddNumberToObject(power, "idleMinutes", d.power.idle_minutes);
     cJSON_AddNumberToObject(power, "keepPinHours", d.power.keep_pin_hours);

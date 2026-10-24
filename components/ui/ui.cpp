@@ -22,6 +22,10 @@ void StartScreens();  // screens.cpp
 nav::Gesture TakeGesture();
 bool LastWasTap();
 ScreenPoint GestureStart();
+ScreenPoint RawDown();
+touch_cal::Calibration TouchCalibration();
+void UseTouchCalibration(const touch_cal::Calibration &calibration);
+esp_err_t SaveTouchCalibration(const touch_cal::Calibration &calibration);
 
 namespace {
 
@@ -85,6 +89,16 @@ nav::Gesture gesture = nav::Gesture::kTap;  // the last lift's path
 bool gesture_new = false;                    // ... not taken by the screens yet
 uint32_t presses = 0;
 void (*press_hook)() = nullptr;
+// The touch's calibration: applied to the real touch, not to made-up fingers
+// (they are in screen coordinates already). raw_down: where the finger went
+// down, uncalibrated (Settings > Touchscreen fits from it).
+touch_cal::Calibration calibration;
+esp_err_t (*calibration_save)(const touch_cal::Calibration &calibration) = nullptr;
+ScreenPoint raw_down = {};
+
+ScreenPoint Calibrated(uint16_t tx, uint16_t ty) {
+    return touch_cal::Apply(calibration, TouchToScreen(tx, ty));
+}
 
 uint32_t TickMs() { return static_cast<uint32_t>(esp_timer_get_time() / 1000); }
 
@@ -177,6 +191,7 @@ void Pressed(ScreenPoint p) {
 // One step of the made-up finger.
 void PlayFake() {
     if (fake.at == 0) {
+        raw_down = fake.from;
         Pressed(fake.from);
         last_down = true;
     } else if (fake.at <= fake.steps) {
@@ -199,7 +214,8 @@ void ReadTouch(lv_indev_t *, lv_indev_data_t *data) {
         PlayFake();
     } else if (touch::NextEdge(&e, &more)) {
         if (e.down) {
-            Pressed(TouchToScreen(e.x, e.y));
+            raw_down = TouchToScreen(e.x, e.y);
+            Pressed(Calibrated(e.x, e.y));
         } else {
             Lifted();
         }
@@ -208,7 +224,7 @@ void ReadTouch(lv_indev_t *, lv_indev_data_t *data) {
     } else if (last_down) {
         touch::gt911::Point p = {};
         if (touch::Contact(&p)) {
-            last_point = TouchToScreen(p.x, p.y);
+            last_point = Calibrated(p.x, p.y);
         }
     }
     const bool down = last_down;
@@ -308,6 +324,28 @@ bool LastWasTap() { return gesture == nav::Gesture::kTap; }
 
 // Where the last finger went down (a swipe's row).
 ScreenPoint GestureStart() { return down_point; }
+
+// The same, uncalibrated (ui task).
+ScreenPoint RawDown() { return raw_down; }
+
+touch_cal::Calibration TouchCalibration() { return calibration; }
+
+// For Settings > Touchscreen (ui task): in use at once, not saved; the
+// crosses are tapped with none (the default).
+void UseTouchCalibration(const touch_cal::Calibration &c) { calibration = c; }
+
+// From the ui's own task.
+esp_err_t SaveTouchCalibration(const touch_cal::Calibration &c) {
+    return calibration_save != nullptr ? calibration_save(c) : ESP_ERR_NOT_SUPPORTED;
+}
+
+void SetTouchCalibration(const touch_cal::Calibration &c,
+                         esp_err_t (*save)(const touch_cal::Calibration &calibration)) {
+    Lock();
+    calibration = c;
+    calibration_save = save;
+    Unlock();
+}
 
 void SetPressHook(void (*hook)()) { press_hook = hook; }
 

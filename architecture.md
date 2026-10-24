@@ -96,7 +96,7 @@ Reference ESP-IDF + LVGL project: `../../ai-remote/approver-esp32` ([GitHub](htt
   "time": {"zone": "UTC", "server": "pool.ntp.org", "syncHours": 6},
   "led": {"brightness": 15, "idleBrightness": 7},
   "frontlight": {"brightness": 20, "warmth": 50},
-  "display": {"wallpaper": "grey"},
+  "display": {"wallpaper": "grey", "touch": {"xScale": 1000, "xOffset": 0, "yScale": 1000, "yOffset": 0}},
   "power": {"idleMinutes": 10, "keepPinHours": 0, "holdRail": true},
   "pin": {"lockMinutes": 10, "wipe": "", "complexity": true},
   "test": {"pin": "", "autoPresence": false}
@@ -300,7 +300,8 @@ waits). The touch reports the finger's moves too: a swipe down from the top
 quarter opens Settings (the frontlight, then pages; `settings_logic.h`, the
 texts and actions from `main.cpp` through `ui::SettingsHooks`; the Wi-Fi
 window: `wifi_view_logic.h`, `ui::WifiHooks`, the scan and the saves in the
-ui's own task), up from the bottom quarter the U2F / FIDO2
+ui's own task; Bluetooth: `ble_view_logic.h`, `ui::BleHooks`; the touch's
+calibration: `touch_cal_logic.h`, applied to every real touch in `ui.cpp`), up from the bottom quarter the U2F / FIDO2
 keys (`fido_ctap_list`, by site A to Z, 6 a page: site, user, made / alg /
 kind; its pages flipped by Left / Right or the bar under it (‹, "1 / 2", ›, in the tabs' place); the count in its title; looked at
 each 2 s, not while a request waits; a swipe left on a key: its trash can,

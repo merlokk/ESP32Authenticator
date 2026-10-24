@@ -50,6 +50,8 @@ CONFIG_LV_FONT_MONTSERRAT_20=y
 CONFIG_LV_FONT_MONTSERRAT_24=y
 CONFIG_LV_FONT_MONTSERRAT_28=y
 CONFIG_LV_FONT_MONTSERRAT_32=y
+# The BLE passkey on the pairing page.
+CONFIG_LV_FONT_MONTSERRAT_48=y
 # PNG decoder for the power-off wallpapers (/sdcard/wallpapers).
 CONFIG_LV_USE_LODEPNG=y
 

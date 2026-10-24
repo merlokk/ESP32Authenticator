@@ -11,6 +11,8 @@
 #include "settings_logic.h"
 #include "status_logic.h"
 #include "wifi_view_logic.h"
+#include "ble_view_logic.h"
+#include "touch_cal_logic.h"
 
 namespace ui {
 
@@ -76,6 +78,27 @@ struct WifiHooks {
     const char *(*forget)(const char *ssid);
 };
 void SetWifiHooks(const WifiHooks *hooks);
+
+// The Bluetooth window (ble_view_logic.h), filled and carried out by the device.
+struct BleHooks {
+    // What it shows. ui task, every 2 s while shown: keep it quick.
+    void (*view)(ble_view::View *out);
+    // The pairing window's next event (ble::WaitPairingEvent, not waiting)
+    // and its seconds left. ui task.
+    bool (*pairing_event)(ble_view::Pairing *what, uint32_t *passkey);
+    uint32_t (*pairing_left)();
+    // The rest in the ui's own task, saying what happened.
+    const char *(*set_active)(bool on);
+    const char *(*use)(const char *addr);  // nullptr: any paired host
+    const char *(*forget)(const char *addr);
+    const char *(*pair)(bool start);  // the pairing window opened / closed
+};
+void SetBleHooks(const BleHooks *hooks);
+
+// The touch's calibration (touch_cal_logic.h), applied to every real touch;
+// saved by `save` (the ui's own task) when Settings > Touchscreen keeps a new one.
+void SetTouchCalibration(const touch_cal::Calibration &calibration,
+                         esp_err_t (*save)(const touch_cal::Calibration &calibration));
 // Left / Right / Home (nav_logic.h), from any task: queued for the ui task;
 // nothing while the PIN pad is up.
 void Navigate(nav::Input input);

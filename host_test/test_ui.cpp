@@ -9,6 +9,8 @@
 #include "fido_list_logic.h"
 #include "settings_logic.h"
 #include "wifi_view_logic.h"
+#include "touch_cal_logic.h"
+#include "ble_view_logic.h"
 #include "list_logic.h"
 #include "nav_logic.h"
 #include "pin_pad_logic.h"
@@ -486,7 +488,7 @@ void test_settings_pages(void) {
     TEST_ASSERT_EQUAL_UINT8(0, n.settings_page());
 
     TEST_ASSERT_EQUAL_STRING("Wi-Fi", st::Title(st::kRows[0]));
-    TEST_ASSERT_EQUAL_UINT8(6, st::kRowCount);
+    TEST_ASSERT_EQUAL_UINT8(7, st::kRowCount);
     TEST_ASSERT_TRUE(st::PageAction(st::Page::kSecurity) == st::Action::kLockNow);
     TEST_ASSERT_TRUE(st::PageAction(st::Page::kWifi) == st::Action::kNone);
     TEST_ASSERT_EQUAL_STRING("Lock now", st::ActionText(st::Action::kLockNow));
@@ -572,6 +574,113 @@ void test_wifi_view(void) {
     TEST_ASSERT_FALSE(wv::PasswordOk(""));
 }
 
+void test_touch_calibration(void) {
+    namespace tc = ui::touch_cal;
+    tc::Calibration c;
+    TEST_ASSERT_TRUE(tc::IsDefault(c));
+    ui::ScreenPoint p = tc::Apply(c, {100, 700});
+    TEST_ASSERT_EQUAL_UINT16(100, p.x);
+    TEST_ASSERT_EQUAL_UINT16(700, p.y);
+    c = {1100, -20, 1000, 15};
+    p = tc::Apply(c, {100, 700});
+    TEST_ASSERT_EQUAL_UINT16(90, p.x);
+    TEST_ASSERT_EQUAL_UINT16(715, p.y);
+    p = tc::Apply(c, {479, 799});  // clamped
+    TEST_ASSERT_EQUAL_UINT16(479, p.x);
+    TEST_ASSERT_EQUAL_UINT16(799, p.y);
+    p = tc::Apply(c, {5, 0});
+    TEST_ASSERT_EQUAL_UINT16(0, p.x);
+
+    // Taps right on the crosses: the identity.
+    ui::ScreenPoint taps[tc::kTargets] = {};
+    for (uint8_t i = 0; i < tc::kTargets; ++i) {
+        taps[i] = tc::kTarget[i];
+    }
+    tc::Fit f = tc::Solve(taps);
+    TEST_ASSERT_TRUE(f.ok);
+    TEST_ASSERT_TRUE(tc::IsDefault(f.calibration));
+    TEST_ASSERT_EQUAL_INT32(0, f.worst);
+
+    // A glass read 12 px right and 8 px high: the offsets take it back.
+    for (uint8_t i = 0; i < tc::kTargets; ++i) {
+        taps[i] = {static_cast<uint16_t>(tc::kTarget[i].x + 12),
+                   static_cast<uint16_t>(tc::kTarget[i].y - 8)};
+    }
+    f = tc::Solve(taps);
+    TEST_ASSERT_TRUE(f.ok);
+    TEST_ASSERT_EQUAL_INT16(1000, f.calibration.x_scale);
+    TEST_ASSERT_EQUAL_INT16(-12, f.calibration.x_offset);
+    TEST_ASSERT_EQUAL_INT16(8, f.calibration.y_offset);
+    for (uint8_t i = 0; i < tc::kTargets; ++i) {
+        const ui::ScreenPoint s = tc::Apply(f.calibration, taps[i]);
+        TEST_ASSERT_INT_WITHIN(1, tc::kTarget[i].x, s.x);
+        TEST_ASSERT_INT_WITHIN(1, tc::kTarget[i].y, s.y);
+    }
+
+    // Stretched by 5 %: the scale.
+    for (uint8_t i = 0; i < tc::kTargets; ++i) {
+        taps[i] = {static_cast<uint16_t>(tc::kTarget[i].x * 105 / 100), tc::kTarget[i].y};
+    }
+    f = tc::Solve(taps);
+    TEST_ASSERT_TRUE(f.ok);
+    TEST_ASSERT_INT_WITHIN(3, 952, f.calibration.x_scale);
+
+    // One tap beside its cross: refused.
+    for (uint8_t i = 0; i < tc::kTargets; ++i) {
+        taps[i] = tc::kTarget[i];
+    }
+    taps[2] = {300, 600};
+    TEST_ASSERT_FALSE(tc::Solve(taps).ok);
+    // All in one place: no line.
+    for (uint8_t i = 0; i < tc::kTargets; ++i) {
+        taps[i] = {200, 200};
+    }
+    TEST_ASSERT_FALSE(tc::Solve(taps).ok);
+}
+
+void test_ble_view(void) {
+    namespace bv = ui::ble_view;
+    namespace st = ui::settings;
+    ui::nav::Nav n;
+    n.Swipe(ui::nav::Gesture::kDownFromTop);
+    n.OpenSettings(static_cast<uint8_t>(st::Page::kBluetooth));
+    n.OpenSettings(static_cast<uint8_t>(st::Page::kBlePair));
+    n.Back();
+    TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(st::Page::kBluetooth), n.settings_page());
+    n.OpenSettings(static_cast<uint8_t>(st::Page::kTouch));
+    n.Back();
+    TEST_ASSERT_EQUAL_UINT8(0, n.settings_page());
+
+    char text[16];
+    bv::Passkey(42, text, sizeof text);
+    TEST_ASSERT_EQUAL_STRING("000 042", text);
+    bv::Passkey(987654, text, sizeof text);
+    TEST_ASSERT_EQUAL_STRING("987 654", text);
+
+    bv::PairPage page;
+    page.Start();
+    TEST_ASSERT_TRUE(page.state() == bv::Pairing::kWaiting);
+    TEST_ASSERT_FALSE(page.Left(30));
+    TEST_ASSERT_TRUE(page.Passkey(123456));
+    TEST_ASSERT_FALSE(page.Passkey(123456));
+    TEST_ASSERT_EQUAL_UINT32(123456, page.passkey());
+    TEST_ASSERT_TRUE(page.Failed());
+    TEST_ASSERT_TRUE(page.Passkey(222222));  // tried again
+    TEST_ASSERT_TRUE(page.Paired());
+    TEST_ASSERT_FALSE(page.Left(0));  // paired: not "closed"
+    page.Start();
+    TEST_ASSERT_TRUE(page.Left(0));
+    TEST_ASSERT_TRUE(page.state() == bv::Pairing::kClosed);
+
+    bv::View a = {};
+    a.host_count = 1;
+    a.hosts[0] = {"aa:bb:cc:dd:ee:ff", true, false};
+    bv::View b = a;
+    TEST_ASSERT_TRUE(bv::Equal(a, b));
+    b.hosts[0].target = true;
+    TEST_ASSERT_FALSE(bv::Equal(a, b));
+}
+
 void test_list_rows(void) {
     using ui::list::Zone;
     TEST_ASSERT_TRUE(ui::list::ZoneAt(0, 472) == Zone::kTypeUser);
@@ -634,6 +743,8 @@ void RegisterUiTests(void) {
     RUN_TEST(test_fido_remove);
     RUN_TEST(test_settings_pages);
     RUN_TEST(test_wifi_view);
+    RUN_TEST(test_touch_calibration);
+    RUN_TEST(test_ble_view);
     RUN_TEST(test_list_rows);
     RUN_TEST(test_status_fido_prompt);
 }

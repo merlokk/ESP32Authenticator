@@ -31,6 +31,10 @@ namespace ui {
 nav::Gesture TakeGesture();  // ui.cpp
 bool LastWasTap();
 ScreenPoint GestureStart();
+ScreenPoint RawDown();
+touch_cal::Calibration TouchCalibration();
+void UseTouchCalibration(const touch_cal::Calibration &calibration);
+esp_err_t SaveTouchCalibration(const touch_cal::Calibration &calibration);
 
 namespace {
 
@@ -123,6 +127,11 @@ enum class JobKind : uint8_t {
     kWifiActive,  // Wi-Fi on (`flag`) or off
     kWifiJoin,    // `ssid` with `password` (`flag`: the kept one)
     kWifiForget,  // `ssid`
+    kBleActive,   // Bluetooth on (`flag`) or off
+    kBleUse,      // the host `ssid` (an address) only; `flag`: any paired host
+    kBleForget,   // the host `ssid`
+    kBlePair,     // the pairing window opened (`flag`) or closed
+    kSaveTouch,   // `calibration` into config.json
 };
 
 struct Job {
@@ -134,6 +143,7 @@ struct Job {
     bool flag;
     char ssid[wifi_view::kSsidSize];
     char password[wifi_view::kPasswordSize];  // wiped after use
+    touch_cal::Calibration calibration;
 };
 
 // A job with only its kind set.
@@ -855,7 +865,7 @@ void ShowFido() {
 // --- Settings ----------------------------------------------------------------------
 
 constexpr int32_t kLightRow = 64;
-constexpr int32_t kMenuRow = 72;
+constexpr int32_t kMenuRow = 64;
 constexpr int32_t kLineHeight = 50;
 constexpr size_t kSettingsText = 512;
 // What the shown page says (describe; the main page: its rows' summaries, a
@@ -1439,9 +1449,14 @@ void CloseSheet() {
     }
 }
 
-// A saved network: Connect (when not on it), Forget, Cancel.
-void ShowSheet(int8_t index) {
-    sheet_index = index;
+// A choice over the page: `title`, then a button per label; a tap sets
+// sheet_choice to its id (Poll closes it).
+struct SheetButton {
+    const char *label;
+    int id;
+};
+
+void OpenSheet(const char *title, const SheetButton *buttons, size_t count) {
     sheet = lv_obj_create(home);  // takes the taps around the box
     lv_obj_remove_style_all(sheet);
     lv_obj_add_flag(sheet, LV_OBJ_FLAG_CLICKABLE);
@@ -1467,15 +1482,20 @@ void ShowSheet(int8_t index) {
     lv_obj_t *t = Label(box, &lv_font_montserrat_28);
     lv_label_set_long_mode(t, LV_LABEL_LONG_MODE_DOTS);
     lv_obj_set_width(t, kInner);
-    lv_label_set_text(t, wifi_shown.saved[index].ssid);
-    if (wifi_shown.joined != index) {
-        lv_obj_t *c = AskButton(box, kInner - 4, "Connect");
-        lv_obj_add_event_cb(c, OnSheet, LV_EVENT_CLICKED, reinterpret_cast<void *>(intptr_t{1}));
+    lv_label_set_text(t, title);
+    for (size_t i = 0; i < count; ++i) {
+        lv_obj_t *b = AskButton(box, kInner - 4, buttons[i].label);
+        lv_obj_add_event_cb(b, OnSheet, LV_EVENT_CLICKED,
+                            reinterpret_cast<void *>(static_cast<intptr_t>(buttons[i].id)));
     }
-    lv_obj_t *f = AskButton(box, kInner - 4, "Forget this network");
-    lv_obj_add_event_cb(f, OnSheet, LV_EVENT_CLICKED, reinterpret_cast<void *>(intptr_t{2}));
-    lv_obj_t *c = AskButton(box, kInner - 4, "Cancel");
-    lv_obj_add_event_cb(c, OnSheet, LV_EVENT_CLICKED, reinterpret_cast<void *>(intptr_t{3}));
+}
+
+// A saved network: Connect (when not on it), Forget, Cancel.
+void ShowSheet(int8_t index) {
+    sheet_index = index;
+    const SheetButton all[] = {{"Connect", 1}, {"Forget this network", 2}, {"Cancel", 3}};
+    const bool joined = wifi_shown.joined == index;
+    OpenSheet(wifi_shown.saved[index].ssid, joined ? all + 1 : all, joined ? 2 : 3);
 }
 
 // The Wi-Fi window's taps (Poll). True when the page is to be drawn again.
@@ -1493,7 +1513,7 @@ bool PollWifi() {
         }
         saved_tapped = wifi_view::kNone;
     }
-    if (sheet_choice != 0) {
+    if (sheet_choice != 0 && nav_state.settings_page() == static_cast<uint8_t>(settings::Page::kWifi)) {
         const int choice = sheet_choice;
         sheet_choice = 0;
         if (choice != 3 && sheet_index >= 0 && sheet_index < wifi_shown.saved_count) {
@@ -1561,8 +1581,411 @@ bool PollWifi() {
     return changed;
 }
 
+// --- Settings: Bluetooth -----------------------------------------------------------
+
+constexpr uint8_t kHostRows = 6;  // on the page; more are on the console
+const BleHooks *ble_hooks = nullptr;
+ble_view::View ble_shown;
+ble_view::View ble_now;
+ble_view::PairPage pair_page;
+bool pair_open = false;  // the pairing window was opened from here
+uint32_t pair_left_shown = 0;
+bool ble_switch_tapped = false;
+int8_t host_tapped = -1;
+int8_t host_index = -1;  // the sheet's host
+bool pair_tapped = false;
+bool pair_button = false;  // Stop / Open again / Done
+
+void SendJob(Job &job) {
+    if (xQueueSend(jobs, &job, 0) != pdTRUE) {
+        Toast("busy typing");
+    }
+}
+
+void OnBleSwitch(lv_event_t *) { ble_switch_tapped = true; }
+
+void OnHost(lv_event_t *event) {
+    if (LastWasTap()) {
+        host_tapped = static_cast<int8_t>(reinterpret_cast<intptr_t>(lv_event_get_user_data(event)));
+    }
+}
+
+void OnPair(lv_event_t *) {
+    if (LastWasTap()) {
+        pair_tapped = true;
+    }
+}
+
+void OnPairButton(lv_event_t *) {
+    if (LastWasTap()) {
+        pair_button = true;
+    }
+}
+
+// The switch, the state and name, the paired hosts, "Pair a new host".
+void ShowBluetooth() {
+    TitleBar("Bluetooth");
+    ble_hooks->view(&ble_shown);
+    const ble_view::View &v = ble_shown;
+    int32_t y = kTitleHeight;
+    lv_obj_t *top = Panel(content, y, kLightRow);
+    lv_obj_set_style_border_width(top, 1, 0);
+    lv_obj_t *name = Label(top, &lv_font_montserrat_28);
+    lv_label_set_text(name, "Bluetooth");
+    lv_obj_set_pos(name, 12, (kLightRow - 34) / 2);
+    lv_obj_t *sw = Switch(top, v.on);
+    lv_obj_align(sw, LV_ALIGN_TOP_RIGHT, -12, (kLightRow - 44) / 2);
+    lv_obj_add_event_cb(sw, OnBleSwitch, LV_EVENT_VALUE_CHANGED, nullptr);
+    y += kLightRow;
+
+    lv_obj_t *state = Panel(content, y, 52);
+    lv_obj_set_style_border_width(state, 2, 0);
+    lv_obj_t *s = Label(state, &lv_font_montserrat_24);
+    lv_label_set_text(s, v.state);
+    lv_obj_set_pos(s, 12, 10);
+    lv_obj_t *d = Label(state, &lv_font_montserrat_20);
+    lv_label_set_long_mode(d, LV_LABEL_LONG_MODE_DOTS);
+    lv_obj_set_style_text_align(d, LV_TEXT_ALIGN_RIGHT, 0);
+    lv_obj_set_size(d, 260, 26);
+    lv_label_set_text(d, v.name);
+    lv_obj_align(d, LV_ALIGN_RIGHT_MID, -12, 0);
+    y += 52 + 16;
+    if (!v.on) {
+        Stub(nullptr, "Bluetooth is off: no typing, no FIDO2 keys over the air.", y);
+        return;
+    }
+
+    SectionHead(y, "PAIRED HOSTS");
+    y += 32;
+    if (v.host_count == 0) {
+        lv_obj_t *none = Label(content, &lv_font_montserrat_24);
+        lv_label_set_text(none, "none yet");
+        lv_obj_set_pos(none, 12, y + 14);
+        y += kNetRow;
+    }
+    for (uint8_t i = 0; i < v.host_count && i < kHostRows; ++i, y += kNetRow) {
+        lv_obj_t *row = Panel(content, y, kNetRow);
+        lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_set_style_border_width(row, 1, 0);
+        lv_obj_add_event_cb(row, OnHost, LV_EVENT_CLICKED, reinterpret_cast<void *>(intptr_t{i}));
+        lv_obj_t *addr = Label(row, &lv_font_montserrat_24);
+        lv_label_set_text(addr, v.hosts[i].addr);
+        lv_obj_set_pos(addr, 12, (kNetRow - 30) / 2);
+        const char *note = v.hosts[i].connected ? "connected" : v.hosts[i].target ? "only one" : "";
+        lv_obj_t *n = Label(row, &lv_font_montserrat_20);
+        lv_label_set_text(n, note);
+        lv_obj_align(n, LV_ALIGN_RIGHT_MID, -44, 0);
+        lv_obj_t *more = Label(row, &lv_font_montserrat_24);
+        lv_label_set_text(more, LV_SYMBOL_RIGHT);
+        lv_obj_align(more, LV_ALIGN_RIGHT_MID, -12, 0);
+    }
+    lv_obj_t *add = Panel(content, y, kNetRow);
+    lv_obj_add_flag(add, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_border_width(add, 1, 0);
+    lv_obj_add_event_cb(add, OnPair, LV_EVENT_CLICKED, nullptr);
+    lv_obj_t *l = Label(add, &lv_font_montserrat_24);
+    lv_label_set_text(l, LV_SYMBOL_PLUS "  Pair a new host");
+    lv_obj_set_pos(l, 12, (kNetRow - 30) / 2);
+}
+
+// The pairing window: what to do on the host, the passkey it asks for.
+void ShowBlePair() {
+    TitleBar("Pair a new host");
+    char text[160];
+    int32_t y = kTitleHeight + 24;
+    const ble_view::Pairing state = pair_page.state();
+    if (state == ble_view::Pairing::kPasskey) {
+        Stub(nullptr, "Type this number on the host:", y);
+        char key[12];
+        ble_view::Passkey(pair_page.passkey(), key, sizeof key);
+        lv_obj_t *k = Label(content, &lv_font_montserrat_48);
+        lv_label_set_text(k, key);
+        lv_obj_align(k, LV_ALIGN_TOP_MID, 0, y + 80);
+        y += 180;
+    } else {
+        const char *what = state == ble_view::Pairing::kPaired ? "Paired."
+                           : state == ble_view::Pairing::kClosed
+                               ? "The pairing window has closed."
+                               : nullptr;
+        if (what == nullptr) {
+            snprintf(text, sizeof text,
+                     "%sOn the host: Bluetooth settings, add a device, then \"%s\".",
+                     state == ble_view::Pairing::kFailed ? "That did not work: try again.\n\n" : "",
+                     ble_shown.name);
+            what = text;
+        }
+        Stub(nullptr, what, y);
+        y += 200;
+    }
+    if (state != ble_view::Pairing::kPaired && state != ble_view::Pairing::kClosed) {
+        snprintf(text, sizeof text, "Open for %u s more.", static_cast<unsigned>(pair_left_shown));
+        Stub(nullptr, text, y);
+    }
+    const char *button = state == ble_view::Pairing::kPaired   ? "Done"
+                         : state == ble_view::Pairing::kClosed ? "Open it again"
+                                                               : "Stop";
+    lv_obj_t *b = AskButton(content, kRowWidth - 48, button);
+    lv_obj_align(b, LV_ALIGN_BOTTOM_MID, 0, -16);
+    lv_obj_add_event_cb(b, OnPairButton, LV_EVENT_CLICKED, nullptr);
+}
+
+void OpenPairing() {
+    pair_page.Start();
+    pair_left_shown = ble_view::kPairSeconds;
+    pair_open = true;
+    Job job = MakeJob(JobKind::kBlePair);
+    job.flag = true;
+    SendJob(job);
+}
+
+void ClosePairing() {
+    if (pair_open) {
+        pair_open = false;
+        Job job = MakeJob(JobKind::kBlePair);
+        job.flag = false;
+        SendJob(job);
+    }
+}
+
+// The Bluetooth window's taps and the pairing window (Poll). True when the
+// page is to be drawn again.
+bool PollBle() {
+    bool changed = false;
+    const auto page = static_cast<settings::Page>(nav_state.settings_page());
+    if (ble_switch_tapped) {
+        ble_switch_tapped = false;
+        Job job = MakeJob(JobKind::kBleActive);
+        job.flag = !ble_shown.on;
+        SendJob(job);
+    }
+    if (host_tapped >= 0) {
+        if (sheet == nullptr && host_tapped < ble_shown.host_count) {
+            host_index = host_tapped;
+            const ble_view::Host &h = ble_shown.hosts[host_index];
+            const SheetButton buttons[] = {
+                {h.target ? "Let any paired host in" : "Use only this host", 1},
+                {"Forget this host", 2},
+                {"Cancel", 3}};
+            OpenSheet(h.addr, buttons, 3);
+        }
+        host_tapped = -1;
+    }
+    if (sheet_choice != 0 && page == settings::Page::kBluetooth) {
+        const int choice = sheet_choice;
+        sheet_choice = 0;
+        if (choice != 3 && host_index >= 0 && host_index < ble_shown.host_count) {
+            const ble_view::Host &h = ble_shown.hosts[host_index];
+            Job job = MakeJob(choice == 1 ? JobKind::kBleUse : JobKind::kBleForget);
+            job.flag = choice == 1 && h.target;  // any host again
+            snprintf(job.ssid, sizeof job.ssid, "%s", h.addr);
+            SendJob(job);
+        }
+        CloseSheet();
+    }
+    if (pair_tapped) {
+        pair_tapped = false;
+        OpenPairing();
+        changed |= nav_state.OpenSettings(static_cast<uint8_t>(settings::Page::kBlePair));
+    }
+    if (page != settings::Page::kBlePair) {
+        return changed;
+    }
+    if (pair_button) {
+        pair_button = false;
+        if (pair_page.state() == ble_view::Pairing::kClosed) {
+            OpenPairing();
+            return true;
+        }
+        ClosePairing();
+        return nav_state.Back() || changed;
+    }
+    ble_view::Pairing what = ble_view::Pairing::kWaiting;
+    uint32_t key = 0;
+    while (ble_hooks->pairing_event(&what, &key)) {
+        changed |= what == ble_view::Pairing::kPasskey ? pair_page.Passkey(key)
+                   : what == ble_view::Pairing::kPaired ? pair_page.Paired()
+                                                        : pair_page.Failed();
+    }
+    if (pair_page.state() == ble_view::Pairing::kPaired) {
+        pair_open = false;  // the window closes on a new bond
+    }
+    // The time left in steps of 10 s: a refresh each, not each second.
+    const uint32_t left = pair_open ? ble_hooks->pairing_left() : 0;
+    if (pair_open && left == 0 && pair_page.Left(0)) {
+        pair_open = false;
+        changed = true;
+    }
+    const uint32_t step = (left + 9) / 10 * 10;
+    if (pair_open && step != pair_left_shown && pair_page.state() != ble_view::Pairing::kPaired) {
+        pair_left_shown = step;
+        changed = true;
+    }
+    return changed;
+}
+
+// --- Settings: the touch's calibration ---------------------------------------------
+
+bool cal_active = false;  // the crosses are up: no calibration in use
+touch_cal::Calibration cal_before;
+uint8_t cal_step = 0;  // the cross to tap; kTargets: the result
+ScreenPoint cal_taps[touch_cal::kTargets];
+touch_cal::Fit cal_fit = {};
+bool cal_tapped = false;
+int cal_button = 0;  // 1 save, 2 again, 3 default
+
+void OnCalPad(lv_event_t *) {
+    if (LastWasTap()) {
+        cal_tapped = true;
+    }
+}
+
+void OnCalButton(lv_event_t *event) {
+    if (LastWasTap()) {
+        cal_button = static_cast<int>(reinterpret_cast<intptr_t>(lv_event_get_user_data(event)));
+    }
+}
+
+// A cross at screen point p.
+void AddCross(ScreenPoint p) {
+    const int32_t x = p.x - kLeft;
+    const int32_t y = p.y - kContentTop;
+    lv_obj_t *h = lv_obj_create(content);
+    lv_obj_remove_style_all(h);
+    lv_obj_remove_flag(h, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_bg_color(h, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(h, LV_OPA_COVER, 0);
+    lv_obj_set_size(h, 50, 3);
+    lv_obj_set_pos(h, x - 25, y - 1);
+    lv_obj_t *v = lv_obj_create(content);
+    lv_obj_remove_style_all(v);
+    lv_obj_remove_flag(v, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_bg_color(v, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(v, LV_OPA_COVER, 0);
+    lv_obj_set_size(v, 3, 50);
+    lv_obj_set_pos(v, x - 1, y - 25);
+    lv_obj_t *ring = lv_obj_create(content);
+    lv_obj_remove_style_all(ring);
+    lv_obj_remove_flag(ring, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_border_width(ring, 2, 0);
+    lv_obj_set_style_border_color(ring, lv_color_black(), 0);
+    lv_obj_set_style_radius(ring, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_size(ring, 24, 24);
+    lv_obj_set_pos(ring, x - 12, y - 12);
+}
+
+void StartCalibration() {
+    if (!cal_active) {
+        cal_before = TouchCalibration();
+        cal_active = true;
+    }
+    UseTouchCalibration(touch_cal::Calibration{});  // the crosses take raw taps
+    cal_step = 0;
+}
+
+// Leaving the page without a save: the old one back.
+void EndCalibration() {
+    if (cal_active) {
+        UseTouchCalibration(cal_before);
+        cal_active = false;
+    }
+}
+
+// One cross at a time, then the fit and Save / Again / Default.
+void ShowTouch() {
+    TitleBar("Touchscreen");
+    char text[160];
+    if (cal_step < touch_cal::kTargets) {
+        // Under the crosses, over the page: every tap counts.
+        lv_obj_t *pad = lv_obj_create(content);
+        lv_obj_remove_style_all(pad);
+        lv_obj_add_flag(pad, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_remove_flag(pad, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_set_pos(pad, 0, kTitleHeight);
+        lv_obj_set_size(pad, kRowWidth, kScreenBottom - kContentTop - kTitleHeight);
+        lv_obj_add_event_cb(pad, OnCalPad, LV_EVENT_CLICKED, nullptr);
+        snprintf(text, sizeof text, "Tap the middle of the cross (%u of %u).",
+                 static_cast<unsigned>(cal_step + 1), static_cast<unsigned>(touch_cal::kTargets));
+        Stub(nullptr, text, 250);
+        AddCross(touch_cal::kTarget[cal_step]);
+        return;
+    }
+    const touch_cal::Calibration &c = cal_fit.calibration;
+    if (cal_fit.ok) {
+        snprintf(text, sizeof text,
+                 "The taps fit.\n\nAcross: x %d.%03d, %+d px\nDown: x %d.%03d, %+d px\nThe "
+                 "farthest tap: %d px off.",
+                 c.x_scale / 1000, c.x_scale % 1000, c.x_offset, c.y_scale / 1000,
+                 c.y_scale % 1000, c.y_offset, static_cast<int>(cal_fit.worst));
+    } else {
+        snprintf(text, sizeof text,
+                 "The taps do not fit (one beside its cross?): try again, or keep the default.");
+    }
+    Stub(nullptr, text, kTitleHeight + 24);
+    const SheetButton buttons[] = {{"Save", 1}, {"Again", 2}, {"Use the default", 3}};
+    int32_t y = -16;
+    for (int i = 2; i >= (cal_fit.ok ? 0 : 1); --i, y -= 88) {
+        lv_obj_t *b = AskButton(content, kRowWidth - 48, buttons[i].label);
+        lv_obj_align(b, LV_ALIGN_BOTTOM_MID, 0, y);
+        lv_obj_add_event_cb(b, OnCalButton, LV_EVENT_CLICKED,
+                            reinterpret_cast<void *>(static_cast<intptr_t>(buttons[i].id)));
+    }
+}
+
+// The crosses' taps and the result's buttons (Poll). True when the page is to
+// be drawn again.
+bool PollTouch() {
+    if (nav_state.settings_page() != static_cast<uint8_t>(settings::Page::kTouch)) {
+        return false;
+    }
+    bool changed = false;
+    if (cal_tapped) {
+        cal_tapped = false;
+        if (cal_step < touch_cal::kTargets) {
+            cal_taps[cal_step++] = RawDown();
+            if (cal_step == touch_cal::kTargets) {
+                cal_fit = touch_cal::Solve(cal_taps);
+            }
+            changed = true;
+        }
+    }
+    if (cal_button != 0) {
+        const int b = cal_button;
+        cal_button = 0;
+        if (b == 2) {
+            StartCalibration();
+            return true;
+        }
+        Job job = MakeJob(JobKind::kSaveTouch);
+        job.calibration = b == 1 && cal_fit.ok ? cal_fit.calibration : touch_cal::Calibration{};
+        cal_before = job.calibration;  // in use from now
+        EndCalibration();
+        SendJob(job);
+        changed |= nav_state.Back();
+    }
+    return changed;
+}
+
 void ShowSettings() {
     const auto page = static_cast<settings::Page>(nav_state.settings_page());
+    if (page == settings::Page::kTouch) {
+        if (!cal_active) {
+            StartCalibration();
+        }
+        ShowTouch();
+        return;
+    }
+    EndCalibration();
+    if (page != settings::Page::kBlePair) {
+        ClosePairing();
+    }
+    if (ble_hooks != nullptr && page == settings::Page::kBluetooth) {
+        ShowBluetooth();
+        return;
+    }
+    if (ble_hooks != nullptr && page == settings::Page::kBlePair) {
+        ShowBlePair();
+        return;
+    }
     if (wifi_hooks != nullptr && page == settings::Page::kWifi) {
         ShowWifi();
         return;
@@ -1678,6 +2101,10 @@ void Show() {
     light_switch = nullptr;  // deleted with the page
     WipePassword();
     CloseSheet();
+    if (nav_state.mode() != nav::Mode::kSettings) {
+        EndCalibration();
+        ClosePairing();
+    }
     lv_obj_clean(content);
     lv_obj_set_height(content, (nav_state.mode() == nav::Mode::kSettings ? kScreenBottom
                                                                            : kContentBottom) -
@@ -1835,10 +2262,24 @@ void TypeTask(void *) {
             continue;
         }
         if (job.kind >= JobKind::kWifiActive) {
-            const char *said = job.kind == JobKind::kWifiActive ? wifi_hooks->set_active(job.flag)
-                               : job.kind == JobKind::kWifiJoin
-                                   ? wifi_hooks->join(job.ssid, job.flag ? nullptr : job.password)
-                                   : wifi_hooks->forget(job.ssid);
+            const char *said = "";
+            switch (job.kind) {
+                case JobKind::kWifiActive: said = wifi_hooks->set_active(job.flag); break;
+                case JobKind::kWifiJoin:
+                    said = wifi_hooks->join(job.ssid, job.flag ? nullptr : job.password);
+                    break;
+                case JobKind::kWifiForget: said = wifi_hooks->forget(job.ssid); break;
+                case JobKind::kBleActive: said = ble_hooks->set_active(job.flag); break;
+                case JobKind::kBleUse: said = ble_hooks->use(job.flag ? nullptr : job.ssid); break;
+                case JobKind::kBleForget: said = ble_hooks->forget(job.ssid); break;
+                case JobKind::kBlePair: said = ble_hooks->pair(job.flag); break;
+                case JobKind::kSaveTouch:
+                    said = SaveTouchCalibration(job.calibration) == ESP_OK
+                               ? "saved"
+                               : "in use, but config.json is not saved";
+                    break;
+                default: break;
+            }
             vault::Wipe(&job, sizeof job);
             Lock();
             settings_looked_at = lv_tick_get() - kSettingsMs;
@@ -1949,16 +2390,26 @@ void Poll(lv_timer_t *) {
     if (nav_state.mode() == nav::Mode::kSettings && wifi_hooks != nullptr) {
         changed |= PollWifi();
     }
+    if (nav_state.mode() == nav::Mode::kSettings && ble_hooks != nullptr) {
+        changed |= PollBle();
+    }
+    if (nav_state.mode() == nav::Mode::kSettings) {
+        changed |= PollTouch();
+    }
     // Settings' texts (Wi-Fi joined, the clock); the switch follows Power x2.
     // Not under a sheet, nor over a password being typed or a scan.
     if (nav_state.mode() == nav::Mode::kSettings && settings_hooks != nullptr && HomeShown() &&
         !FingerDown() && sheet == nullptr && settings_page != settings::Page::kWifiPassword &&
-        settings_page != settings::Page::kWifiScan &&
+        settings_page != settings::Page::kWifiScan && settings_page != settings::Page::kBlePair &&
+        settings_page != settings::Page::kTouch &&
         lv_tick_elaps(settings_looked_at) >= kSettingsMs) {
         settings_looked_at = lv_tick_get();
         if (settings_page == settings::Page::kWifi && wifi_hooks != nullptr) {
             wifi_hooks->view(&wifi_now);
             changed |= !wifi_view::Equal(wifi_now, wifi_shown);
+        } else if (settings_page == settings::Page::kBluetooth && ble_hooks != nullptr) {
+            ble_hooks->view(&ble_now);
+            changed |= !ble_view::Equal(ble_now, ble_shown);
         } else {
             SettingsText(settings_page, settings_now, sizeof settings_now);
             changed |= strcmp(settings_now, settings_shown) != 0;
@@ -2049,6 +2500,8 @@ void SetTypist(esp_err_t (*type)(const char *text)) { typist = type; }
 void SetSettingsHooks(const SettingsHooks *hooks) { settings_hooks = hooks; }
 
 void SetWifiHooks(const WifiHooks *hooks) { wifi_hooks = hooks; }
+
+void SetBleHooks(const BleHooks *hooks) { ble_hooks = hooks; }
 
 void Navigate(nav::Input input) {
     if (inputs != nullptr) {

@@ -140,8 +140,18 @@ enum class WallpaperMode : uint8_t {
     kBw,
 };
 
+// The touch's calibration (Settings > Touchscreen): screen = raw * scale /
+// 1000 + offset, per axis; 1000 / 0 as it comes.
+struct TouchCalibration {
+    int16_t x_scale;   // 500..1500
+    int16_t x_offset;  // -200..200 px
+    int16_t y_scale;
+    int16_t y_offset;
+};
+
 struct Display {
     WallpaperMode wallpaper;
+    TouchCalibration touch;
 };
 
 // Power-off on its own, and the PIN through a sleep (components/power).
