@@ -934,7 +934,35 @@ void test_fido_prompt(void) {
     TEST_ASSERT_TRUE(r.kind == fp::Kind::kSignIn);
     TEST_ASSERT_EQUAL_STRING("webauthn.io", r.site);
     TEST_ASSERT_EQUAL_UINT8(2, r.allow);
+    TEST_ASSERT_EQUAL_UINT8(0, r.ids);  // not of the store's size
     TEST_ASSERT_TRUE(r.verify);
+
+    // An allowList of the store's IDs: only the listed keys match.
+    std::vector<uint8_t> a = {0x02, 0xa2, 0x01};
+    PutText(a, "webauthn.io");
+    Put(a, {0x03, 0x82});
+    for (uint8_t i = 1; i <= 2; ++i) {
+        Put(a, {0xa2});
+        PutText(a, "id");
+        Put(a, {0x58, 0x20});
+        a.insert(a.end(), 32, i);
+        PutText(a, "type");
+        PutText(a, "public-key");
+    }
+    r = fp::Parse(a.data(), a.size());
+    TEST_ASSERT_EQUAL_UINT8(2, r.allow);
+    TEST_ASSERT_EQUAL_UINT8(2, r.ids);
+    uint8_t id[32];
+    memset(id, 2, sizeof id);
+    TEST_ASSERT_TRUE(fp::Matches(r, "webauthn.io", id));
+    memset(id, 3, sizeof id);
+    TEST_ASSERT_FALSE(fp::Matches(r, "webauthn.io", id));
+    r.allow = 0;  // no allowList: the site's keys
+    TEST_ASSERT_TRUE(fp::Matches(r, "webauthn.io", id));
+    TEST_ASSERT_FALSE(fp::Matches(r, "webauthn.iox", id));
+    TEST_ASSERT_FALSE(fp::Matches(r, "webauthn", id));
+    r.allow = fp::kIds + 1;  // a list not read whole: the site's keys
+    TEST_ASSERT_TRUE(fp::Matches(r, "webauthn.io", id));
 
     // U2F_AUTHENTICATE, a short APDU: the application's first bytes.
     std::vector<uint8_t> u = {0x00, 0x02, 0x03, 0x00, 65 + 4};
@@ -945,6 +973,14 @@ void test_fido_prompt(void) {
     r = fp::Parse(u.data(), u.size());
     TEST_ASSERT_TRUE(r.kind == fp::Kind::kU2fSignIn);
     TEST_ASSERT_EQUAL_STRING("U2F 3dec69ac", r.site);
+    TEST_ASSERT_EQUAL_UINT8(0, r.ids);  // a short key handle: not the store's
+    std::vector<uint8_t> h = {0x00, 0x02, 0x03, 0x00, 65 + 32};
+    h.insert(h.end(), 64, 0x00);
+    h.push_back(32);
+    h.insert(h.end(), 32, 0x77);
+    r = fp::Parse(h.data(), h.size());
+    TEST_ASSERT_EQUAL_UINT8(1, r.ids);
+    TEST_ASSERT_EQUAL_UINT8(0x77, r.id[0][31]);
     u[4] = 0;  // extended: 0, Lc Lc
     u.insert(u.begin() + 5, {0x00, 69});
     r = fp::Parse(u.data(), u.size());

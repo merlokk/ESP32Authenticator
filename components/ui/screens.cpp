@@ -283,9 +283,9 @@ void ShowPrompt() {
     }
     text[0] = '\0';
     if (r.user[0] != '\0' && r.display[0] != '\0') {
-        snprintf(text, sizeof text, "%s\n%s", r.user, r.display);
+        snprintf(text, sizeof text, "%.64s\n%.64s", r.user, r.display);
     } else if (r.user[0] != '\0' || r.display[0] != '\0') {
-        snprintf(text, sizeof text, "%s", r.user[0] != '\0' ? r.user : r.display);
+        snprintf(text, sizeof text, "%.64s", r.user[0] != '\0' ? r.user : r.display);
     } else if (r.accounts > 1) {
         snprintf(text, sizeof text, "one of %u accounts", static_cast<unsigned>(r.accounts));
     }

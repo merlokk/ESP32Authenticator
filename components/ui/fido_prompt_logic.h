@@ -13,6 +13,8 @@
 namespace ui::fido_prompt {
 
 inline constexpr size_t kTextSize = 65;  // a stored string (64 bytes) + NUL
+inline constexpr size_t kIdSize = 32;    // the store's credential ID
+inline constexpr size_t kIds = 8;        // allowList IDs kept
 
 enum class Kind : uint8_t {
     kOther,        // a request (unknown or unread)
@@ -32,6 +34,8 @@ struct Request {
     bool resident;  // makeCredential: a passkey (rk)
     bool verify;    // the PIN (pinUvAuthParam) or uv asked
     uint8_t allow;  // getAssertion: allowList entries (0: any key for the site)
+    uint8_t ids;    // the allowList's (or U2F key handle's) IDs of the store's size in `id`
+    uint8_t id[kIds][kIdSize];
     uint8_t accounts;  // sign-in: the store's keys for the site (the device fills it)
 };
 
@@ -123,6 +127,26 @@ class Cbor {
         }
         out[n] = '\0';
         p_ += arg;
+        return true;
+    }
+
+    // A byte string of exactly `size` bytes into `out`; other items are spent.
+    constexpr bool Bytes(uint8_t *out, size_t size) {
+        uint8_t major = 0;
+        uint64_t arg = 0;
+        if (!Head(&major, &arg)) {
+            return false;
+        }
+        if (major != 2 || arg != size) {
+            return SkipRest(major, arg) && false;
+        }
+        if (static_cast<uint64_t>(end_ - p_) < arg) {
+            return Fail();
+        }
+        for (size_t i = 0; i < size; ++i) {
+            out[i] = p_[i];
+        }
+        p_ += size;
         return true;
     }
 
@@ -259,6 +283,28 @@ constexpr void ReadNames(Cbor &c, const char *a, char *out_a, const char *b, cha
     }
 }
 
+// An allowList: its count and the IDs of the store's size (the first kIds).
+constexpr void ReadAllow(Cbor &c, Request *r) {
+    uint64_t count = 0;
+    if (!c.Container(4, &count)) {
+        return;
+    }
+    r->allow = static_cast<uint8_t>(count > 255 ? 255 : count);
+    for (uint64_t k = 0; k < count && c.ok(); ++k) {
+        uint64_t n = 0;
+        if (!c.Container(5, &n)) {
+            continue;
+        }
+        for (uint64_t i = 0; i < n && c.ok(); ++i) {
+            if (!c.KeyIs("id") || r->ids >= kIds) {
+                c.Skip();
+            } else if (c.Bytes(r->id[r->ids], kIdSize)) {
+                ++r->ids;
+            }
+        }
+    }
+}
+
 // An options map: rk and uv.
 constexpr void ReadOptions(Cbor &c, Request *r) {
     uint64_t n = 0;
@@ -309,6 +355,14 @@ constexpr Request Parse(const uint8_t *msg, size_t len) {
         if ((ins == 0x01 || ins == 0x02) && len >= data + 64) {
             r.kind = ins == 0x01 ? Kind::kU2fRegister : Kind::kU2fSignIn;
             U2fSite(msg + data + 32, r.site);  // challenge, then the application
+            const size_t handle = data + 64;  // its length, then the key handle
+            if (ins == 0x02 && len >= handle + 1 + kIdSize && msg[handle] == kIdSize) {
+                r.allow = 1;
+                r.ids = 1;
+                for (size_t i = 0; i < kIdSize; ++i) {
+                    r.id[0][i] = msg[handle + 1 + i];
+                }
+            }
         }
         return r;
     }
@@ -342,13 +396,7 @@ constexpr Request Parse(const uint8_t *msg, size_t len) {
                 r.site[0] = '\0';
             }
         } else if (command == 0x02 && key == 3) {
-            uint64_t count = 0;
-            if (c.Container(4, &count)) {
-                r.allow = static_cast<uint8_t>(count > 255 ? 255 : count);
-                for (uint64_t k = 0; k < count && c.ok(); ++k) {
-                    c.Skip();
-                }
-            }
+            ReadAllow(c, &r);
         } else if ((command == 0x01 && key == 7) || (command == 0x02 && key == 5)) {
             ReadOptions(c, &r);
         } else if ((command == 0x01 && key == 8) || (command == 0x02 && key == 6)) {
@@ -359,6 +407,26 @@ constexpr Request Parse(const uint8_t *msg, size_t len) {
         }
     }
     return r;
+}
+
+// A stored key (its rp id and ID) the sign-in may use: one in the allowList
+// when the whole list was read, else any key for the site.
+constexpr bool Matches(const Request &r, const char *rp_id, const uint8_t *id) {
+    if (r.allow > 0 && r.allow <= kIds) {
+        for (size_t k = 0; k < r.ids; ++k) {
+            size_t i = 0;
+            for (; i < kIdSize && r.id[k][i] == id[i]; ++i) {
+            }
+            if (i == kIdSize) {
+                return true;
+            }
+        }
+        return false;
+    }
+    size_t i = 0;
+    for (; rp_id[i] != '\0' && rp_id[i] == r.site[i]; ++i) {
+    }
+    return rp_id[i] == r.site[i];
 }
 
 constexpr const char *Title(Kind k) {
