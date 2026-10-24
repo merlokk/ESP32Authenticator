@@ -75,7 +75,11 @@ Portrait, 480x800. The panel scans landscape (hardware.md): `ui_logic.h` turns t
   PIN (on a pad of its own: the current PIN, a new one twice; vault.bin and
   fido.bin re-keyed), 10 wrong PINs: lock (1 min .. a day), PIN complexity
   (the vault at once, FIDO2 from the next start), Wipe PIN (set twice /
-  change / off), Lock now. About: the name and the model big, then
+  change / off), Lock now; its FIDO2 row opens FIDO2 / U2F: running or why
+  not, the keys (of how many, resident), its PIN and tries, the shortest PIN,
+  complexity, always verify, the store, the signatures, how presence is
+  given; Show the keys (the list), Reset FIDO2 (held 4 s: every key and its
+  PIN erased). About: the name and the model big, then
   firmware, build, ESP-IDF, LVGL, chip, flash and PSRAM, the MACs, the web
   site, uptime, free memory, SD card (a snapshot), Restart (asked first: the
   PIN after it). Web site: running or why not, the address and its QR code,
@@ -89,6 +93,9 @@ Portrait, 480x800. The panel scans landscape (hardware.md): `ui_logic.h` turns t
   shows a trash can at its right end (a swipe right or a tap elsewhere hides
   it); the can asks "Delete this key?": No (or Right) at once, Yes held 4 s
   (it fills from the left; let go early: empty again).
+- **Dialogs** (`dialog.h`), one at a time over the page: a choice (a title,
+  a button per answer; Right: its last, Cancel) or a question with a held Yes
+  (No at once, Yes held 4 s, filling from the left; Right: No).
 - **Lock screen**: PIN pad (touch), shown while the vault is locked (at boot,
   `pin lock`); done (`pin_pad.cpp`).
   See PIN below.

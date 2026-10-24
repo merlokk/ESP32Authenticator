@@ -22,6 +22,7 @@
 #include "nav_logic.h"
 #include "status_logic.h"
 #include "codes.h"
+#include "dialog.h"
 #include "ui.h"
 #include "ui_logic.h"
 #include "vault.h"
@@ -500,18 +501,18 @@ uint32_t demo_gone = 0;  // made-up keys deleted (a bit each)
 // A made-up key's ID: this, then its number.
 constexpr uint8_t kDemoId[] = {'d', 'e', 'm', 'o', 0xde, 0x40};
 
-// Deleting a key (fido_list::Remove): the can on a row, the question over
-// the list, Yes filling while held.
+// Deleting a key (fido_list::Remove): the can on a row, then the question
+// (dialog::Confirm, Yes held).
 fido_list::Remove remove_state;
 uint8_t fido_rows = 0;  // rows on the page
 lv_obj_t *fido_trash[fido_list::kRowsPerPage] = {};
-bool trash_tapped = false;  // OnTrash, OnFidoRow, OnNo: for Poll
+bool trash_tapped = false;  // OnTrash, OnFidoRow: for Poll
 bool row_tapped = false;
-bool no_tapped = false;
-lv_obj_t *ask = nullptr;  // the question
-lv_obj_t *yes_fill = nullptr;
-int32_t yes_width = 0;
-uint8_t shown_fill = 0;
+// The held questions' answers (dialog ids; the choices' are 1..3).
+constexpr int kDeleteNo = 100;
+constexpr int kDeleteYes = 101;
+constexpr int kResetNo = 200;
+constexpr int kResetYes = 201;
 fido_ctap_credential_t asked;  // the key asked about (the list may be read again)
 
 // The made-up keys: site, user, display name, algorithm, kind.
@@ -656,126 +657,8 @@ void ShowTrash() {
     }
 }
 
-void OnNo(lv_event_t *) { no_tapped = true; }
-
-// Yes counts only while held (Poll fills it).
-void OnYes(lv_event_t *event) {
-    if (lv_event_get_code(event) == LV_EVENT_PRESSED) {
-        remove_state.Press(lv_tick_get());
-    } else {
-        remove_state.Release();
-    }
-}
-
 lv_obj_t *AskButton(lv_obj_t *parent, int32_t width, const char *text) {
-    lv_obj_t *b = lv_obj_create(parent);
-    lv_obj_remove_style_all(b);
-    lv_obj_add_flag(b, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_remove_flag(b, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_size(b, width, 72);
-    lv_obj_set_style_bg_color(b, lv_color_white(), 0);
-    lv_obj_set_style_bg_opa(b, LV_OPA_COVER, 0);
-    lv_obj_set_style_radius(b, 10, 0);
-    // An outline, not a border: the content area is the whole button (the fill's).
-    lv_obj_set_style_outline_width(b, 2, 0);
-    lv_obj_set_style_outline_color(b, lv_color_black(), 0);
-    lv_obj_t *l = Label(b, &lv_font_montserrat_24);
-    lv_label_set_text(l, text);
-    lv_obj_center(l);
-    return b;
-}
-
-// "Delete this key?" over the list (and its bar): the site, the user; No at
-// once, Yes held fido_list::kHoldMs: the fill grows from the left, the text
-// white on it.
-void ShowAsk() {
-    constexpr int32_t kBoxWidth = kRowWidth - 32;
-    constexpr int32_t kPad = 20;
-    constexpr int32_t kInner = kBoxWidth - 2 * kPad - 2 * 3;
-    constexpr int32_t kNoWidth = 120;
-    constexpr const char *kYes = "Delete: hold 4 s";
-    ask = lv_obj_create(home);  // takes the taps around the box
-    lv_obj_remove_style_all(ask);
-    lv_obj_add_flag(ask, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_remove_flag(ask, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_pos(ask, 0, kContentTop);
-    lv_obj_set_size(ask, kWidth, kHeight - kContentTop);
-
-    lv_obj_t *box = lv_obj_create(ask);
-    lv_obj_remove_style_all(box);
-    lv_obj_remove_flag(box, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_remove_flag(box, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_size(box, kBoxWidth, LV_SIZE_CONTENT);
-    lv_obj_set_style_bg_color(box, lv_color_white(), 0);
-    lv_obj_set_style_bg_opa(box, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(box, 3, 0);
-    lv_obj_set_style_border_color(box, lv_color_black(), 0);
-    lv_obj_set_style_radius(box, 16, 0);
-    lv_obj_set_style_pad_all(box, kPad, 0);
-    lv_obj_set_style_pad_row(box, 12, 0);
-    lv_obj_set_flex_flow(box, LV_FLEX_FLOW_COLUMN);
-    lv_obj_center(box);
-
-    char text[2 * FIDO_CTAP_TEXT_SIZE + 4];
-    lv_obj_t *l = Label(box, &lv_font_montserrat_28);
-    lv_label_set_text(l, "Delete this key?");
-    l = Label(box, &lv_font_montserrat_24);
-    lv_label_set_long_mode(l, LV_LABEL_LONG_MODE_DOTS);
-    lv_obj_set_width(l, kInner);
-    snprintf(text, sizeof text, "%s%s", asked.rp_id, asked.rp_id_truncated ? "..." : "");
-    lv_label_set_text(l, text);
-    l = Label(box, &lv_font_montserrat_24);
-    lv_label_set_long_mode(l, LV_LABEL_LONG_MODE_DOTS);
-    lv_obj_set_width(l, kInner);
-    fido_list::User(asked.user_name, asked.display_name, text, sizeof text);
-    lv_label_set_text(l, text);
-    l = Label(box, &lv_font_montserrat_20);
-    lv_label_set_long_mode(l, LV_LABEL_LONG_MODE_WRAP);
-    lv_obj_set_width(l, kInner);
-    lv_label_set_text(l, "The site will not take this device for it any more: sign in another "
-                         "way first.");
-
-    lv_obj_t *buttons = lv_obj_create(box);
-    lv_obj_remove_style_all(buttons);
-    lv_obj_remove_flag(buttons, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_remove_flag(buttons, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_size(buttons, kInner, 80);
-    lv_obj_t *no = AskButton(buttons, kNoWidth, "No");
-    lv_obj_align(no, LV_ALIGN_LEFT_MID, 2, 0);
-    lv_obj_add_event_cb(no, OnNo, LV_EVENT_CLICKED, nullptr);
-    yes_width = kInner - kNoWidth - 20;
-    lv_obj_t *yes = AskButton(buttons, yes_width, kYes);
-    lv_obj_align(yes, LV_ALIGN_RIGHT_MID, -2, 0);
-    // Sliding off it lets go (no press lock).
-    lv_obj_remove_flag(yes, LV_OBJ_FLAG_PRESS_LOCK);
-    lv_obj_add_event_cb(yes, OnYes, LV_EVENT_PRESSED, nullptr);
-    lv_obj_add_event_cb(yes, OnYes, LV_EVENT_RELEASED, nullptr);
-    lv_obj_add_event_cb(yes, OnYes, LV_EVENT_PRESS_LOST, nullptr);
-    // The fill clips a white copy of the button's face to its width.
-    yes_fill = lv_obj_create(yes);
-    lv_obj_remove_style_all(yes_fill);
-    lv_obj_remove_flag(yes_fill, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_remove_flag(yes_fill, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_size(yes_fill, 0, 72);
-    lv_obj_set_style_bg_color(yes_fill, lv_color_black(), 0);
-    lv_obj_set_style_bg_opa(yes_fill, LV_OPA_COVER, 0);
-    lv_obj_t *face = lv_obj_create(yes_fill);
-    lv_obj_remove_style_all(face);
-    lv_obj_remove_flag(face, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_set_size(face, yes_width, 72);
-    l = Label(face, &lv_font_montserrat_24);
-    lv_obj_set_style_text_color(l, lv_color_white(), 0);
-    lv_label_set_text(l, kYes);
-    lv_obj_center(l);
-    shown_fill = 0;
-}
-
-void CloseAsk() {
-    if (ask != nullptr) {
-        lv_obj_delete(ask);
-        ask = nullptr;
-        yes_fill = nullptr;
-    }
+    return dialog::FramedButton(parent, width, text);
 }
 
 // The can tapped: the key on its row asked about.
@@ -786,15 +669,21 @@ void AskRemove() {
         return;
     }
     asked = fido_keys[fido_order[at]];
-    ShowAsk();
+    char site[FIDO_CTAP_TEXT_SIZE + 4];
+    char user[2 * FIDO_CTAP_TEXT_SIZE + 4];
+    snprintf(site, sizeof site, "%s%s", asked.rp_id, asked.rp_id_truncated ? "..." : "");
+    fido_list::User(asked.user_name, asked.display_name, user, sizeof user);
+    dialog::Confirm("Delete this key?", site, user,
+                    "The site will not take this device for it any more: sign in another way "
+                    "first.",
+                    "Delete: hold 4 s", kDeleteNo, kDeleteYes);
 }
 
 // Yes held long enough: the key goes to the typing task to be deleted.
 void DeleteAsked() {
     Job job = MakeJob(JobKind::kDeleteKey);
     memcpy(job.key, asked.id, sizeof job.key);
-    Toast(xQueueSend(jobs, &job, 0) == pdTRUE ? "deleting the key..." : "busy typing");
-    CloseAsk();
+    Toast(xQueueSend(jobs, &job, 0) != pdTRUE ? "busy typing" : "deleting the key...");
     remove_state.Clear();
     ShowTrash();
 }
@@ -892,6 +781,7 @@ lv_obj_t *light_value[2] = {};  // "60%" after the sliders
 bool light_save = false;        // a slider let go: for Poll (the save job)
 int settings_tapped = -1;       // a main page's row: its Page, for Poll
 bool action_tapped = false;     // a page's button, for Poll
+bool fido_reset_tapped = false;  // FIDO2's Reset: the held question
 
 void SettingsText(settings::Page page, char *out, size_t size) {
     out[0] = '\0';
@@ -1143,7 +1033,6 @@ uint32_t scans = 0;
 uint32_t scans_shown = 0;
 char join_ssid[wifi_view::kSsidSize];  // the password page's network
 lv_obj_t *password_area = nullptr;
-lv_obj_t *sheet = nullptr;  // a saved network's Connect / Forget
 int8_t sheet_index = wifi_view::kNone;
 // Taps, for Poll.
 bool wifi_switch_tapped = false;
@@ -1151,7 +1040,7 @@ int8_t saved_tapped = wifi_view::kNone;
 int8_t nearby_tapped = wifi_view::kNone;
 bool add_tapped = false;
 bool rescan_tapped = false;
-int sheet_choice = 0;  // 1 connect, 2 forget, 3 cancel
+int sheet_choice = 0;  // a dialog's answer (dialog::Choose ids), for the pages' Poll
 bool password_ready = false;
 bool password_cancel = false;
 
@@ -1214,10 +1103,6 @@ void OnRescan(lv_event_t *) {
     if (LastWasTap()) {
         rescan_tapped = true;
     }
-}
-
-void OnSheet(lv_event_t *event) {
-    sheet_choice = static_cast<int>(reinterpret_cast<intptr_t>(lv_event_get_user_data(event)));
 }
 
 void OnPassword(lv_event_t *event) {
@@ -1458,52 +1343,12 @@ void WipePassword() {
     }
 }
 
-void CloseSheet() {
-    if (sheet != nullptr) {
-        lv_obj_delete(sheet);
-        sheet = nullptr;
-    }
-}
+using SheetButton = dialog::Button;
 
-// A choice over the page: `title`, then a button per label; a tap sets
-// sheet_choice to its id (Poll closes it).
-struct SheetButton {
-    const char *label;
-    int id;
-};
+void CloseSheet() { dialog::Close(); }
 
 void OpenSheet(const char *title, const SheetButton *buttons, size_t count) {
-    sheet = lv_obj_create(home);  // takes the taps around the box
-    lv_obj_remove_style_all(sheet);
-    lv_obj_add_flag(sheet, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_remove_flag(sheet, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_pos(sheet, 0, kContentTop);
-    lv_obj_set_size(sheet, kWidth, kHeight - kContentTop);
-    lv_obj_t *box = lv_obj_create(sheet);
-    lv_obj_remove_style_all(box);
-    lv_obj_remove_flag(box, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_remove_flag(box, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_size(box, kRowWidth - 32, LV_SIZE_CONTENT);
-    lv_obj_set_style_bg_color(box, lv_color_white(), 0);
-    lv_obj_set_style_bg_opa(box, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(box, 3, 0);
-    lv_obj_set_style_border_color(box, lv_color_black(), 0);
-    lv_obj_set_style_radius(box, 16, 0);
-    lv_obj_set_style_pad_all(box, 20, 0);
-    lv_obj_set_style_pad_row(box, 14, 0);
-    lv_obj_set_flex_flow(box, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_flex_align(box, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_center(box);
-    constexpr int32_t kInner = kRowWidth - 32 - 2 * 20 - 2 * 3;
-    lv_obj_t *t = Label(box, &lv_font_montserrat_28);
-    lv_label_set_long_mode(t, LV_LABEL_LONG_MODE_WRAP);
-    lv_obj_set_width(t, kInner);
-    lv_label_set_text(t, title);
-    for (size_t i = 0; i < count; ++i) {
-        lv_obj_t *b = AskButton(box, kInner - 4, buttons[i].label);
-        lv_obj_add_event_cb(b, OnSheet, LV_EVENT_CLICKED,
-                            reinterpret_cast<void *>(static_cast<intptr_t>(buttons[i].id)));
-    }
+    dialog::Choose(title, buttons, count);
 }
 
 // A saved network: Connect (when not on it), Forget, Cancel.
@@ -1524,7 +1369,7 @@ bool PollWifi() {
         SendAndWipe(job);
     }
     if (saved_tapped != wifi_view::kNone) {
-        if (sheet == nullptr && saved_tapped < wifi_shown.saved_count) {
+        if (!dialog::IsOpen() && saved_tapped < wifi_shown.saved_count) {
             ShowSheet(saved_tapped);
         }
         saved_tapped = wifi_view::kNone;
@@ -1611,7 +1456,7 @@ bool pair_open = false;  // the pairing window was opened from here
 uint32_t pair_left_shown = 0;
 bool ble_switch_tapped = false;
 int8_t host_tapped = -1;
-int8_t host_index = -1;  // the sheet's host
+int8_t host_index = -1;  // the dialog's host
 bool pair_tapped = false;
 bool pair_button = false;  // Stop / Open again / Done
 
@@ -1778,7 +1623,7 @@ bool PollBle() {
         SendJob(job);
     }
     if (host_tapped >= 0) {
-        if (sheet == nullptr && host_tapped < ble_shown.host_count) {
+        if (!dialog::IsOpen() && host_tapped < ble_shown.host_count) {
             host_index = host_tapped;
             const ble_view::Host &h = ble_shown.hosts[host_index];
             const SheetButton buttons[] = {
@@ -2291,7 +2136,7 @@ security_view::PinFlow pin_flow;  // the PIN page's digits (wiped when done)
 lv_obj_t *flow_title = nullptr;
 lv_obj_t *flow_dots[pinpad::kDigits] = {};
 lv_obj_t *flow_message = nullptr;
-int security_row_tapped = -1;  // 0 change the PIN, 1 lock, 2 wipe PIN
+int security_row_tapped = -1;  // 0 change the PIN, 1 lock, 2 wipe PIN, 3 FIDO2
 bool complexity_tapped = false;
 int lock_tapped = -1;
 bool flow_key = false;
@@ -2339,7 +2184,7 @@ void ShowSecurity() {
     } else {
         snprintf(text, sizeof text, "busy");
     }
-    InfoRow(y, "FIDO2", text);
+    ChoiceRow(y, "FIDO2", text, false, OnSecurityRow, 3);
     y += kNetRow + 16;
     ChoiceRow(y, "Change the PIN", "", false, OnSecurityRow, 0);
     y += kNetRow;
@@ -2474,7 +2319,9 @@ bool PollSecurity() {
             open(settings::Page::kSecurityPin);
         } else if (row == 1) {
             open(settings::Page::kSecurityLock);
-        } else if (sheet == nullptr) {
+        } else if (row == 3) {
+            open(settings::Page::kFido);
+        } else if (!dialog::IsOpen()) {
             const SheetButton set[] = {{"Set a wipe PIN", 1}, {"Cancel", 3}};
             const SheetButton change[] = {{"Change the wipe PIN", 1}, {"Turn it off", 2}, {"Cancel", 3}};
             if (security_shown.wipe) {
@@ -2728,7 +2575,7 @@ bool PollWeb() {
         web_row_tapped = -1;
         if (row == 0) {
             open(settings::Page::kWebMode);
-        } else if (sheet == nullptr) {
+        } else if (!dialog::IsOpen()) {
             const SheetButton set[] = {{"Set a login", 1}, {"Cancel", 3}};
             const SheetButton change[] = {{"Change the login", 1}, {"Turn the login off", 2}, {"Cancel", 3}};
             if (web_shown.login) {
@@ -2799,6 +2646,78 @@ bool PollWeb() {
             vault::Wipe(login_user, sizeof login_user);
             SendAndWipe(job);
             changed |= nav_state.Back();
+        }
+    }
+    return changed;
+}
+
+// --- Settings: FIDO2 / U2F ---------------------------------------------------------
+
+bool show_keys_tapped = false;
+
+void OnShowKeys(lv_event_t *) {
+    if (LastWasTap()) {
+        show_keys_tapped = true;
+    }
+}
+
+// The state first (big), then the lines small; Show the keys, Reset FIDO2
+// (held). A snapshot, as About: drawn again only when opened.
+void ShowFidoSettings() {
+    TitleBar("FIDO2 / U2F");
+    char label[32];
+    char value[64];
+    uint8_t i = 0;
+    int32_t y = kTitleHeight + 8;
+    if (settings::Line(settings_shown, i, label, sizeof label, value, sizeof value)) {
+        lv_obj_t *state = Label(content, &lv_font_montserrat_24);
+        lv_label_set_long_mode(state, LV_LABEL_LONG_MODE_WRAP);
+        lv_obj_set_width(state, kRowWidth - 24);
+        lv_label_set_text(state, value);
+        lv_obj_set_pos(state, 12, y);
+        ++i;
+    }
+    y += 44;
+    constexpr int32_t kLine = 40;
+    const int32_t bottom = kScreenBottom - kContentTop - 190;
+    for (; y + kLine <= bottom && settings::Line(settings_shown, i, label, sizeof label, value,
+                                                 sizeof value);
+         ++i, y += kLine) {
+        lv_obj_t *row = Panel(content, y, kLine);
+        lv_obj_set_style_border_width(row, 1, 0);
+        lv_obj_t *l = Label(row, &lv_font_montserrat_20);
+        lv_label_set_text(l, label);
+        lv_obj_set_pos(l, 12, (kLine - 24) / 2);
+        lv_obj_t *v = Label(row, &lv_font_montserrat_20);
+        lv_label_set_long_mode(v, LV_LABEL_LONG_MODE_DOTS);
+        lv_obj_set_style_text_align(v, LV_TEXT_ALIGN_RIGHT, 0);
+        lv_obj_set_size(v, 270, 24);
+        lv_label_set_text(v, value);
+        lv_obj_align(v, LV_ALIGN_RIGHT_MID, -12, 0);
+    }
+    lv_obj_t *keys = AskButton(content, kRowWidth - 48, "Show the keys");
+    lv_obj_align(keys, LV_ALIGN_BOTTOM_MID, 0, -104);
+    lv_obj_add_event_cb(keys, OnShowKeys, LV_EVENT_CLICKED, nullptr);
+    lv_obj_t *reset = AskButton(content, kRowWidth - 48, "Reset FIDO2");
+    lv_obj_align(reset, LV_ALIGN_BOTTOM_MID, 0, -16);
+    lv_obj_add_event_cb(reset, OnAction, LV_EVENT_CLICKED, nullptr);
+}
+
+// Show the keys: the U2F / FIDO2 list. Reset: the held question (Poll
+// sends the reset on its Yes). True when the page is to be drawn again.
+bool PollFidoSettings() {
+    bool changed = false;
+    if (show_keys_tapped) {
+        show_keys_tapped = false;
+        changed |= nav_state.Open(nav::Mode::kFido);
+    }
+    if (fido_reset_tapped) {
+        fido_reset_tapped = false;
+        if (!dialog::IsOpen()) {
+            dialog::Confirm("Reset FIDO2?", nullptr, nullptr,
+                            "Every key and the FIDO2 PIN are erased: the sites will not take "
+                            "this device any more. Sign in another way first.",
+                            "Reset: hold 4 s", kResetNo, kResetYes);
         }
     }
     return changed;
@@ -2974,6 +2893,11 @@ void ShowSettings() {
     if (page != settings::Page::kWebLogin) {
         login_on_password = page == settings::Page::kWebLogin && login_on_password;
     }
+    if (page == settings::Page::kFido && settings_hooks != nullptr) {
+        SettingsText(page, settings_shown, sizeof settings_shown);
+        ShowFidoSettings();
+        return;
+    }
     if (web_hooks != nullptr) {
         switch (page) {
             case settings::Page::kWeb: ShowWeb(); return;
@@ -3117,13 +3041,8 @@ void Show() {
     }
     row_count = 0;
     fido_rows = 0;
-    // A redraw takes the can away; the question stays while the list is shown
-    // (it holds its key).
-    remove_state.Drop();
-    if (nav_state.mode() != nav::Mode::kFido) {
-        remove_state.Clear();
-        CloseAsk();
-    }
+    // A redraw takes the can and any dialog away (its question unanswered).
+    remove_state.Clear();
     light_switch = nullptr;  // deleted with the page
     memset(manual_value, 0, sizeof manual_value);
     memset(flow_dots, 0, sizeof flow_dots);
@@ -3363,8 +3282,10 @@ void Poll(lv_timer_t *) {
         if (!HomeShown()) {  // under the PIN pad the buttons do nothing here
             continue;
         }
-        if (remove_state.asking() && input != nav::Input::kHome) {
-            no_tapped |= input == nav::Input::kRight;  // Right: No (as FIDO2's prompt)
+        if (dialog::IsOpen() && input != nav::Input::kHome) {
+            if (input == nav::Input::kRight) {
+                dialog::Cancel();  // Right: No (as FIDO2's prompt), or Cancel
+            }
             continue;
         }
         changed |= nav_state.Apply(input);
@@ -3383,14 +3304,14 @@ void Poll(lv_timer_t *) {
     }
     const nav::Gesture g = TakeGesture();
     if (g == nav::Gesture::kLeft || g == nav::Gesture::kRight) {
-        if (nav_state.mode() == nav::Mode::kFido && HomeShown()) {
+        if (nav_state.mode() == nav::Mode::kFido && HomeShown() && !dialog::IsOpen()) {
             const uint8_t row = fido_list::RowAt(GestureStart().y - kContentTop, kTitleHeight,
                                                  kFidoRowHeight, fido_rows);
             if (remove_state.Swipe(g, row)) {
                 ShowTrash();
             }
         }
-    } else if (g != nav::Gesture::kNone && HomeShown() && !remove_state.asking()) {
+    } else if (g != nav::Gesture::kNone && HomeShown() && !dialog::IsOpen()) {
         changed |= nav_state.Swipe(g);
     }
     if (row_tapped) {
@@ -3401,24 +3322,33 @@ void Poll(lv_timer_t *) {
     }
     if (trash_tapped) {
         trash_tapped = false;
-        AskRemove();
-    }
-    if (no_tapped) {
-        no_tapped = false;
-        if (remove_state.asking()) {
-            remove_state.Clear();
-            CloseAsk();
-            ShowTrash();
+        if (!dialog::IsOpen()) {
+            AskRemove();
         }
     }
-    if (ask != nullptr) {
-        const uint8_t fill = remove_state.Fill(lv_tick_get());
-        if (remove_state.stage() == fido_list::Stage::kDelete) {
+    // A dialog's answer: the held questions here, the choices to their pages.
+    switch (const int answer = dialog::Poll()) {
+        case dialog::kNone:
+            break;
+        case kDeleteYes:
             DeleteAsked();
-        } else if (fill != shown_fill) {
-            shown_fill = fill;
-            lv_obj_set_width(yes_fill, yes_width * fill / fido_list::kHoldSteps);
+            break;
+        case kDeleteNo:
+            remove_state.Clear();
+            ShowTrash();
+            break;
+        case kResetYes: {
+            Job job = MakeJob(JobKind::kAct);
+            job.action = settings::Action::kFidoReset;
+            Toast("resetting FIDO2...");
+            SendJob(job);
+            break;
         }
+        case kResetNo:
+            break;
+        default:
+            sheet_choice = answer;
+            break;
     }
     if (nav_state.mode() == nav::Mode::kList && lv_tick_elaps(looked_at) >= kVaultMs) {
         looked_at = lv_tick_get();
@@ -3434,8 +3364,10 @@ void Poll(lv_timer_t *) {
         action_tapped = false;
         Job job = MakeJob(JobKind::kAct);
         job.action = settings::PageAction(static_cast<settings::Page>(nav_state.settings_page()));
-        if (job.action == settings::Action::kRestart) {
-            if (sheet == nullptr) {  // asked first: the vault locks
+        if (job.action == settings::Action::kFidoReset) {
+            fido_reset_tapped = true;
+        } else if (job.action == settings::Action::kRestart) {
+            if (!dialog::IsOpen()) {  // asked first: the vault locks
                 const SheetButton buttons[] = {{"Restart", 1}, {"Cancel", 3}};
                 OpenSheet("Restart now? The PIN is asked again after it.", buttons, 2);
             }
@@ -3482,10 +3414,13 @@ void Poll(lv_timer_t *) {
     if (nav_state.mode() == nav::Mode::kSettings && web_hooks != nullptr) {
         changed |= PollWeb();
     }
+    if (nav_state.mode() == nav::Mode::kSettings) {
+        changed |= PollFidoSettings();
+    }
     // Settings' texts (Wi-Fi joined, the clock); the switch follows Power x2.
-    // Not under a sheet, nor over a password being typed or a scan.
+    // Not under a dialog, nor over a password being typed or a scan.
     if (nav_state.mode() == nav::Mode::kSettings && settings_hooks != nullptr && HomeShown() &&
-        !FingerDown() && sheet == nullptr && settings_page != settings::Page::kWifiPassword &&
+        !FingerDown() && !dialog::IsOpen() && settings_page != settings::Page::kWifiPassword &&
         settings_page != settings::Page::kWifiScan && settings_page != settings::Page::kBlePair &&
         settings_page != settings::Page::kTouch &&
         settings_page != settings::Page::kDisplayChoice &&
@@ -3577,6 +3512,7 @@ void StartScreens() {
     lv_obj_set_size(content, kRowWidth, kContentBottom - kContentTop);
 
     StartTabs(home);
+    dialog::Start(home, kContentTop, kRowWidth - 32);
     StartBar();
     Show();
     UpdateStatus(nullptr);

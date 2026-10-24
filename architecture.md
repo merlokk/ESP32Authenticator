@@ -305,7 +305,9 @@ ui's own task; Bluetooth: `ble_view_logic.h`, `ui::BleHooks`; Display &
 power: `display_view_logic.h`, `ui::DisplayHooks`; Date & time:
 `time_view_logic.h`, `ui::TimeHooks`; Security: `security_view_logic.h`,
 `ui::SecurityHooks`, the PINs only in the ui's own task's job, wiped after; Web site:
-`web_view_logic.h`, `ui::WebHooks`, the QR code by LVGL (`CONFIG_LV_USE_QRCODE`); the touch's
+`web_view_logic.h`, `ui::WebHooks`, the QR code by LVGL (`CONFIG_LV_USE_QRCODE`);
+FIDO2 / U2F under Security (`fido_ctap_info`, Reset: `fido_ctap_reset`); the
+dialogs: `dialog.h` (`dialog_logic.h` the held Yes); the touch's
 calibration: `touch_cal_logic.h`, applied to every real touch in `ui.cpp`), up from the bottom quarter the U2F / FIDO2
 keys (`fido_ctap_list`, by site A to Z, 6 a page: site, user, made / alg /
 kind; its pages flipped by Left / Right or the bar under it (‹, "1 / 2", ›, in the tabs' place); the count in its title; looked at

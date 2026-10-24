@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 
+#include "dialog_logic.h"
 #include "fido_list_logic.h"
 #include "settings_logic.h"
 #include "wifi_view_logic.h"
@@ -441,27 +442,29 @@ void test_fido_remove(void) {
     TEST_ASSERT_TRUE(r.Clear());
     TEST_ASSERT_FALSE(r.asking());
     TEST_ASSERT_EQUAL_UINT8(fl::kNoRow, r.row());
+    TEST_ASSERT_FALSE(r.Clear());  // nothing left
+}
 
-    // Yes: held 4 s, filling; let go early: empty.
-    r.Swipe(Gesture::kLeft, 0);
-    r.Press(100);  // not asked yet: no hold
-    TEST_ASSERT_EQUAL_UINT8(0, r.Fill(5000));
-    r.Trash();
-    r.Press(1000);
-    TEST_ASSERT_EQUAL_UINT8(0, r.Fill(1000));
-    TEST_ASSERT_EQUAL_UINT8(1, r.Fill(1500));
-    TEST_ASSERT_EQUAL_UINT8(7, r.Fill(4999));
-    r.Release();
-    TEST_ASSERT_EQUAL_UINT8(0, r.Fill(4999));
-    TEST_ASSERT_TRUE(r.stage() == fl::Stage::kAsk);
-    r.Press(10000);
-    TEST_ASSERT_EQUAL_UINT8(fl::kHoldSteps, r.Fill(14000));
-    TEST_ASSERT_TRUE(r.stage() == fl::Stage::kDelete);
-    r.Release();
-    TEST_ASSERT_EQUAL_UINT8(fl::kHoldSteps, r.Fill(15000));
-    TEST_ASSERT_TRUE(r.Clear());
-    r.Press(0xFFFFF000u);  // the tick wraps
-    TEST_ASSERT_EQUAL_UINT8(0, r.Fill(0xFFFFF000u));
+void test_dialog_hold(void) {
+    namespace dl = ui::dialog;
+    dl::Hold h;
+    TEST_ASSERT_EQUAL_UINT8(0, h.Fill(5000));  // not pressed
+    h.Press(1000);
+    TEST_ASSERT_EQUAL_UINT8(0, h.Fill(1000));
+    TEST_ASSERT_EQUAL_UINT8(1, h.Fill(1500));
+    TEST_ASSERT_EQUAL_UINT8(7, h.Fill(4999));
+    h.Release();  // let go early: empty
+    TEST_ASSERT_EQUAL_UINT8(0, h.Fill(4999));
+    TEST_ASSERT_FALSE(h.done());
+    h.Press(10000);
+    TEST_ASSERT_EQUAL_UINT8(dl::kHoldSteps, h.Fill(10000 + dl::kHoldMs));
+    TEST_ASSERT_TRUE(h.done());
+    h.Release();
+    TEST_ASSERT_EQUAL_UINT8(dl::kHoldSteps, h.Fill(20000));  // stays done
+    h.Reset();
+    TEST_ASSERT_FALSE(h.done());
+    h.Press(0xFFFFFE00u);  // the tick wraps: 768 ms held
+    TEST_ASSERT_EQUAL_UINT8(1, h.Fill(0x100u));
 }
 
 void test_settings_pages(void) {
@@ -497,6 +500,8 @@ void test_settings_pages(void) {
     TEST_ASSERT_TRUE(st::PageAction(st::Page::kWifi) == st::Action::kNone);
     TEST_ASSERT_TRUE(st::PageAction(st::Page::kAbout) == st::Action::kRestart);
     TEST_ASSERT_EQUAL_STRING("Restart", st::ActionText(st::Action::kRestart));
+    TEST_ASSERT_TRUE(st::PageAction(st::Page::kFido) == st::Action::kFidoReset);
+    TEST_ASSERT_TRUE(st::Parent(st::Page::kFido) == st::Page::kSecurity);
     TEST_ASSERT_EQUAL_STRING("Lock now", st::ActionText(st::Action::kLockNow));
 
     char label[8];
@@ -934,6 +939,7 @@ void RegisterUiTests(void) {
     RUN_TEST(test_fido_list_rows);
     RUN_TEST(test_nav_classify);
     RUN_TEST(test_fido_remove);
+    RUN_TEST(test_dialog_hold);
     RUN_TEST(test_settings_pages);
     RUN_TEST(test_wifi_view);
     RUN_TEST(test_touch_calibration);

@@ -33,6 +33,7 @@ enum class Page : uint8_t {
     kWeb,           // the web site
     kWebMode,       // Web site: when it runs
     kWebLogin,      // Web site: the login on the keyboard
+    kFido,          // Security: FIDO2 / U2F (its state, the keys, reset)
 };
 
 // Where a page's back arrow goes.
@@ -45,6 +46,7 @@ constexpr Page Parent(Page p) {
            : p == Page::kTimeZone ? Page::kTimeRegion
            : p == Page::kSecurityLock || p == Page::kSecurityPin ? Page::kSecurity
            : p == Page::kWebMode || p == Page::kWebLogin ? Page::kWeb
+           : p == Page::kFido ? Page::kSecurity
                                       : Page::kMain;
 }
 
@@ -77,6 +79,7 @@ constexpr const char *Title(Page p) {
         case Page::kWeb: return "Web site";
         case Page::kWebMode: return "Web site";
         case Page::kWebLogin: return "Login";
+        case Page::kFido: return "FIDO2 / U2F";
     }
     return "";
 }
@@ -88,6 +91,7 @@ enum class Action : uint8_t {
     kLockNow,   // Security
     kSyncTime,  // Date & time
     kRestart,   // About (asked first: the vault locks)
+    kFidoReset, // FIDO2 / U2F (held: every key and its PIN erased)
 };
 
 constexpr Action PageAction(Page p) {
@@ -95,6 +99,7 @@ constexpr Action PageAction(Page p) {
            : p == Page::kSecurity ? Action::kLockNow
            : p == Page::kTime     ? Action::kSyncTime
            : p == Page::kAbout    ? Action::kRestart
+           : p == Page::kFido     ? Action::kFidoReset
                                   : Action::kNone;
 }
 
@@ -103,6 +108,7 @@ constexpr const char *ActionText(Action a) {
            : a == Action::kLockNow ? "Lock now"
            : a == Action::kSyncTime ? "Sync the time now"
            : a == Action::kRestart  ? "Restart"
+           : a == Action::kFidoReset ? "Reset FIDO2"
                                     : "";
 }
 

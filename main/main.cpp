@@ -499,6 +499,49 @@ void DescribeAbout(bool summary, char *out, size_t size) {
     Put(out, size, "SD card", "%s", sd_card::Mounted() ? "in" : "none");
 }
 
+// Security > FIDO2 / U2F: the state first (the page shows it big).
+void DescribeFido(bool summary, char *out, size_t size) {
+    fido_ctap_info_t f = {};
+    // Not while a request waits for the button (the store's lock is taken).
+    const esp_err_t err = fido_waiting ? ESP_ERR_TIMEOUT : fido_ctap_info(&f);
+    if (summary) {
+        if (err == ESP_OK) {
+            snprintf(out, size, "%u keys, PIN %s", static_cast<unsigned>(f.credentials),
+                     f.pin_set ? "set" : "not set");
+        } else {
+            snprintf(out, size, "%s", err == ESP_ERR_TIMEOUT ? "busy" : "stopped");
+        }
+        return;
+    }
+    if (err != ESP_OK) {
+        const char *why = fido_ctap_stopped_reason();
+        Put(out, size, "State", "%s",
+            err == ESP_ERR_TIMEOUT ? "Busy: a request waits for the button"
+            : why != nullptr       ? why
+                                   : "Not running (the vault is locked?)");
+        return;
+    }
+    Put(out, size, "State", "Running over Bluetooth");
+    Put(out, size, "Keys", "%u of %u, %u resident", static_cast<unsigned>(f.credentials),
+        static_cast<unsigned>(f.max_credentials), static_cast<unsigned>(f.discoverable));
+    if (f.pin_set) {
+        Put(out, size, "PIN", "set, %u tries left", static_cast<unsigned>(f.pin_retries));
+    } else {
+        Put(out, size, "PIN", "not set (the site sets one)");
+    }
+    Put(out, size, "Shortest PIN", "%u", static_cast<unsigned>(f.min_pin_length));
+    Put(out, size, "PIN complexity", "%s", f.pin_complexity ? "on" : "off");
+    if (f.force_pin_change) {
+        Put(out, size, "PIN change", "due");
+    }
+    Put(out, size, "Always verify", "%s", f.always_uv ? "on" : "off");
+    Put(out, size, "Store", "%u of %u KB%s", static_cast<unsigned>(f.store_used / 1024),
+        static_cast<unsigned>(f.store_size / 1024), f.encrypted ? ", encrypted" : "");
+    Put(out, size, "Signatures", "%u", static_cast<unsigned>(f.sign_count));
+    Put(out, size, "Presence", "%s",
+        config::Get().test.auto_presence ? "AUTO (config test)" : "Left yes, Right no");
+}
+
 void SettingsDescribe(ui::settings::Page page, bool summary, char *out, size_t size) {
     using ui::settings::Page;
     out[0] = '\0';
@@ -530,6 +573,7 @@ void SettingsDescribe(ui::settings::Page page, bool summary, char *out, size_t s
         case Page::kSecurityPin:
         case Page::kWebMode:
         case Page::kWebLogin: break;
+        case Page::kFido: DescribeFido(summary, out, size); break;
         case Page::kWeb:
             if (summary) {
                 const web::Status w = web::Get();
@@ -561,6 +605,12 @@ const char *SettingsAct(ui::settings::Action action) {
         case Action::kRestart:
             esp_restart();
             break;
+        case Action::kFidoReset:
+            switch (fido_ctap_reset()) {
+                case ESP_OK: return "FIDO2 reset: no keys, no PIN";
+                case ESP_ERR_TIMEOUT: return "busy: a FIDO2 request is running";
+                default: return "cannot reset FIDO2";
+            }
         case Action::kNone: break;
     }
     return "";

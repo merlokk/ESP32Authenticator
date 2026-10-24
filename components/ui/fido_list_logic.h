@@ -92,24 +92,19 @@ constexpr uint8_t RowAt(int32_t y, int32_t top, int32_t height, uint8_t rows) {
 
 // Deleting a key: a swipe left on a row shows a trash can at its right end
 // (one row at a time; a swipe right, a tap elsewhere, a page flip or a redraw
-// takes it away). The can asks; No answers at once, Yes only held kHoldMs,
-// filling in kHoldSteps (let go early: empty again). Held long enough: kDelete,
-// the caller deletes the key and calls Clear().
-inline constexpr uint32_t kHoldMs = 4000;
-inline constexpr uint8_t kHoldSteps = 8;
-
+// takes it away). The can asks (dialog.h Confirm: No at once, Yes held);
+// the answer clears it.
 enum class Stage : uint8_t {
     kNone,
-    kTrash,   // the can on row()
-    kAsk,     // the question over the list
-    kDelete,  // Yes held long enough
+    kTrash,  // the can on row()
+    kAsk,    // the question over the list
 };
 
 class Remove {
    public:
     constexpr Stage stage() const { return stage_; }
     constexpr uint8_t row() const { return row_; }
-    constexpr bool asking() const { return stage_ == Stage::kAsk || stage_ == Stage::kDelete; }
+    constexpr bool asking() const { return stage_ == Stage::kAsk; }
 
     // A swipe that started on `row` (kNoRow: off the rows). True when the can moved.
     constexpr bool Swipe(nav::Gesture g, uint8_t row) {
@@ -137,46 +132,17 @@ class Remove {
         return true;
     }
 
-    // No (or the list left): nothing to delete, no can. True when it changed.
+    // Answered (or the list left): no question, no can. True when it changed.
     constexpr bool Clear() {
         const bool changed = stage_ != Stage::kNone;
         stage_ = Stage::kNone;
         row_ = kNoRow;
-        holding_ = false;
         return changed;
-    }
-
-    // Yes pressed at `now` (ms), let go.
-    constexpr void Press(uint32_t now) {
-        if (stage_ == Stage::kAsk) {
-            holding_ = true;
-            from_ = now;
-        }
-    }
-    constexpr void Release() { holding_ = false; }
-
-    // Yes's fill at `now`, 0..kHoldSteps; kHoldSteps: held long enough (kDelete).
-    constexpr uint8_t Fill(uint32_t now) {
-        if (stage_ == Stage::kDelete) {
-            return kHoldSteps;
-        }
-        if (!holding_) {
-            return 0;
-        }
-        const uint32_t held = now - from_;
-        if (held >= kHoldMs) {
-            stage_ = Stage::kDelete;
-            holding_ = false;
-            return kHoldSteps;
-        }
-        return static_cast<uint8_t>(held * kHoldSteps / kHoldMs);
     }
 
    private:
     Stage stage_ = Stage::kNone;
     uint8_t row_ = kNoRow;
-    bool holding_ = false;
-    uint32_t from_ = 0;
 };
 
 }  // namespace ui::fido_list
