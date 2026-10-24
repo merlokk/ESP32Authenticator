@@ -84,6 +84,7 @@
     "button.drop{margin-left:auto;width:40px;height:40px;border:1px solid var(--line);",
     "border-radius:10px;background:transparent;color:var(--faint);font-size:20px;",
     "line-height:1;cursor:pointer}",
+    "button.drop.move{width:34px}",
     ".row-actions{display:flex;gap:10px;margin:0 0 14px}",
     ".btn.small{min-height:48px;padding:10px 14px;font-size:14px;font-weight:400}",
     ".row-actions .btn.small{flex:1;justify-content:center}",
@@ -847,12 +848,14 @@
       return box;
     }
 
-    // The device's list order: up / down move a record by one place.
-    function mover(text, title, record, position) {
-      var b = el("button", "drop", text);
+    // The device's list order: up / down move a record by one place, the
+    // double arrows to the first / last.
+    function mover(text, title, record, index, position) {
+      var b = el("button", "drop move", text);
       b.type = "button";
       b.title = title;
-      b.disabled = !state.writable || position < 0 || position >= state.records.length;
+      b.disabled = !state.writable || position < 0 || position >= state.records.length ||
+                   position === index;
       b.addEventListener("click", function () {
         send("/api/vault/move", { id: record.id, position: position }, null, "moved");
       });
@@ -868,8 +871,10 @@
       name.appendChild(el("b", "", record.site));
       if (record.user) name.appendChild(el("span", "", " / " + record.user));
       head.appendChild(name);
-      head.appendChild(mover("↑", "move up", record, index - 1));
-      head.appendChild(mover("↓", "move down", record, index + 1));
+      head.appendChild(mover("⇈", "move to the top", record, index, 0));
+      head.appendChild(mover("↑", "move up", record, index, index - 1));
+      head.appendChild(mover("↓", "move down", record, index, index + 1));
+      head.appendChild(mover("⇊", "move to the bottom", record, index, state.records.length - 1));
       var drop = el("button", "drop", "×");
       drop.type = "button";
       drop.title = "delete";
