@@ -299,7 +299,7 @@ queued from the keypad task; nothing under the PIN pad or while FIDO2
 waits). The touch reports the finger's moves too: a swipe down from the top
 quarter opens Settings (a stub), up from the bottom quarter the U2F / FIDO2
 keys (`fido_ctap_list`, by site A to Z, 6 a page: site, user, made / alg /
-kind; Left / Right flip its pages; the count and page in its title; looked at
+kind; its pages flipped by Left / Right or the bar under it (‹, "1 / 2", ›, in the tabs' place); the count in its title; looked at
 each 2 s, not while a request waits: `fido_list_logic.h`), both with a back
 arrow and the name over them; the arrow (the list at
 its page), the opposite swipe or Home closes them (`nav::Classify`; a slid tap

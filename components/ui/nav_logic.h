@@ -96,8 +96,18 @@ class Nav {
         return moved;
     }
 
-    // A tab: its page. True when it changed.
+    // The FIDO2 list's bar under it (kFidoBar buttons): back, the page, forward.
+    static constexpr uint8_t kFidoBar = 3;
+
+    // A tab: its page; on the FIDO2 list the bar's arrows flip its pages (the
+    // page in the middle does nothing). True when it changed.
     constexpr bool Tab(uint8_t index) {
+        if (mode_ == Mode::kFido) {
+            if (fido_pages_ < 2 || (index != 0 && index != kFidoBar - 1)) {
+                return false;
+            }
+            return Apply(index == 0 ? Input::kLeft : Input::kRight);
+        }
         const uint8_t p = static_cast<uint8_t>(first_ + index);
         if (mode_ != Mode::kList || index >= tabs() || p == page_) {
             return false;

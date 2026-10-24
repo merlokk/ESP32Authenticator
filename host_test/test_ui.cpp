@@ -333,6 +333,14 @@ void test_nav_fido_pages(void) {
     TEST_ASSERT_EQUAL_UINT8(0, n.page());
     TEST_ASSERT_TRUE(n.Apply(Input::kRight));
     TEST_ASSERT_EQUAL_UINT8(0, n.fido_page());
+    // The bar under the list: back, the page (nothing), forward.
+    TEST_ASSERT_TRUE(n.Tab(2));
+    TEST_ASSERT_EQUAL_UINT8(1, n.fido_page());
+    TEST_ASSERT_TRUE(n.Tab(0));
+    TEST_ASSERT_EQUAL_UINT8(0, n.fido_page());
+    TEST_ASSERT_FALSE(n.Tab(1));
+    TEST_ASSERT_FALSE(n.Tab(3));
+    TEST_ASSERT_EQUAL_UINT8(0, n.page());  // the list's page untouched
     n.Apply(Input::kLeft);
     TEST_ASSERT_TRUE(n.SetFidoPages(2));  // keys gone: the page stays inside
     TEST_ASSERT_EQUAL_UINT8(1, n.fido_page());

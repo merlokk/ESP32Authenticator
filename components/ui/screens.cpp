@@ -421,8 +421,9 @@ void TitleBar(const char *title, const char *right = nullptr) {
 
 // --- the U2F / FIDO2 keys ----------------------------------------------------------
 
+// Over the bar with the page arrows (the tabs' place).
 constexpr int32_t kFidoRowHeight =
-    (kScreenBottom - kContentTop - kTitleHeight) / fido_list::kRowsPerPage;
+    (kContentBottom - kContentTop - kTitleHeight) / fido_list::kRowsPerPage;
 
 // What the FIDO2 list shows: redrawn when the store changes.
 struct FidoSeen {
@@ -545,14 +546,14 @@ void AddFidoRow(uint8_t i, const fido_ctap_credential_t &c) {
     lv_obj_set_size(site, kRowWidth - 24, kSiteLine);
     snprintf(text, sizeof text, "%s%s", c.rp_id, c.rp_id_truncated ? "..." : "");
     lv_label_set_text(site, text);
-    lv_obj_set_pos(site, 12, 8);
+    lv_obj_set_pos(site, 12, 6);
 
     lv_obj_t *user = Label(row, &lv_font_montserrat_24);
     lv_label_set_long_mode(user, LV_LABEL_LONG_MODE_DOTS);
     lv_obj_set_size(user, kRowWidth - 24, kUserLine);
     fido_list::User(c.user_name, c.display_name, text, sizeof text);
     lv_label_set_text(user, text);
-    lv_obj_set_pos(user, 12, 46);
+    lv_obj_set_pos(user, 12, 40);
 
     const bool dated = c.origin.created_utc > 0;
     struct tm local = {};
@@ -565,23 +566,19 @@ void AddFidoRow(uint8_t i, const fido_ctap_credential_t &c) {
                        c.alg, c.u2f, c.discoverable, text, sizeof text);
     lv_obj_t *details = Label(row, &lv_font_montserrat_20);
     lv_label_set_text(details, text);
-    lv_obj_set_pos(details, 12, 80);
+    lv_obj_set_pos(details, 12, 72);
 }
 
-// The title bar says how many keys and the page; Left / Right flip the pages.
+// The title bar says how many keys; the bar under the list (ShowTabs) and
+// Left / Right flip the pages.
 void ShowFido() {
     size_t count = 0;
     // While a request waits for the button, the store's lock is taken.
     const esp_err_t err = fido_wait ? ESP_ERR_TIMEOUT : FidoLoad(&count, &fido_seen);
     nav_state.SetFidoPages(nav::PagesFor(count, fido_list::kRowsPerPage));
-    char right[32] = "";
+    char right[16] = "";
     if (err == ESP_OK && count > 0) {
-        if (nav_state.fido_pages() > 1) {
-            snprintf(right, sizeof right, "%u   %u/%u", static_cast<unsigned>(count),
-                     nav_state.fido_page() + 1u, static_cast<unsigned>(nav_state.fido_pages()));
-        } else {
-            snprintf(right, sizeof right, "%u", static_cast<unsigned>(count));
-        }
+        snprintf(right, sizeof right, "%u", static_cast<unsigned>(count));
     }
     TitleBar("U2F / FIDO2", right);
     const char *why = nullptr;
@@ -607,9 +604,27 @@ void ShowFido() {
     }
 }
 
+// The FIDO2 list's pages: back, "1 / 2" (the current one, inverted), forward.
+void ShowFidoBar() {
+    snprintf(tab_text[1], sizeof tab_text[1], "%u / %u", nav_state.fido_page() + 1u,
+             static_cast<unsigned>(nav_state.fido_pages()));
+    tab_map[0] = LV_SYMBOL_LEFT;
+    tab_map[1] = tab_text[1];
+    tab_map[2] = LV_SYMBOL_RIGHT;
+    tab_map[nav::Nav::kFidoBar] = "";
+    lv_buttonmatrix_set_map(tabs, tab_map);
+    lv_buttonmatrix_clear_button_ctrl_all(tabs, LV_BUTTONMATRIX_CTRL_CHECKED);
+    lv_buttonmatrix_set_button_ctrl(tabs, 1, LV_BUTTONMATRIX_CTRL_CHECKED);
+    lv_obj_remove_flag(tabs, LV_OBJ_FLAG_HIDDEN);
+}
+
 // A tab per page, at most nav::kTabs; arrows where more pages are hidden.
 void ShowTabs() {
     const uint8_t n = nav_state.tabs();
+    if (nav_state.mode() == nav::Mode::kFido && nav_state.fido_pages() > 1) {
+        ShowFidoBar();
+        return;
+    }
     if (nav_state.mode() != nav::Mode::kList || nav_state.pages() < 2) {
         lv_obj_add_flag(tabs, LV_OBJ_FLAG_HIDDEN);
         return;
@@ -668,8 +683,8 @@ void Show() {
     }
     row_count = 0;
     lv_obj_clean(content);
-    lv_obj_set_height(content, (nav_state.mode() == nav::Mode::kList ? kContentBottom
-                                                                       : kScreenBottom) -
+    lv_obj_set_height(content, (nav_state.mode() == nav::Mode::kSettings ? kScreenBottom
+                                                                           : kContentBottom) -
                                    kContentTop);
     char text[160];
     switch (nav_state.mode()) {

@@ -50,7 +50,7 @@ Portrait, 480x800. The panel scans landscape (hardware.md): `ui_logic.h` turns t
   up or Home closes it.
 - **U2F / FIDO2 list**: a swipe up from the bottom quarter; the keys by site
   (A to Z), 6 a page: site, user, "made <date>, <alg>, resident / U2F";
-  Left / Right flip the pages, the title says the count and the page; its
+  Left / Right or the bar under it (‹, "1 / 2", ›) flip the pages, the title says the count; its
   back arrow, a swipe down or Home closes it.
 - **Lock screen**: PIN pad (touch), shown while the vault is locked (at boot,
   `pin lock`); done (`pin_pad.cpp`).
