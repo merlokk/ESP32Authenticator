@@ -132,6 +132,7 @@ enum class JobKind : uint8_t {
     kBleUse,      // the host `ssid` (an address) only; `flag`: any paired host
     kBleForget,   // the host `ssid`
     kBlePair,     // the pairing window opened (`flag`) or closed
+    kBleName,     // the name `ssid` (`flag`), or the board's
     kSaveTouch,   // `calibration` into config.json
     kDisplaySet,  // Display & power: `setting` to `id`
     kTimeZone,    // the zone named in `password`
@@ -1156,6 +1157,27 @@ lv_obj_t *SectionHead(int32_t y, const char *text) {
     return l;
 }
 
+// A row: its name, its value and ">" (no value: a check, or nothing), tapped as `id`.
+lv_obj_t *ChoiceRow(int32_t y, const char *name, const char *value, bool check,
+                    lv_event_cb_t cb, int id) {
+    lv_obj_t *row = Panel(content, y, kNetRow);
+    lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_border_width(row, 1, 0);
+    lv_obj_add_event_cb(row, cb, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<intptr_t>(id)));
+    lv_obj_t *n = Label(row, &lv_font_montserrat_24);
+    lv_label_set_text(n, name);
+    lv_obj_set_pos(n, 12, (kNetRow - 30) / 2);
+    if (value != nullptr) {
+        lv_obj_t *v = Label(row, &lv_font_montserrat_20);
+        lv_label_set_text(v, value);
+        lv_obj_align(v, LV_ALIGN_RIGHT_MID, -44, 0);
+    }
+    lv_obj_t *mark = Label(row, &lv_font_montserrat_24);
+    lv_label_set_text(mark, value != nullptr ? LV_SYMBOL_RIGHT : check ? LV_SYMBOL_OK : "");
+    lv_obj_align(mark, LV_ALIGN_RIGHT_MID, -12, 0);
+    return row;
+}
+
 // The switch, the state, the saved networks, "Add a network".
 void ShowWifi() {
     TitleBar("Wi-Fi");
@@ -1289,17 +1311,21 @@ void StyleKeyboard(lv_obj_t *kb) {
     lv_obj_set_style_outline_width(kb, 0, LV_STATE_FOCUSED);
 }
 
-// The password on the keyboard: its OK joins, its keyboard key goes back.
-void ShowWifiPassword() {
-    TitleBar(join_ssid);
+// A line typed on the keyboard (password_area, wiped when the page goes):
+// `initial` in it, hidden as * when `masked`; OK and the keyboard key set
+// password_ready / password_cancel (the page's Poll takes them).
+void KeyboardPage(const char *title, const char *placeholder, const char *initial, bool masked,
+                  uint32_t max_length, const char *hint_text) {
+    TitleBar(title);
     password_area = lv_textarea_create(content);
     lv_obj_remove_style_all(password_area);
     lv_textarea_set_one_line(password_area, true);
-    lv_textarea_set_password_mode(password_area, true);
+    lv_textarea_set_password_mode(password_area, masked);
     lv_textarea_set_password_show_time(password_area, 0);
     lv_textarea_set_password_bullet(password_area, "*");  // the font's bullet is a dot
-    lv_textarea_set_max_length(password_area, wifi_view::kPasswordSize - 1);
-    lv_textarea_set_placeholder_text(password_area, "password");
+    lv_textarea_set_max_length(password_area, max_length);
+    lv_textarea_set_placeholder_text(password_area, placeholder);
+    lv_textarea_set_text(password_area, initial);
     lv_obj_set_size(password_area, kRowWidth - 24, 60);
     lv_obj_set_pos(password_area, 12, kTitleHeight + 16);
     lv_obj_set_style_text_font(password_area, &lv_font_montserrat_28, 0);
@@ -1319,8 +1345,7 @@ void ShowWifiPassword() {
     lv_obj_t *hint = Label(content, &lv_font_montserrat_20);
     lv_label_set_long_mode(hint, LV_LABEL_LONG_MODE_WRAP);
     lv_obj_set_width(hint, kRowWidth - 24);
-    lv_label_set_text(hint, "8..63 characters. " LV_SYMBOL_OK ": join, " LV_SYMBOL_KEYBOARD
-                            ": back.");
+    lv_label_set_text(hint, hint_text);
     lv_obj_set_pos(hint, 12, kTitleHeight + 90);
 
     lv_obj_t *kb = lv_keyboard_create(content);
@@ -1330,6 +1355,12 @@ void ShowWifiPassword() {
     lv_keyboard_set_textarea(kb, password_area);
     lv_obj_add_event_cb(kb, OnPassword, LV_EVENT_READY, nullptr);
     lv_obj_add_event_cb(kb, OnPassword, LV_EVENT_CANCEL, nullptr);
+}
+
+// The password on the keyboard: its OK joins, its keyboard key goes back.
+void ShowWifiPassword() {
+    KeyboardPage(join_ssid, "password", "", true, wifi_view::kPasswordSize - 1,
+                 "8..63 characters. " LV_SYMBOL_OK ": join, " LV_SYMBOL_KEYBOARD ": back.");
 }
 
 // The typed password out of LVGL's heap.
@@ -1459,6 +1490,10 @@ int8_t host_tapped = -1;
 int8_t host_index = -1;  // the dialog's host
 bool pair_tapped = false;
 bool pair_button = false;  // Stop / Open again / Done
+bool ble_name_tapped = false;
+constexpr int kNameChange = 11;  // the name dialog's answers
+constexpr int kNameBoard = 12;
+constexpr int kNameCancel = 13;
 
 void SendJob(Job &job) {
     if (xQueueSend(jobs, &job, 0) != pdTRUE) {
@@ -1467,6 +1502,12 @@ void SendJob(Job &job) {
 }
 
 void OnBleSwitch(lv_event_t *) { ble_switch_tapped = true; }
+
+void OnBleName(lv_event_t *) {
+    if (LastWasTap()) {
+        ble_name_tapped = true;
+    }
+}
 
 void OnHost(lv_event_t *event) {
     if (LastWasTap()) {
@@ -1507,13 +1548,9 @@ void ShowBluetooth() {
     lv_obj_t *s = Label(state, &lv_font_montserrat_24);
     lv_label_set_text(s, v.state);
     lv_obj_set_pos(s, 12, 10);
-    lv_obj_t *d = Label(state, &lv_font_montserrat_20);
-    lv_label_set_long_mode(d, LV_LABEL_LONG_MODE_DOTS);
-    lv_obj_set_style_text_align(d, LV_TEXT_ALIGN_RIGHT, 0);
-    lv_obj_set_size(d, 260, 26);
-    lv_label_set_text(d, v.name);
-    lv_obj_align(d, LV_ALIGN_RIGHT_MID, -12, 0);
-    y += 52 + 16;
+    y += 52;
+    ChoiceRow(y, "Name", v.name, false, OnBleName, 0);
+    y += kNetRow + 16;
     if (!v.on) {
         Stub(nullptr, "Bluetooth is off: no typing, no FIDO2 keys over the air.", y);
         return;
@@ -1634,7 +1671,7 @@ bool PollBle() {
         }
         host_tapped = -1;
     }
-    if (sheet_choice != 0 && page == settings::Page::kBluetooth) {
+    if (sheet_choice >= 1 && sheet_choice <= 3 && page == settings::Page::kBluetooth) {  // a host's
         const int choice = sheet_choice;
         sheet_choice = 0;
         if (choice != 3 && host_index >= 0 && host_index < ble_shown.host_count) {
@@ -1645,6 +1682,47 @@ bool PollBle() {
             SendJob(job);
         }
         CloseSheet();
+    }
+    if (ble_name_tapped) {
+        ble_name_tapped = false;
+        if (!dialog::IsOpen()) {
+            const dialog::Button buttons[] = {{"Change the name", kNameChange},
+                                              {"Use the board's name", kNameBoard},
+                                              {"Cancel", kNameCancel}};
+            dialog::Choose("The name hosts see", buttons, 3);
+        }
+    }
+    if (sheet_choice >= kNameChange && sheet_choice <= kNameCancel &&
+        page == settings::Page::kBluetooth) {
+        const int choice = sheet_choice;
+        sheet_choice = 0;
+        if (choice == kNameChange) {
+            changed |= nav_state.OpenSettings(static_cast<uint8_t>(settings::Page::kBleName));
+        } else if (choice == kNameBoard) {
+            Job job = MakeJob(JobKind::kBleName);
+            job.flag = false;  // the board's
+            SendJob(job);
+        }
+    }
+    if (page == settings::Page::kBleName) {
+        if (password_cancel) {
+            password_cancel = false;
+            changed |= nav_state.Back();
+        }
+        if (password_ready && password_area != nullptr) {
+            password_ready = false;
+            const char *typed = lv_textarea_get_text(password_area);
+            if (!ble_view::NameOk(typed)) {
+                Toast("1..29 characters");
+            } else {
+                Job job = MakeJob(JobKind::kBleName);
+                job.flag = true;
+                snprintf(job.ssid, sizeof job.ssid, "%s", typed);
+                snprintf(ble_shown.name, sizeof ble_shown.name, "%s", typed);
+                SendJob(job);
+                changed |= nav_state.Back();
+            }
+        }
     }
     if (pair_tapped) {
         pair_tapped = false;
@@ -1708,26 +1786,6 @@ void OnOption(lv_event_t *event) {
     }
 }
 
-// A row: its name, its value and ">" (no value: a check, or nothing), tapped as `id`.
-lv_obj_t *ChoiceRow(int32_t y, const char *name, const char *value, bool check,
-                    lv_event_cb_t cb, int id) {
-    lv_obj_t *row = Panel(content, y, kNetRow);
-    lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_set_style_border_width(row, 1, 0);
-    lv_obj_add_event_cb(row, cb, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<intptr_t>(id)));
-    lv_obj_t *n = Label(row, &lv_font_montserrat_24);
-    lv_label_set_text(n, name);
-    lv_obj_set_pos(n, 12, (kNetRow - 30) / 2);
-    if (value != nullptr) {
-        lv_obj_t *v = Label(row, &lv_font_montserrat_20);
-        lv_label_set_text(v, value);
-        lv_obj_align(v, LV_ALIGN_RIGHT_MID, -44, 0);
-    }
-    lv_obj_t *mark = Label(row, &lv_font_montserrat_24);
-    lv_label_set_text(mark, value != nullptr ? LV_SYMBOL_RIGHT : check ? LV_SYMBOL_OK : "");
-    lv_obj_align(mark, LV_ALIGN_RIGHT_MID, -12, 0);
-    return row;
-}
 
 // The battery, a row per setting, what Power does, "Power off".
 void ShowDisplay() {
@@ -2523,44 +2581,13 @@ void ShowWebMode() {
 
 // The user, then the password (hidden), on the keyboard; OK goes on.
 void ShowWebLogin() {
-    TitleBar(login_on_password ? "Login: password" : "Login: user");
-    password_area = lv_textarea_create(content);
-    lv_obj_remove_style_all(password_area);
-    lv_textarea_set_one_line(password_area, true);
-    lv_textarea_set_password_mode(password_area, login_on_password);
-    lv_textarea_set_password_show_time(password_area, 0);
-    lv_textarea_set_password_bullet(password_area, "*");
-    lv_textarea_set_max_length(password_area, login_on_password ? web_view::kPasswordSize - 1
-                                                                : web_view::kUserSize - 1);
-    lv_textarea_set_placeholder_text(password_area, login_on_password ? "password" : "user");
-    lv_obj_set_size(password_area, kRowWidth - 24, 60);
-    lv_obj_set_pos(password_area, 12, kTitleHeight + 16);
-    lv_obj_set_style_text_font(password_area, &lv_font_montserrat_28, 0);
-    lv_obj_set_style_text_color(password_area, lv_color_black(), 0);
-    lv_obj_set_style_border_width(password_area, 2, 0);
-    lv_obj_set_style_border_color(password_area, lv_color_black(), 0);
-    lv_obj_set_style_radius(password_area, 8, 0);
-    lv_obj_set_style_pad_hor(password_area, 12, 0);
-    lv_obj_set_style_pad_ver(password_area, 12, 0);
-    lv_obj_set_style_anim_duration(password_area, 0, LV_PART_CURSOR);
-    lv_obj_set_style_border_side(password_area, LV_BORDER_SIDE_LEFT, LV_PART_CURSOR);
-    lv_obj_set_style_border_width(password_area, 2, LV_PART_CURSOR);
-    lv_obj_set_style_border_color(password_area, lv_color_black(), LV_PART_CURSOR);
-    lv_obj_add_state(password_area, LV_STATE_FOCUSED);
-    lv_obj_t *hint = Label(content, &lv_font_montserrat_20);
-    lv_label_set_long_mode(hint, LV_LABEL_LONG_MODE_WRAP);
-    lv_obj_set_width(hint, kRowWidth - 24);
-    lv_label_set_text(hint, login_on_password
-                                ? "1..64 characters. " LV_SYMBOL_OK ": save, " LV_SYMBOL_KEYBOARD ": back."
-                                : "1..32 characters, no ':'. " LV_SYMBOL_OK ": the password next.");
-    lv_obj_set_pos(hint, 12, kTitleHeight + 90);
-    lv_obj_t *kb = lv_keyboard_create(content);
-    StyleKeyboard(kb);
-    lv_obj_set_size(kb, kRowWidth, 440);
-    lv_obj_align(kb, LV_ALIGN_BOTTOM_MID, 0, 0);
-    lv_keyboard_set_textarea(kb, password_area);
-    lv_obj_add_event_cb(kb, OnPassword, LV_EVENT_READY, nullptr);
-    lv_obj_add_event_cb(kb, OnPassword, LV_EVENT_CANCEL, nullptr);
+    if (login_on_password) {
+        KeyboardPage("Login: password", "password", "", true, web_view::kPasswordSize - 1,
+                     "1..64 characters. " LV_SYMBOL_OK ": save, " LV_SYMBOL_KEYBOARD ": back.");
+    } else {
+        KeyboardPage("Login: user", "user", "", false, web_view::kUserSize - 1,
+                     "1..32 characters, no ':'. " LV_SYMBOL_OK ": the password next.");
+    }
 }
 
 // The Web site pages' taps (Poll). True when the page is to be drawn again.
@@ -2936,6 +2963,12 @@ void ShowSettings() {
         ShowBlePair();
         return;
     }
+    if (ble_hooks != nullptr && page == settings::Page::kBleName) {
+        KeyboardPage("Bluetooth name", "name", ble_shown.name, false, ble_view::kNameSize - 1,
+                     "What hosts see when they look for devices: 1..29 characters. "
+                     LV_SYMBOL_OK ": save, " LV_SYMBOL_KEYBOARD ": back.");
+        return;
+    }
     if (wifi_hooks != nullptr && page == settings::Page::kWifi) {
         ShowWifi();
         return;
@@ -3225,6 +3258,7 @@ void TypeTask(void *) {
                 case JobKind::kBleUse: said = ble_hooks->use(job.flag ? nullptr : job.ssid); break;
                 case JobKind::kBleForget: said = ble_hooks->forget(job.ssid); break;
                 case JobKind::kBlePair: said = ble_hooks->pair(job.flag); break;
+                case JobKind::kBleName: said = ble_hooks->set_name(job.flag ? job.ssid : nullptr); break;
                 case JobKind::kTimeZone: said = time_hooks->set_zone(job.password); break;
                 case JobKind::kTimeSync:
                     said = time_hooks->set_sync(static_cast<uint8_t>(job.id));
@@ -3429,6 +3463,7 @@ void Poll(lv_timer_t *) {
         settings_page != settings::Page::kSecurityLock &&
         settings_page != settings::Page::kSecurityPin && settings_page != settings::Page::kAbout &&
         settings_page != settings::Page::kWebMode && settings_page != settings::Page::kWebLogin &&
+        settings_page != settings::Page::kBleName &&
         lv_tick_elaps(settings_looked_at) >= kSettingsMs) {
         settings_looked_at = lv_tick_get();
         if (settings_page == settings::Page::kWifi && wifi_hooks != nullptr) {

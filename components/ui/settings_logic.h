@@ -34,13 +34,14 @@ enum class Page : uint8_t {
     kWebMode,       // Web site: when it runs
     kWebLogin,      // Web site: the login on the keyboard
     kFido,          // Security: FIDO2 / U2F (its state, the keys, reset)
+    kBleName,       // Bluetooth: the name on the keyboard
 };
 
 // Where a page's back arrow goes.
 constexpr Page Parent(Page p) {
     return p == Page::kWifiScan       ? Page::kWifi
            : p == Page::kWifiPassword ? Page::kWifiScan
-           : p == Page::kBlePair      ? Page::kBluetooth
+           : p == Page::kBlePair || p == Page::kBleName ? Page::kBluetooth
            : p == Page::kDisplayChoice ? Page::kDisplay
            : p == Page::kTimeSync || p == Page::kTimeRegion || p == Page::kTimeSet ? Page::kTime
            : p == Page::kTimeZone ? Page::kTimeRegion
@@ -80,6 +81,7 @@ constexpr const char *Title(Page p) {
         case Page::kWebMode: return "Web site";
         case Page::kWebLogin: return "Login";
         case Page::kFido: return "FIDO2 / U2F";
+        case Page::kBleName: return "Name";
     }
     return "";
 }

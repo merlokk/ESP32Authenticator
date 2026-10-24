@@ -1,9 +1,9 @@
 #pragma once
 
-// The Bluetooth window of Settings (x4-design.md): the switch, the state and
-// name, the paired hosts (a tap: use only this one / any of them, forget);
-// "Pair a new host" opens the pairing window and shows the passkey the host
-// asks for. The device fills View and Pairing (ui::BleHooks). Pure
+// The Bluetooth window of Settings (x4-design.md): the switch, the state, the
+// name (changed on the keyboard, or the board's), the paired hosts (a tap:
+// use only this one / any of them, forget); "Pair a new host" opens the
+// pairing window and shows the passkey the host asks for. The device fills View and Pairing (ui::BleHooks). Pure
 // (host-tested).
 
 #include <cstddef>
@@ -16,6 +16,19 @@ namespace ui::ble_view {
 inline constexpr uint8_t kMaxHosts = 8;  // CONFIG_BT_NIMBLE_MAX_BONDS
 inline constexpr size_t kAddrSize = 18;  // "aa:bb:cc:dd:ee:ff"
 inline constexpr uint32_t kPairSeconds = 60;
+inline constexpr size_t kNameSize = 30;  // config::kBleNameSize: 29 bytes + NUL
+
+// The advertised name: 1..29 bytes (the scan response), no control characters.
+constexpr bool NameOk(const char *name) {
+    size_t n = 0;
+    for (; name[n] != '\0'; ++n) {
+        const auto c = static_cast<unsigned char>(name[n]);
+        if (c < 0x20 || c == 0x7f) {
+            return false;
+        }
+    }
+    return n >= 1 && n < kNameSize;
+}
 
 struct Host {
     char addr[kAddrSize];

@@ -572,7 +572,8 @@ void SettingsDescribe(ui::settings::Page page, bool summary, char *out, size_t s
         case Page::kSecurityLock:
         case Page::kSecurityPin:
         case Page::kWebMode:
-        case Page::kWebLogin: break;
+        case Page::kWebLogin:
+        case Page::kBleName: break;
         case Page::kFido: DescribeFido(summary, out, size); break;
         case Page::kWeb:
             if (summary) {
@@ -778,8 +779,20 @@ const char *BlePair(bool start) {
                                                                  : "cannot open pairing";
 }
 
-const ui::BleHooks kBleHooks = {BleView,  BlePairingEvent, BlePairingLeft, BleSetActive,
-                                BleUse,   BleForget,       BlePair};
+// The advertised name, applied at once (advertising restarts) and saved
+// (as config.json `ble.name`; "": the board's).
+const char *BleSetName(const char *name) {
+    config::Ble &cfg = config::Get().ble;
+    if (name != nullptr && !config::ValidBleName(name)) {
+        return "1..29 characters";
+    }
+    snprintf(cfg.name, sizeof cfg.name, "%s", name != nullptr ? name : boards::kBoard.ble_name);
+    ble::SetName(cfg.name);
+    return config::Save() == ESP_OK ? "name saved" : "in use, but config.json is not saved";
+}
+
+const ui::BleHooks kBleHooks = {BleView, BlePairingEvent, BlePairingLeft, BleSetActive,
+                                BleUse,  BleForget,       BlePair,        BleSetName};
 
 // --- The Display & power window (ui::DisplayHooks) -----------------------------------
 

@@ -683,6 +683,12 @@ void test_ble_view(void) {
     TEST_ASSERT_TRUE(page.Left(0));
     TEST_ASSERT_TRUE(page.state() == bv::Pairing::kClosed);
 
+    TEST_ASSERT_TRUE(st::Parent(st::Page::kBleName) == st::Page::kBluetooth);
+    TEST_ASSERT_TRUE(bv::NameOk("ESP32 Auth X4Pro"));
+    TEST_ASSERT_TRUE(bv::NameOk("12345678901234567890123456789"));    // 29
+    TEST_ASSERT_FALSE(bv::NameOk("123456789012345678901234567890"));  // 30
+    TEST_ASSERT_FALSE(bv::NameOk(""));
+    TEST_ASSERT_FALSE(bv::NameOk("tab\there"));
     bv::View a = {};
     a.host_count = 1;
     a.hosts[0] = {"aa:bb:cc:dd:ee:ff", true, false};

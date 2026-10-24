@@ -96,6 +96,7 @@ struct BleHooks {
     const char *(*use)(const char *addr);  // nullptr: any paired host
     const char *(*forget)(const char *addr);
     const char *(*pair)(bool start);  // the pairing window opened / closed
+    const char *(*set_name)(const char *name);  // nullptr: the board's
 };
 void SetBleHooks(const BleHooks *hooks);
 

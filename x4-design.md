@@ -58,7 +58,8 @@ Portrait, 480x800. The panel scans landscape (hardware.md): `ui_logic.h` turns t
   "Add a network": a scan (strongest first, padlock, signal bars, "saved"),
   a tap joins a saved or open one or asks the password on the keyboard
   (OK joins, saved to config.json). Bluetooth too: a switch (now and at
-  boot), the state and name, the paired hosts (a tap: Use only this host /
+  boot), the state, the name (a tap: change it on the keyboard, or the
+  board's; applied at once, `ble.name`), the paired hosts (a tap: Use only this host /
   Let any paired host in, Forget), "Pair a new host": a 60 s window, what to
   do on the host, the passkey in big digits. Touchscreen: five crosses one by
   one, a straight line per axis through the raw taps (scale and offset,
