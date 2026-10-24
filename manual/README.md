@@ -32,6 +32,8 @@ is the key to them: nothing can be read or used until it is typed.
 
 <br clear="right">
 
+<img src="img/security.png" width="240">
+
 ## Status bar
 
 ![status bar](img/statusbar.png)
