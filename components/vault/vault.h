@@ -121,8 +121,8 @@ Info GetInfo();
 // a second or more): for a screen that polls.
 State GetState();
 
-// A copy of the record at list position `index` (sorted by site, user). It
-// holds the password: wipe it (vault::Wipe) after use.
+// A copy of the record at list position `index` (the user's order, records.h).
+// It holds the password: wipe it (vault::Wipe) after use.
 Error Get(size_t index, Record *out);
 // List position of the record with this ID, -1 if none (or not open).
 long Position(uint32_t id);
@@ -131,6 +131,10 @@ Error Add(const char *site, const char *user, const char *password, const char *
           uint32_t *id);
 Error Set(uint32_t id, Field field, const char *value);
 Error Remove(uint32_t id);
+// The list order (the screen's and the site's): one record to `position`,
+// or all by site, then user.
+Error Move(uint32_t id, size_t position);
+Error SortByName();
 
 // Every record gone: an empty store written over the file. With the key in,
 // `pin` is not needed; without, `pin` makes a new key (new salt): fido.bin,

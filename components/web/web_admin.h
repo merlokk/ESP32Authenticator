@@ -3,8 +3,9 @@
 // The write path of the password and FIDO2 pages. Pure: host-tested.
 //
 // - POST /api/vault/<verb> and /api/fido/delete take a JSON object; a
-//   whitelist: `id` (record, 1..2^32-1), `site`, `user`, `password`, `otp`,
-//   `pin` (strings), `credential` (64 hex digits). Anything else is refused by
+//   whitelist: `id` (record, 1..2^32-1), `position` (list place, 0..65535),
+//   `site`, `user`, `password`, `otp`, `pin` (strings), `credential` (64
+//   hex digits). Anything else is refused by
 //   name. Which fields a verb needs is the server's business.
 // - Every string in the parsed tree is overwritten before it is freed; the
 //   caller wipes the request (vault::Wipe).
@@ -18,7 +19,7 @@
 
 namespace web {
 
-enum class VaultVerb : uint8_t { kNone, kAdd, kSet, kDelete, kUnlock, kLock };
+enum class VaultVerb : uint8_t { kNone, kAdd, kSet, kDelete, kUnlock, kLock, kMove, kSort };
 
 // "/api/vault/<verb>", query ignored.
 VaultVerb VaultVerbFromUri(const char *uri);
@@ -31,6 +32,8 @@ constexpr size_t kOtpInputMax = 2 * vault::kOtpMax;
 struct AdminRequest {
     bool has_id;
     uint32_t id;
+    bool has_position;
+    uint16_t position;
     bool has[4];  // by vault::Field: site, user, password, otp
     char site[vault::kSiteMax + 1];
     char user[vault::kUserMax + 1];

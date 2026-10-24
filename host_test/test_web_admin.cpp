@@ -67,6 +67,19 @@ void test_bad_ids_are_refused(void) {
     TEST_ASSERT_EQUAL_UINT32(4294967295u, g_request.id);
 }
 
+void test_positions(void) {
+    TEST_ASSERT_EQUAL(web::BodyResult::kOk, Parse("{\"id\":3,\"position\":0}").result);
+    TEST_ASSERT_TRUE(g_request.has_position);
+    TEST_ASSERT_EQUAL_UINT16(0, g_request.position);
+    TEST_ASSERT_EQUAL(web::BodyResult::kOk, Parse("{\"position\":65535}").result);
+    TEST_ASSERT_EQUAL_UINT16(65535, g_request.position);
+    const char *bad[] = {"{\"position\":-1}", "{\"position\":2.5}", "{\"position\":\"1\"}",
+                         "{\"position\":65536}"};
+    for (const char *body : bad) {
+        TEST_ASSERT_EQUAL_MESSAGE(web::BodyResult::kBadValue, Parse(body).result, body);
+    }
+}
+
 void test_too_long_text_is_refused_not_cut(void) {
     char body[400] = "{\"site\":\"";
     std::memset(body + std::strlen(body), 'a', vault::kSiteMax + 1);
@@ -111,6 +124,8 @@ void test_the_verb_is_the_last_path_part(void) {
     TEST_ASSERT_EQUAL(web::VaultVerb::kDelete, web::VaultVerbFromUri("/api/vault/delete"));
     TEST_ASSERT_EQUAL(web::VaultVerb::kUnlock, web::VaultVerbFromUri("/api/vault/unlock"));
     TEST_ASSERT_EQUAL(web::VaultVerb::kLock, web::VaultVerbFromUri("/api/vault/lock#"));
+    TEST_ASSERT_EQUAL(web::VaultVerb::kMove, web::VaultVerbFromUri("/api/vault/move"));
+    TEST_ASSERT_EQUAL(web::VaultVerb::kSort, web::VaultVerbFromUri("/api/vault/sort"));
     TEST_ASSERT_EQUAL(web::VaultVerb::kNone, web::VaultVerbFromUri("/api/vault/locked"));
     TEST_ASSERT_EQUAL(web::VaultVerb::kNone, web::VaultVerbFromUri("/api/vault/"));
     TEST_ASSERT_EQUAL(web::VaultVerb::kNone, web::VaultVerbFromUri("/api/fido/delete"));
@@ -146,6 +161,7 @@ void RegisterWebAdminTests(void) {
     RUN_TEST(test_an_absent_field_is_not_an_empty_one);
     RUN_TEST(test_an_unknown_field_is_refused_by_name_and_nothing_is_kept);
     RUN_TEST(test_bad_ids_are_refused);
+    RUN_TEST(test_positions);
     RUN_TEST(test_too_long_text_is_refused_not_cut);
     RUN_TEST(test_not_json_or_not_an_object);
     RUN_TEST(test_a_credential_id_is_64_hex_digits);

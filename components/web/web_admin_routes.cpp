@@ -313,6 +313,15 @@ esp_err_t VaultPost(httpd_req_t *request) {
         case VaultVerb::kLock:
             vault::Lock();
             break;
+        case VaultVerb::kMove:
+            if (!g_request.has_id || !g_request.has_position) {
+                return Fail(request, "400 Bad Request", "missing", "id, position");
+            }
+            e = vault::Move(g_request.id, g_request.position);
+            break;
+        case VaultVerb::kSort:
+            e = vault::SortByName();
+            break;
         case VaultVerb::kNone:
             break;
     }

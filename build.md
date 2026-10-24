@@ -237,6 +237,7 @@ Opening the port with RTS asserted resets the chip.
 | `pass add <site> [user] [password] [otp]` | a record; quote values with spaces. Prints its # (sorted by site, user) |
 | `pass set <#> <site\|user\|password\|otp> [value]` | change a field, no value: clear. Prints the record's new # |
 | `pass delete <#>` / `pass code <#>` | delete a record / its TOTP codes now |
+| `pass move <#> <to #>` / `pass sort` | the list order (the screen's): one record to a place / all by site, then user |
 | `pass reset` / `pass reset confirm [pin]` | say what would go / delete every record. Locked or refused: the PIN is required and becomes the new store's PIN; the way out of a refused file |
 | `nvs ls [namespace]` / `nvs rm <namespace> <key>` | development: NVS keys (namespace, key, type; never values) / erase one key |
 | `pin [info]` | vault locked / open / refused, key derivation (iterations, ms) |

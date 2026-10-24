@@ -9,7 +9,8 @@ namespace vault {
 
 namespace {
 
-constexpr uint8_t kFormat = 1;
+constexpr uint8_t kFormat = 2;
+constexpr uint8_t kFormatSorted = 1;  // read only: sorted by name
 
 char Lower(char c) { return c >= 'A' && c <= 'Z' ? static_cast<char>(c - 'A' + 'a') : c; }
 
@@ -233,15 +234,48 @@ void Records::Place(size_t from) {
     Wipe(&moving, sizeof moving);
 }
 
-bool Records::Insert() {
+bool Records::Insert(bool sorted) {
     Record &fresh = slots_[count_];
     if (Duplicate(fresh.site, fresh.user, fresh.id)) {
         Wipe(&fresh, sizeof fresh);
         return false;
     }
     ++count_;
-    Place(count_ - 1);
+    if (sorted) {
+        Place(count_ - 1);
+    }
     return true;
+}
+
+Error Records::Move(uint32_t id, size_t position) {
+    const long at = Find(id);
+    if (at < 0) {
+        return Error::kNotFound;
+    }
+    const size_t from = static_cast<size_t>(at);
+    const size_t to = position < count_ ? position : count_ - 1;
+    if (from == to) {
+        return Error::kOk;
+    }
+    Record moving = slots_[from];
+    if (to < from) {
+        memmove(&slots_[to + 1], &slots_[to], (from - to) * sizeof(Record));
+    } else {
+        memmove(&slots_[from], &slots_[from + 1], (to - from) * sizeof(Record));
+    }
+    slots_[to] = moving;
+    Wipe(&moving, sizeof moving);
+    return Error::kOk;
+}
+
+void Records::SortByName() {
+    // Each record into place among the ones before it (stable).
+    const size_t n = count_;
+    for (count_ = 1; count_ < n;) {
+        ++count_;
+        Place(count_ - 1);
+    }
+    count_ = n;
 }
 
 Error Records::Add(const char *site, const char *user, const char *password, const char *otp,
@@ -262,7 +296,7 @@ Error Records::Add(const char *site, const char *user, const char *password, con
     r.id = next_id_;
     r.modified_utc = now;
     const uint32_t made = r.id;
-    if (!Insert()) {
+    if (!Insert(false)) {
         return Error::kDuplicate;
     }
     ++next_id_;
@@ -291,7 +325,6 @@ Error Records::Set(uint32_t id, Field field, const char *value, int64_t now) {
     memcpy(FieldOf(old, field), text, strlen(text) + 1);
     Wipe(text, sizeof text);
     old.modified_utc = now;
-    Place(static_cast<size_t>(at));
     return Error::kOk;
 }
 
@@ -343,7 +376,8 @@ Error Records::Parse(const uint8_t *data, size_t size) {
     Clear();
     const uint8_t *p = data;
     const uint8_t *end = data + size;
-    if (size < 7 || *p++ != kFormat) {
+    const uint8_t format = size > 0 ? *p++ : 0;
+    if (size < 7 || (format != kFormat && format != kFormatSorted)) {
         return Error::kBadFormat;
     }
     const uint32_t next_id = static_cast<uint32_t>(Get(p, 4));
@@ -380,7 +414,7 @@ Error Records::Parse(const uint8_t *data, size_t size) {
                 break;
             }
         }
-        if (e == Error::kOk && !Insert()) {
+        if (e == Error::kOk && !Insert(format == kFormatSorted)) {
             e = Error::kBadFormat;
         }
     }

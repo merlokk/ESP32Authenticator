@@ -80,6 +80,7 @@
     "border-radius:12px;background:var(--plate)}",
     ".card .field:last-child{margin-bottom:0}",
     ".card-head{display:flex;align-items:center;gap:8px;margin:0 0 10px;color:var(--faint);font-size:13px}",
+    ".card-head button.drop~button.drop{margin-left:0}",
     "button.drop{margin-left:auto;width:40px;height:40px;border:1px solid var(--line);",
     "border-radius:10px;background:transparent;color:var(--faint);font-size:20px;",
     "line-height:1;cursor:pointer}",
@@ -846,13 +847,29 @@
       return box;
     }
 
-    function card(record) {
+    // The device's list order: up / down move a record by one place.
+    function mover(text, title, record, position) {
+      var b = el("button", "drop", text);
+      b.type = "button";
+      b.title = title;
+      b.disabled = !state.writable || position < 0 || position >= state.records.length;
+      b.addEventListener("click", function () {
+        send("/api/vault/move", { id: record.id, position: position }, null, "moved");
+      });
+      return b;
+    }
+
+    function card(record, index) {
       var node = el("div", "card");
       var head = el("div", "card-head");
+      // Its place on the device: 6 a page.
+      head.appendChild(el("span", "faint", (index + 1) + "."));
       var name = el("span", "who");
       name.appendChild(el("b", "", record.site));
       if (record.user) name.appendChild(el("span", "", " / " + record.user));
       head.appendChild(name);
+      head.appendChild(mover("↑", "move up", record, index - 1));
+      head.appendChild(mover("↓", "move down", record, index + 1));
       var drop = el("button", "drop", "×");
       drop.type = "button";
       drop.title = "delete";
@@ -904,15 +921,16 @@
       }
       var words = by("filter").value.trim().toLowerCase();
       var shown = 0;
-      state.records.forEach(function (record) {
+      state.records.forEach(function (record, index) {
         if (words && (record.site + " " + record.user).toLowerCase().indexOf(words) < 0) return;
-        box.appendChild(card(record));
+        box.appendChild(card(record, index));
         ++shown;
       });
       if (shown === 0 && !state.adding) {
         box.appendChild(el("p", "hint", state.records.length ? "Nothing matches." : "No records yet."));
       }
       by("add").disabled = !state.writable || state.adding;
+      by("sort").disabled = !state.writable || state.records.length < 2;
       by("lock").disabled = !state.writable;
     }
 
@@ -969,6 +987,9 @@
     by("pin").addEventListener("keydown", function (event) { if (event.key === "Enter") unlock(); });
     by("filter").addEventListener("input", draw);
     by("add").addEventListener("click", function () { state.adding = true; draw(); });
+    twoTap(by("sort"), "Tap again: A to Z", function () {
+      send("/api/vault/sort", {}, null, "sorted by site, then user");
+    });
     by("lock").addEventListener("click", function () {
       post("/api/vault/lock", {}, function () { said("locked", "ok"); load(); },
            function (why) { said(why, "bad"); });

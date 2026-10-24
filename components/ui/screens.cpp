@@ -44,9 +44,16 @@ constexpr int32_t kRight = kWidth - kInsetRight;
 constexpr int32_t kRowWidth = kRight - kLeft;
 constexpr int32_t kContentTop = kInsetTop + kBarHeight;
 constexpr int32_t kContentBottom = kHeight - kInsetBottom - kTabHeight;
-constexpr int32_t kRowHeight = (kContentBottom - kContentTop) / list::kRowsPerPage;
+// Over the rows, under the status bar: what a tap in each quarter does.
+constexpr int32_t kHintHeight = 34;
+constexpr int32_t kRowHeight = (kContentBottom - kContentTop - kHintHeight) / list::kRowsPerPage;
+constexpr int32_t kQuarter = kRowWidth / 4;
+// The rows' two lines: the site (and the TOTP code), the user and the password.
+constexpr int32_t kSiteY = 10;
+constexpr int32_t kSiteLine = 34;  // Montserrat 28: "..." cuts it there, no wrap
+constexpr int32_t kUserY = 58;
+constexpr int32_t kUserLine = 30;  // Montserrat 24
 constexpr const char *kMask = "********";
-constexpr int32_t kLine = 24;  // a Montserrat 20 line: "..." cuts it there, no wrap
 
 nav::Nav nav_state;
 QueueHandle_t inputs = nullptr;
@@ -175,7 +182,7 @@ void StartBar() {
     lv_obj_align(bar_right, LV_ALIGN_RIGHT_MID, 0, 0);
 
     // Under the bar, over the tabs: what a tap did.
-    toast = Label(lv_layer_top(), &lv_font_montserrat_20);
+    toast = Label(lv_layer_top(), &lv_font_montserrat_24);
     lv_obj_set_style_bg_color(toast, lv_color_white(), 0);
     lv_obj_set_style_bg_opa(toast, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(toast, 2, 0);
@@ -228,8 +235,8 @@ void UpdateCodes(int64_t now) {
 
 void HidePassword(Row &r) {
     SetWiped(r.pass, kMask);
-    lv_obj_set_pos(r.pass, kRowWidth / 2 + 6, 44);
-    lv_obj_set_size(r.pass, kRowWidth / 2 - 18, kLine);
+    lv_obj_set_pos(r.pass, kRowWidth / 2 + 6, kUserY);
+    lv_obj_set_size(r.pass, kRowWidth / 2 - 18, kUserLine);
     lv_obj_remove_flag(r.user, LV_OBJ_FLAG_HIDDEN);
     r.shown = false;
 }
@@ -244,8 +251,8 @@ void ShowPassword(Row &r) {
     } else {
         // Over the user's place: the whole width.
         lv_obj_add_flag(r.user, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_set_pos(r.pass, 12, 44);
-        lv_obj_set_size(r.pass, kRowWidth - 24, kLine);
+        lv_obj_set_pos(r.pass, 12, kUserY);
+        lv_obj_set_size(r.pass, kRowWidth - 24, kUserLine);
         SetWiped(r.pass, record.password);
         r.shown = true;
         r.shown_at = lv_tick_get();
@@ -291,60 +298,64 @@ void AddRow(uint8_t i, const vault::Record &rec) {
     lv_obj_remove_style_all(row);
     lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_remove_flag(row, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_pos(row, 0, i * kRowHeight);
+    lv_obj_set_pos(row, 0, kHintHeight + i * kRowHeight);
     lv_obj_set_size(row, kRowWidth, kRowHeight);
     lv_obj_set_style_border_side(row, LV_BORDER_SIDE_BOTTOM, 0);
     lv_obj_set_style_border_width(row, 1, 0);
     lv_obj_set_style_border_color(row, lv_color_black(), 0);
     lv_obj_add_event_cb(row, OnRow, LV_EVENT_CLICKED, reinterpret_cast<void *>(uintptr_t{i}));
 
-    lv_obj_t *site = Label(row, &lv_font_montserrat_20);
+    lv_obj_t *site = Label(row, &lv_font_montserrat_28);
     lv_label_set_long_mode(site, LV_LABEL_LONG_MODE_DOTS);
-    lv_obj_set_size(site, r.has_otp ? kRowWidth - 180 : kRowWidth - 24, kLine);
+    lv_obj_set_size(site, r.has_otp ? kRowWidth - 190 : kRowWidth - 24, kSiteLine);
     lv_label_set_text(site, rec.site);
-    lv_obj_set_pos(site, 12, 10);
+    lv_obj_set_pos(site, 12, kSiteY);
 
     r.code = Label(row, &lv_font_montserrat_32);
     lv_label_set_text(r.code, "");
-    lv_obj_align(r.code, LV_ALIGN_TOP_RIGHT, -12, 2);
+    lv_obj_align(r.code, LV_ALIGN_TOP_RIGHT, -12, kSiteY - 4);
     if (!r.has_otp) {
         lv_obj_add_flag(r.code, LV_OBJ_FLAG_HIDDEN);
     }
 
-    r.user = Label(row, &lv_font_montserrat_20);
+    r.user = Label(row, &lv_font_montserrat_24);
     lv_label_set_long_mode(r.user, LV_LABEL_LONG_MODE_DOTS);
-    lv_obj_set_size(r.user, kRowWidth / 2 - 18, kLine);
+    lv_obj_set_size(r.user, kRowWidth / 2 - 18, kUserLine);
     lv_label_set_text(r.user, rec.user[0] != '\0' ? rec.user : "-");
-    lv_obj_set_pos(r.user, 12, 44);
+    lv_obj_set_pos(r.user, 12, kUserY);
 
-    r.pass = Label(row, &lv_font_montserrat_20);
+    r.pass = Label(row, &lv_font_montserrat_24);
     lv_label_set_long_mode(r.pass, LV_LABEL_LONG_MODE_DOTS);
     lv_label_set_text(r.pass, rec.password[0] != '\0' ? kMask : "-");
-    lv_obj_set_pos(r.pass, kRowWidth / 2 + 6, 44);
-    lv_obj_set_size(r.pass, kRowWidth / 2 - 18, kLine);
+    lv_obj_set_pos(r.pass, kRowWidth / 2 + 6, kUserY);
+    lv_obj_set_size(r.pass, kRowWidth / 2 - 18, kUserLine);
+}
 
-    // What a tap in each quarter does, with ticks between them.
-    static const char *const kHints[4] = {LV_SYMBOL_KEYBOARD " user",
-                                          LV_SYMBOL_KEYBOARD " password",
+// One line over the rows: what a tap in each quarter of a row does.
+void AddHints() {
+    lv_obj_t *head = lv_obj_create(content);
+    lv_obj_remove_style_all(head);
+    lv_obj_remove_flag(head, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_size(head, kRowWidth, kHintHeight);
+    lv_obj_set_style_border_side(head, LV_BORDER_SIDE_BOTTOM, 0);
+    lv_obj_set_style_border_width(head, 2, 0);
+    lv_obj_set_style_border_color(head, lv_color_black(), 0);
+    static const char *const kHints[4] = {LV_SYMBOL_KEYBOARD " user", LV_SYMBOL_KEYBOARD " pass",
                                           LV_SYMBOL_EYE_OPEN " show",
                                           LV_SYMBOL_KEYBOARD " TOTP"};
-    const int32_t quarter = kRowWidth / 4;
     for (uint8_t q = 0; q < 4; ++q) {
-        if (q == 3 && !r.has_otp) {
-            break;
-        }
-        lv_obj_t *hint = Label(row, &lv_font_montserrat_14);
+        lv_obj_t *hint = Label(head, &lv_font_montserrat_20);
         lv_label_set_text(hint, kHints[q]);
-        lv_obj_set_width(hint, quarter);
+        lv_obj_set_width(hint, kQuarter);
         lv_obj_set_style_text_align(hint, LV_TEXT_ALIGN_CENTER, 0);
-        lv_obj_set_pos(hint, q * quarter, kRowHeight - 28);
+        lv_obj_set_pos(hint, q * kQuarter, 5);
         if (q > 0) {
-            lv_obj_t *tick = lv_obj_create(row);
+            lv_obj_t *tick = lv_obj_create(head);
             lv_obj_remove_style_all(tick);
             lv_obj_set_style_bg_color(tick, lv_color_black(), 0);
             lv_obj_set_style_bg_opa(tick, LV_OPA_COVER, 0);
-            lv_obj_set_size(tick, 1, 18);
-            lv_obj_set_pos(tick, q * quarter, kRowHeight - 28);
+            lv_obj_set_size(tick, 2, kHintHeight - 10);
+            lv_obj_set_pos(tick, q * kQuarter, 4);
         }
     }
 }
@@ -353,7 +364,7 @@ void Stub(const char *title, const char *what) {
     lv_obj_t *t = Label(content, &lv_font_montserrat_32);
     lv_label_set_text(t, title);
     lv_obj_align(t, LV_ALIGN_TOP_LEFT, 24, 20);
-    lv_obj_t *l = Label(content, &lv_font_montserrat_20);
+    lv_obj_t *l = Label(content, &lv_font_montserrat_24);
     lv_label_set_long_mode(l, LV_LABEL_LONG_MODE_WRAP);
     lv_obj_set_width(l, kRowWidth - 48);
     lv_label_set_text(l, what);
@@ -399,6 +410,7 @@ void ShowList() {
              "(pass add).");
         return;
     }
+    AddHints();
     const list::Span span = list::PageSpan(seen.count, nav_state.page());
     for (uint8_t i = 0; i < span.count; ++i) {
         if (vault::Get(span.first + i, &record) != vault::Error::kOk) {
@@ -472,7 +484,7 @@ void StartTabs(lv_obj_t *scr) {
         lv_obj_set_style_shadow_width(tabs, 0, part);
         lv_obj_set_style_radius(tabs, 10, part);
         lv_obj_set_style_text_color(tabs, lv_color_black(), part);
-        lv_obj_set_style_text_font(tabs, &lv_font_montserrat_20, part);
+        lv_obj_set_style_text_font(tabs, &lv_font_montserrat_24, part);
     }
     const lv_style_selector_t kChecked[] = {LV_STATE_CHECKED,
                                             LV_STATE_CHECKED | LV_STATE_PRESSED,

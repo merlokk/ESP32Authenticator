@@ -1,5 +1,6 @@
-// vault records: what the user typed is what is kept, sorted, unique per
-// (site, user), and survives a serialize / parse round trip byte for byte.
+// vault records: what the user typed is what is kept, in the user's order
+// (Move, SortByName), unique per (site, user), and survives a serialize /
+// parse round trip byte for byte; format 1 files are read sorted by name.
 // vault.cpp itself (fakes/fake_store.cpp: NVS, crypto stand-ins) on a real
 // directory under build/: every path that makes a key refuses a weak PIN.
 
@@ -23,7 +24,7 @@ Record g_slots[8];
 uint8_t g_buffer[vault::MaxSerialized(8)];
 Record g_other_slots[8];
 
-void test_vault_add_keeps_sites_sorted_and_users_apart(void) {
+void test_vault_add_goes_last_and_sort_by_name(void) {
     Records r(g_slots, 8);
     uint32_t id = 0;
     TEST_ASSERT_EQUAL(Error::kOk, r.Add("github.com", "bob", "pw1", "", 100, &id));
@@ -32,10 +33,46 @@ void test_vault_add_keeps_sites_sorted_and_users_apart(void) {
     TEST_ASSERT_EQUAL(Error::kOk, r.Add("GitHub.com", "alice", "pw2", "", 0, &id));
     TEST_ASSERT_EQUAL_UINT32(3, id);
     TEST_ASSERT_EQUAL_UINT32(3, r.Count());
+    TEST_ASSERT_EQUAL_STRING("github.com", r.At(0).site);  // as added
+    TEST_ASSERT_EQUAL_STRING("Amazon", r.At(1).site);
+    TEST_ASSERT_EQUAL_STRING("alice", r.At(2).user);
+    r.SortByName();
     TEST_ASSERT_EQUAL_STRING("Amazon", r.At(0).site);
     TEST_ASSERT_EQUAL_STRING("alice", r.At(1).user);  // same site, users sorted
     TEST_ASSERT_EQUAL_STRING("bob", r.At(2).user);
     TEST_ASSERT_EQUAL(100, r.At(2).modified_utc);
+}
+
+void test_vault_move(void) {
+    Records r(g_slots, 8);
+    uint32_t ids[4] = {};
+    const char *sites[4] = {"a", "b", "c", "d"};
+    for (int i = 0; i < 4; ++i) {
+        r.Add(sites[i], "", "", "", 0, &ids[i]);
+    }
+    TEST_ASSERT_EQUAL(Error::kOk, r.Move(ids[3], 0));  // d a b c
+    TEST_ASSERT_EQUAL_STRING("d", r.At(0).site);
+    TEST_ASSERT_EQUAL_STRING("c", r.At(3).site);
+    TEST_ASSERT_EQUAL(Error::kOk, r.Move(ids[0], 2));  // d b a c
+    TEST_ASSERT_EQUAL_STRING("b", r.At(1).site);
+    TEST_ASSERT_EQUAL_STRING("a", r.At(2).site);
+    TEST_ASSERT_EQUAL(Error::kOk, r.Move(ids[3], 99));  // past the end: last; b a c d
+    TEST_ASSERT_EQUAL_STRING("b", r.At(0).site);
+    TEST_ASSERT_EQUAL_STRING("d", r.At(3).site);
+    TEST_ASSERT_EQUAL_UINT32(ids[3], r.At(3).id);
+    TEST_ASSERT_EQUAL(Error::kOk, r.Move(ids[1], 0));  // already there
+    TEST_ASSERT_EQUAL(Error::kNotFound, r.Move(999, 0));
+    // The order travels with the data.
+    const size_t n = r.Serialize(g_buffer, sizeof g_buffer);
+    Records back(g_other_slots, 8);
+    TEST_ASSERT_EQUAL(Error::kOk, back.Parse(g_buffer, n));
+    TEST_ASSERT_EQUAL_STRING("b", back.At(0).site);
+    TEST_ASSERT_EQUAL_STRING("d", back.At(3).site);
+    // A format 1 file (the same bytes) is read sorted by name.
+    g_buffer[0] = 1;
+    TEST_ASSERT_EQUAL(Error::kOk, back.Parse(g_buffer, n));
+    TEST_ASSERT_EQUAL_STRING("a", back.At(0).site);
+    TEST_ASSERT_EQUAL_STRING("d", back.At(3).site);
 }
 
 void test_vault_the_same_user_on_a_site_is_a_duplicate(void) {
@@ -93,18 +130,18 @@ void test_vault_full_store_refuses(void) {
     TEST_ASSERT_EQUAL(Error::kFull, r.Add("c", "", "", "", 0, nullptr));
 }
 
-void test_vault_set_resorts_and_keeps_the_id(void) {
+void test_vault_set_keeps_the_place_and_the_id(void) {
     Records r(g_slots, 8);
     uint32_t id = 0;
     r.Add("b", "u", "old", "", 0, &id);
     r.Add("c", "u", "", "", 0, nullptr);
     TEST_ASSERT_EQUAL(Error::kOk, r.Set(id, Field::kSite, "d", 50));
-    TEST_ASSERT_EQUAL_STRING("c", r.At(0).site);
-    TEST_ASSERT_EQUAL_STRING("d", r.At(1).site);
-    TEST_ASSERT_EQUAL_UINT32(id, r.At(1).id);
-    TEST_ASSERT_EQUAL(50, r.At(1).modified_utc);
+    TEST_ASSERT_EQUAL_STRING("d", r.At(0).site);  // renamed, not moved
+    TEST_ASSERT_EQUAL_STRING("c", r.At(1).site);
+    TEST_ASSERT_EQUAL_UINT32(id, r.At(0).id);
+    TEST_ASSERT_EQUAL(50, r.At(0).modified_utc);
     TEST_ASSERT_EQUAL(Error::kOk, r.Set(id, Field::kPassword, "new", 60));
-    TEST_ASSERT_EQUAL_STRING("new", r.At(1).password);
+    TEST_ASSERT_EQUAL_STRING("new", r.At(0).password);
     TEST_ASSERT_EQUAL(Error::kDuplicate, r.Set(id, Field::kSite, "C", 0));
     TEST_ASSERT_EQUAL(Error::kOk, r.Set(id, Field::kSite, "D", 0));  // its own case change
     TEST_ASSERT_EQUAL(Error::kNotFound, r.Set(999, Field::kUser, "x", 0));
@@ -155,9 +192,9 @@ void test_vault_parse_refuses_malformed_data(void) {
     TEST_ASSERT_EQUAL(Error::kBadFormat, back.Parse(g_buffer, n - 1));  // truncated
     g_buffer[n] = 0;
     TEST_ASSERT_EQUAL(Error::kBadFormat, back.Parse(g_buffer, n + 1));  // trailing byte
-    g_buffer[0] = 2;
+    g_buffer[0] = 3;
     TEST_ASSERT_EQUAL(Error::kBadFormat, back.Parse(g_buffer, n));  // other format
-    g_buffer[0] = 1;
+    g_buffer[0] = 2;
     g_buffer[19] = 200;  // site length beyond the data
     TEST_ASSERT_EQUAL(Error::kBadFormat, back.Parse(g_buffer, n));
     TEST_ASSERT_EQUAL_UINT32(0, back.Count());
@@ -328,13 +365,14 @@ void test_vault_a_kept_key_opens_the_store_without_a_pin(void) {
 }  // namespace
 
 void RegisterVaultTests(void) {
-    RUN_TEST(test_vault_add_keeps_sites_sorted_and_users_apart);
+    RUN_TEST(test_vault_add_goes_last_and_sort_by_name);
+    RUN_TEST(test_vault_move);
     RUN_TEST(test_vault_the_same_user_on_a_site_is_a_duplicate);
     RUN_TEST(test_vault_fields_are_checked);
     RUN_TEST(test_vault_otp_is_normalized_base32);
     RUN_TEST(test_vault_otp_from_base64_is_kept_as_base32);
     RUN_TEST(test_vault_full_store_refuses);
-    RUN_TEST(test_vault_set_resorts_and_keeps_the_id);
+    RUN_TEST(test_vault_set_keeps_the_place_and_the_id);
     RUN_TEST(test_vault_remove_and_ids_never_repeat);
     RUN_TEST(test_vault_round_trip);
     RUN_TEST(test_vault_parse_refuses_malformed_data);

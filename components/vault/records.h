@@ -6,13 +6,15 @@
 //
 // - A site may have several users; (site, user) is unique, compared without
 //   ASCII case.
-// - Kept sorted by site, then user (ASCII case-insensitive): list position is
-//   the order shown. Each record has an ID that never changes or repeats.
+// - List position is the order shown, the user's: a new record goes last,
+//   Move puts one elsewhere, SortByName sorts by site, then user (ASCII
+//   case-insensitive). Each record has an ID that never changes or repeats.
 // - Text is UTF-8, no control characters. The TOTP secret is kept as
 //   normalized Base32 (upper case, no spaces, '-' or '=').
 //
-// Serialized (little-endian):
-//   format (1) = 1 | next id (4) | count (2) | records
+// Serialized (little-endian), in list order:
+//   format (1) = 2 | next id (4) | count (2) | records
+//   (format 1, the same bytes, was kept sorted by name: it is read sorted)
 //   record: id (4) | modified (8, Unix seconds, 0 unknown) |
 //           site, user, password, otp: length (1) + bytes each
 
@@ -93,6 +95,11 @@ public:
               int64_t now, uint32_t *id);
     Error Set(uint32_t id, Field field, const char *value, int64_t now);
     Error Remove(uint32_t id);
+    // To list position `position` (past the end: last); the others move up
+    // or down by one.
+    Error Move(uint32_t id, size_t position);
+    // By site, then user.
+    void SortByName();
     // Empty, with every slot wiped.
     void Clear();
 
@@ -102,8 +109,8 @@ public:
     Error Parse(const uint8_t *data, size_t size);
 
 private:
-    // Puts slots_[count_] (filled) into sorted position; false: duplicate.
-    bool Insert();
+    // Adds slots_[count_] (filled): last, or into sorted position; false: duplicate.
+    bool Insert(bool sorted);
     void Place(size_t from);
     bool Duplicate(const char *site, const char *user, uint32_t except_id) const;
 

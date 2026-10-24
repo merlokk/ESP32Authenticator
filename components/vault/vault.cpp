@@ -751,6 +751,23 @@ Error Remove(uint32_t id) {
     return Changed(g_records->Remove(id));
 }
 
+Error Move(uint32_t id, size_t position) {
+    if (g_state != State::kOpen) {
+        return Error::kLocked;
+    }
+    Guard guard;
+    return Changed(g_records->Move(id, position));
+}
+
+Error SortByName() {
+    if (g_state != State::kOpen) {
+        return Error::kLocked;
+    }
+    Guard guard;
+    g_records->SortByName();
+    return Changed(Error::kOk);
+}
+
 Error Reset(const char *pin) {
     if (g_state == State::kOff) {
         return Error::kLocked;

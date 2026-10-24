@@ -56,6 +56,16 @@ bool ReadField(const cJSON *item, AdminRequest *r, BodyOutcome *out) {
         r->id = static_cast<uint32_t>(v);
         return true;
     }
+    if (std::strcmp(key, "position") == 0) {
+        const double v = cJSON_IsNumber(item) ? item->valuedouble : -1;
+        if (v < 0 || v > 65535 || v != static_cast<double>(static_cast<uint16_t>(v))) {
+            Say(out, BodyResult::kBadValue, key);
+            return false;
+        }
+        r->has_position = true;
+        r->position = static_cast<uint16_t>(v);
+        return true;
+    }
     struct Text {
         const char *name;
         vault::Field field;
@@ -108,7 +118,8 @@ VaultVerb VaultVerbFromUri(const char *uri) {
     static constexpr Verb kVerbs[] = {
         {"add", VaultVerb::kAdd},       {"set", VaultVerb::kSet},
         {"delete", VaultVerb::kDelete}, {"unlock", VaultVerb::kUnlock},
-        {"lock", VaultVerb::kLock},
+        {"lock", VaultVerb::kLock},     {"move", VaultVerb::kMove},
+        {"sort", VaultVerb::kSort},
     };
     for (const Verb &v : kVerbs) {
         if (std::strlen(v.word) == length && std::strncmp(word, v.word, length) == 0) {
@@ -125,6 +136,8 @@ const char *VaultVerbName(VaultVerb verb) {
         case VaultVerb::kDelete: return "delete";
         case VaultVerb::kUnlock: return "unlock";
         case VaultVerb::kLock: return "lock";
+        case VaultVerb::kMove: return "move";
+        case VaultVerb::kSort: return "sort";
         case VaultVerb::kNone: break;
     }
     return "none";

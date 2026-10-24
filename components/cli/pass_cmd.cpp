@@ -248,6 +248,34 @@ int CmdDelete(int argc, char **argv) {
     return 0;
 }
 
+// The list order (the screen's): `pass move <#> <to #>`, `pass sort` (by name).
+int CmdMove(int argc, char **argv) {
+    const long to = argc == 3 ? strtol(argv[2], nullptr, 10) : 0;
+    if (argc != 3 || to < 1) {
+        printf("usage: pass move <#> <to #>\n");
+        return 1;
+    }
+    uint32_t id = 0;
+    if (!Pick(argv[1], &id)) {
+        return 1;
+    }
+    const vault::Error e = vault::Move(id, static_cast<size_t>(to - 1));
+    if (e != vault::Error::kOk) {
+        return Failed(e);
+    }
+    printf("#%s %s is #%ld now\n", argv[1], g_label, vault::Position(id) + 1);
+    return 0;
+}
+
+int CmdSort(int, char **) {
+    const vault::Error e = vault::SortByName();
+    if (e != vault::Error::kOk) {
+        return Failed(e);
+    }
+    printf("sorted by site, then user\n");
+    return 0;
+}
+
 int CmdCode(int argc, char **argv) {
     if (argc != 2) {
         printf("usage: pass code <#>\n");
@@ -310,6 +338,7 @@ int CmdReset(int argc, char **argv) {
 constexpr Subcommand kPassSubcommands[] = {
     {"info", &CmdInfo}, {"list", &CmdList},     {"add", &CmdAdd},     {"set", &CmdSet},
     {"delete", &CmdDelete}, {"code", &CmdCode}, {"reset", &CmdReset},
+    {"move", &CmdMove},     {"sort", &CmdSort},
 };
 
 // --- pin
@@ -413,6 +442,7 @@ int CmdPass(int argc, char **argv) {
     return Dispatch(kPassSubcommands, argc, argv,
                     "pass info | list [filter] | add <site> [user] [password] [otp] | "
                     "set <#> <site|user|password|otp> [value] | delete <#> | code <#> | "
+                    "move <#> <to #> | sort | "
                     "reset [confirm [pin]]");  // pin: only without the key in
 }
 

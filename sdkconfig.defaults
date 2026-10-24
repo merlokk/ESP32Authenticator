@@ -45,8 +45,10 @@ CONFIG_LV_DEF_REFR_PERIOD=200
 CONFIG_LV_USE_CUSTOM_MALLOC=y
 CONFIG_LV_USE_CLIB_STRING=y
 CONFIG_LV_USE_CLIB_SPRINTF=y
-# 480x800 at ~220 dpi: 14 px (the default font) is small; 20 and 32 as well.
+# 480x800 at ~220 dpi: 14 px (the default font) is small; 20, 24, 28 and 32 as well.
 CONFIG_LV_FONT_MONTSERRAT_20=y
+CONFIG_LV_FONT_MONTSERRAT_24=y
+CONFIG_LV_FONT_MONTSERRAT_28=y
 CONFIG_LV_FONT_MONTSERRAT_32=y
 # PNG decoder for the power-off wallpapers (/sdcard/wallpapers).
 CONFIG_LV_USE_LODEPNG=y
