@@ -75,6 +75,7 @@ Portrait coordinates: 480x800, (0, 0) top left; the status bar is the top
 | `ui click <x> <y> [ms]` | a made-up tap (down, ~60 ms or `ms` held, up) |
 | `ui swipe <x0> <y0> <x1> <y1>` | a made-up finger moved in ~200 ms; classified as a real one (`nav::Classify`: a tap slides 24 px at most, a swipe goes 100 px, mostly along one axis; from the top quarter, y < 200, it opens Settings, from the bottom one, y >= 600, the FIDO2 list; sideways on a FIDO2 row, its trash can) |
 | `ui screenshot` | LVGL's 1-bit screen as base64 with length and CRC32 |
+| `ui demo prompt` | the FIDO2 prompt for a made-up sign-in (no request; `ui demo off` hides it) |
 | `ui demo fido [n]` / `ui demo off` | n (default 10, up to 30) made-up keys in the FIDO2 list, on the screen only (the store is not touched) |
 | `ui` | refreshes, the last one, free stacks, touch (last point, presses) |
 

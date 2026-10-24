@@ -3,11 +3,13 @@
 // (status_logic.h), the navigation (nav_logic.h) and the list (list_logic.h).
 
 #include <cstring>
+#include <initializer_list>
 #include <string>
 #include <vector>
 
 #include "dialog_logic.h"
 #include "fido_list_logic.h"
+#include "fido_prompt_logic.h"
 #include "settings_logic.h"
 #include "wifi_view_logic.h"
 #include "touch_cal_logic.h"
@@ -876,6 +878,94 @@ void test_web_view(void) {
     TEST_ASSERT_FALSE(wv::Equal(a, b));
 }
 
+// CBOR bits for the prompt's tests.
+void Put(std::vector<uint8_t> &v, std::initializer_list<uint8_t> bytes) { v.insert(v.end(), bytes); }
+void PutText(std::vector<uint8_t> &v, const char *s) {
+    const size_t n = strlen(s);
+    v.push_back(static_cast<uint8_t>(0x60 | n));  // short texts only
+    v.insert(v.end(), s, s + n);
+}
+
+void test_fido_prompt(void) {
+    namespace fp = ui::fido_prompt;
+    // makeCredential: hash, rp, user, rk.
+    std::vector<uint8_t> m = {0x01, 0xa4, 0x01, 0x58, 0x20};
+    m.insert(m.end(), 32, 0xab);
+    Put(m, {0x02, 0xa2});
+    PutText(m, "id");
+    PutText(m, "example.com");
+    PutText(m, "name");
+    PutText(m, "Example");
+    Put(m, {0x03, 0xa3});
+    PutText(m, "id");
+    Put(m, {0x41, 0x01});
+    PutText(m, "name");
+    PutText(m, "alice");
+    PutText(m, "displayName");
+    PutText(m, "Alice A");
+    Put(m, {0x07, 0xa1});
+    PutText(m, "rk");
+    Put(m, {0xf5});
+    fp::Request r = fp::Parse(m.data(), m.size());
+    TEST_ASSERT_TRUE(r.kind == fp::Kind::kRegister);
+    TEST_ASSERT_EQUAL_STRING("example.com", r.site);
+    TEST_ASSERT_EQUAL_STRING("alice", r.user);
+    TEST_ASSERT_EQUAL_STRING("Alice A", r.display);
+    TEST_ASSERT_TRUE(r.resident);
+    TEST_ASSERT_FALSE(r.verify);
+    TEST_ASSERT_EQUAL_STRING("Create a key", fp::Title(r.kind));
+
+    // getAssertion: rpId, hash, allowList of two, pinUvAuthParam.
+    std::vector<uint8_t> g = {0x02, 0xa4, 0x01};
+    PutText(g, "webauthn.io");
+    Put(g, {0x02, 0x58, 0x20});
+    g.insert(g.end(), 32, 0x11);
+    Put(g, {0x03, 0x82});
+    for (int i = 0; i < 2; ++i) {
+        Put(g, {0xa2});
+        PutText(g, "type");
+        PutText(g, "public-key");
+        PutText(g, "id");
+        Put(g, {0x42, 0x00, static_cast<uint8_t>(i)});
+    }
+    Put(g, {0x06, 0x50});
+    g.insert(g.end(), 16, 0x22);
+    r = fp::Parse(g.data(), g.size());
+    TEST_ASSERT_TRUE(r.kind == fp::Kind::kSignIn);
+    TEST_ASSERT_EQUAL_STRING("webauthn.io", r.site);
+    TEST_ASSERT_EQUAL_UINT8(2, r.allow);
+    TEST_ASSERT_TRUE(r.verify);
+
+    // U2F_AUTHENTICATE, a short APDU: the application's first bytes.
+    std::vector<uint8_t> u = {0x00, 0x02, 0x03, 0x00, 65 + 4};
+    u.insert(u.end(), 32, 0x00);  // challenge
+    Put(u, {0x3d, 0xec, 0x69, 0xac});
+    u.insert(u.end(), 28, 0x55);
+    Put(u, {0x04, 1, 2, 3, 4});
+    r = fp::Parse(u.data(), u.size());
+    TEST_ASSERT_TRUE(r.kind == fp::Kind::kU2fSignIn);
+    TEST_ASSERT_EQUAL_STRING("U2F 3dec69ac", r.site);
+    u[4] = 0;  // extended: 0, Lc Lc
+    u.insert(u.begin() + 5, {0x00, 69});
+    r = fp::Parse(u.data(), u.size());
+    TEST_ASSERT_EQUAL_STRING("U2F 3dec69ac", r.site);
+
+    // The rest: reset, selection, unknown, cut short.
+    const uint8_t reset[] = {0x07};
+    TEST_ASSERT_TRUE(fp::Parse(reset, 1).kind == fp::Kind::kReset);
+    const uint8_t select[] = {0x0b};
+    TEST_ASSERT_TRUE(fp::Parse(select, 1).kind == fp::Kind::kSelect);
+    const uint8_t info[] = {0x04};
+    TEST_ASSERT_TRUE(fp::Parse(info, 1).kind == fp::Kind::kOther);
+    r = fp::Parse(m.data(), 40);  // cut inside the rp
+    TEST_ASSERT_TRUE(r.kind == fp::Kind::kRegister);
+    TEST_ASSERT_EQUAL_STRING("", r.user);
+    const uint8_t indefinite[] = {0x02, 0xbf, 0x01, 0x61, 'a', 0xff};
+    r = fp::Parse(indefinite, sizeof indefinite);  // not read, no fault
+    TEST_ASSERT_EQUAL_STRING("", r.site);
+    TEST_ASSERT_EQUAL_STRING("A FIDO2 request", fp::Title(fp::Kind::kOther));
+}
+
 void test_list_rows(void) {
     using ui::list::Zone;
     TEST_ASSERT_TRUE(ui::list::ZoneAt(0, 472) == Zone::kTypeUser);
@@ -954,6 +1044,7 @@ void RegisterUiTests(void) {
     RUN_TEST(test_time_view);
     RUN_TEST(test_security_view);
     RUN_TEST(test_web_view);
+    RUN_TEST(test_fido_prompt);
     RUN_TEST(test_list_rows);
     RUN_TEST(test_status_fido_prompt);
 }

@@ -307,6 +307,9 @@ power: `display_view_logic.h`, `ui::DisplayHooks`; Date & time:
 `ui::SecurityHooks`, the PINs only in the ui's own task's job, wiped after; Web site:
 `web_view_logic.h`, `ui::WebHooks`, the QR code by LVGL (`CONFIG_LV_USE_QRCODE`);
 FIDO2 / U2F under Security (`fido_ctap_info`, Reset: `fido_ctap_reset`); the
+FIDO2 prompt (`fido_prompt_logic.h` reads the request's CBOR / APDU before
+the core, `main.cpp` adds the store's account, the window while the core
+waits; Home allows as Left does); the
 dialogs: `dialog.h` (`dialog_logic.h` the held Yes); the touch's
 calibration: `touch_cal_logic.h`, applied to every real touch in `ui.cpp`), up from the bottom quarter the U2F / FIDO2
 keys (`fido_ctap_list`, by site A to Z, 6 a page: site, user, made / alg /

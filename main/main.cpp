@@ -91,9 +91,47 @@ const char *StorageDir() {
 // A FIDO2 request waits for the user: Left / Right answer it, not the screens.
 std::atomic<bool> fido_waiting{false};
 
+// What a request asks, for the prompt on the screen (ui::SetFidoRequest),
+// before the core takes it: a sign-in also counts the store's keys for the
+// site (the core is idle now, its lock free) and names the one there is.
+void PromptFor(const uint8_t *msg, size_t len) {
+    namespace fp = ui::fido_prompt;
+    static fp::Request request;  // ~270 bytes: off the transport task's stack
+    request = fp::Parse(msg, len);
+    if (request.kind == fp::Kind::kSignIn || request.kind == fp::Kind::kU2fSignIn) {
+        static fido_ctap_credential_t *keys = nullptr;  // PSRAM, the store's size
+        static size_t capacity = 0;
+        fido_ctap_info_t info = {};
+        if (fido_ctap_info(&info) == ESP_OK && capacity < info.max_credentials) {
+            heap_caps_free(keys);
+            keys = static_cast<fido_ctap_credential_t *>(heap_caps_malloc(
+                info.max_credentials * sizeof *keys, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+            capacity = keys != nullptr ? info.max_credentials : 0;
+        }
+        size_t count = 0;
+        if (keys != nullptr && fido_ctap_list(keys, capacity, &count) == ESP_OK) {
+            for (size_t i = 0; i < count; ++i) {
+                if (strcmp(keys[i].rp_id, request.site) != 0) {
+                    continue;
+                }
+                if (request.accounts++ == 0) {
+                    snprintf(request.user, sizeof request.user, "%s", keys[i].user_name);
+                    snprintf(request.display, sizeof request.display, "%s", keys[i].display_name);
+                }
+            }
+            if (request.accounts > 1) {
+                request.user[0] = '\0';  // which one: the host asks, or the first
+                request.display[0] = '\0';
+            }
+        }
+    }
+    ui::SetFidoRequest(request);
+}
+
 // FIDO2 over BLE: the LionKey CTAP core behind the ble_fido transport. User
-// presence: the board's Left button (BOOT on the dev board), debounced by the
-// keypad task, which owns the pins; Right refuses.
+// presence: the board's Left button (BOOT on the dev board) or Home (the
+// touch key under the glass), debounced by the keypad task, which owns the
+// pins; Right refuses.
 void InitFido(const char *dir) {
     static char store[64];
     const bool have_fs = dir != nullptr && snprintf(store, sizeof store, "%s/fido.bin", dir) <
@@ -102,7 +140,10 @@ void InitFido(const char *dir) {
     // on the link.
     const fido_ctap_hooks_t hooks = {
         ble_fido::Keepalive, ble_fido::Cancelled,
-        [] { return keypad::Pressed(boards::ButtonId::kLeft); },
+        [] {
+            return keypad::Pressed(boards::ButtonId::kLeft) ||
+                   keypad::Pressed(boards::ButtonId::kHome);
+        },
         [](fido_ctap_client_t *out) {
             out->transport = FIDO_CTAP_TRANSPORT_BLE;
             return ble::PeerIdentity(&out->addr_type, out->addr);
@@ -123,6 +164,7 @@ void InitFido(const char *dir) {
         ble_fido::SetMessageHandler([](const uint8_t *msg, size_t len, uint8_t *out,
                                        size_t out_size) {
             power::NoteActivity();
+            PromptFor(msg, len);
             const size_t n = fido_ctap_request(msg, len, out, out_size);
             power::NoteActivity();
             return n;

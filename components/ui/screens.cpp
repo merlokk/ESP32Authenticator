@@ -209,6 +209,117 @@ void Toast(const char *text) {
 
 // --- status bar ------------------------------------------------------------------
 
+// --- the FIDO2 prompt ----------------------------------------------------------------
+
+fido_prompt::Request fido_request;  // SetFidoRequest, under Lock
+lv_obj_t *prompt = nullptr;
+bool prompt_demo = false;  // ui demo prompt
+// The physical buttons, held upright: Left and Right on the edges at the
+// password list's second row (about its height), Home under the glass.
+constexpr int32_t kButtonsTop = 192;
+constexpr int32_t kButtonsHeight = 106;
+
+lv_obj_t *PromptLabel(lv_obj_t *parent, const lv_font_t *font, const char *text, int32_t y) {
+    lv_obj_t *l = lv_label_create(parent);
+    lv_obj_set_style_text_font(l, font, 0);
+    lv_obj_set_style_text_color(l, lv_color_black(), 0);
+    lv_label_set_long_mode(l, LV_LABEL_LONG_MODE_WRAP);
+    lv_obj_set_width(l, kRowWidth - 24);
+    lv_obj_set_style_text_align(l, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_text(l, text);
+    lv_obj_align(l, LV_ALIGN_TOP_MID, 0, y);
+    return l;
+}
+
+// A hint by a button: black, the text white, against the screen's edge.
+void PromptHint(lv_obj_t *parent, const char *text, lv_align_t align, int32_t y, int32_t width,
+                int32_t height) {
+    lv_obj_t *b = lv_obj_create(parent);
+    lv_obj_remove_style_all(b);
+    lv_obj_remove_flag(b, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_size(b, width, height);
+    lv_obj_set_style_bg_color(b, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(b, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(b, 12, 0);
+    lv_obj_align(b, align, 0, y);
+    lv_obj_t *l = lv_label_create(b);
+    lv_obj_set_style_text_font(l, &lv_font_montserrat_28, 0);
+    lv_obj_set_style_text_color(l, lv_color_white(), 0);
+    lv_label_set_text(l, text);
+    lv_obj_center(l);
+}
+
+// Over everything (the top layer, under the status bar): what is asked, by
+// whom, and the buttons' hints by the buttons.
+void ShowPrompt() {
+    const fido_prompt::Request &r = fido_request;
+    prompt = lv_obj_create(lv_layer_top());
+    lv_obj_remove_style_all(prompt);
+    lv_obj_add_flag(prompt, LV_OBJ_FLAG_CLICKABLE);  // the page under it takes no taps
+    lv_obj_remove_flag(prompt, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_pos(prompt, kLeft, kContentTop);
+    lv_obj_set_size(prompt, kRowWidth, kScreenBottom - kContentTop);
+    lv_obj_set_style_bg_color(prompt, lv_color_white(), 0);
+    lv_obj_set_style_bg_opa(prompt, LV_OPA_COVER, 0);
+    lv_obj_move_to_index(prompt, 0);  // under the status bar
+
+    PromptLabel(prompt, &lv_font_montserrat_32, fido_prompt::Title(r.kind), 24);
+    const int32_t hints = kButtonsTop - kContentTop;
+    const bool reset = r.kind == fido_prompt::Kind::kReset;
+    PromptHint(prompt, reset ? LV_SYMBOL_LEFT " Hold" : LV_SYMBOL_LEFT " Allow", LV_ALIGN_TOP_LEFT,
+               hints, 170, kButtonsHeight);
+    PromptHint(prompt, "Reject " LV_SYMBOL_RIGHT, LV_ALIGN_TOP_RIGHT, hints, 170, kButtonsHeight);
+
+    char text[2 * fido_prompt::kTextSize + 128];
+    int32_t y = hints + kButtonsHeight + 24;
+    if (r.site[0] != '\0') {
+        PromptLabel(prompt, &lv_font_montserrat_32, r.site, y);
+        y += 90;
+    }
+    text[0] = '\0';
+    if (r.user[0] != '\0' && r.display[0] != '\0') {
+        snprintf(text, sizeof text, "%s\n%s", r.user, r.display);
+    } else if (r.user[0] != '\0' || r.display[0] != '\0') {
+        snprintf(text, sizeof text, "%s", r.user[0] != '\0' ? r.user : r.display);
+    } else if (r.accounts > 1) {
+        snprintf(text, sizeof text, "one of %u accounts", static_cast<unsigned>(r.accounts));
+    }
+    if (text[0] != '\0') {
+        PromptLabel(prompt, &lv_font_montserrat_24, text, y);
+        y += 80;
+    }
+    const char *note = nullptr;
+    switch (r.kind) {
+        case fido_prompt::Kind::kRegister:
+            note = r.resident ? "A passkey: kept on this device, with the account."
+                              : "A key for this site.";
+            break;
+        case fido_prompt::Kind::kSignIn:
+        case fido_prompt::Kind::kU2fSignIn:
+            note = r.accounts == 0 ? "No key here for this site: Allow tells the site so."
+                                   : "The site gets a signature from this device's key.";
+            break;
+        case fido_prompt::Kind::kU2fRegister: note = "A key for this site (U2F)."; break;
+        case fido_prompt::Kind::kReset:
+            note = "Hold Left 5 s: every key and the FIDO2 PIN are erased.";
+            break;
+        case fido_prompt::Kind::kSelect: note = "The host asks which key to use."; break;
+        case fido_prompt::Kind::kOther: note = "A host asks for the button."; break;
+    }
+    snprintf(text, sizeof text, "%s%s", note, r.verify ? "\nThe PIN was given." : "");
+    PromptLabel(prompt, &lv_font_montserrat_20, text, y);
+    if (!reset) {
+        PromptHint(prompt, LV_SYMBOL_DOWN " Home: allow", LV_ALIGN_BOTTOM_MID, -8, 260, 60);
+    }
+}
+
+void HidePrompt() {
+    if (prompt != nullptr) {
+        lv_obj_delete(prompt);
+        prompt = nullptr;
+    }
+}
+
 void UpdateStatus(lv_timer_t *) {
     if (source == nullptr) {
         return;
@@ -216,6 +327,12 @@ void UpdateStatus(lv_timer_t *) {
     status::Status s;
     source(&s);
     fido_wait = s.fido_wait;
+    const bool want = fido_wait || prompt_demo;
+    if (want && prompt == nullptr) {
+        ShowPrompt();
+    } else if (!want && prompt != nullptr) {
+        HidePrompt();
+    }
     shown_level = status::ShownLevel(shown_level, s.battery);
     s.battery = shown_level;
     char text[status::kTextSize];
@@ -3585,6 +3702,28 @@ void SetTimeHooks(const TimeHooks *hooks) { time_hooks = hooks; }
 void SetSecurityHooks(const SecurityHooks *hooks) { security_hooks = hooks; }
 
 void SetWebHooks(const WebHooks *hooks) { web_hooks = hooks; }
+
+void SetFidoRequest(const fido_prompt::Request &request) {
+    Lock();
+    fido_request = request;
+    Unlock();
+}
+
+void ShowFidoPromptDemo(bool on) {
+    Lock();
+    if (on) {
+        fido_request = {};
+        fido_request.kind = fido_prompt::Kind::kSignIn;
+        snprintf(fido_request.site, sizeof fido_request.site, "github.com");
+        snprintf(fido_request.user, sizeof fido_request.user, "octocat");
+        snprintf(fido_request.display, sizeof fido_request.display, "The Octocat");
+        fido_request.accounts = 1;
+        fido_request.verify = true;
+    }
+    prompt_demo = on;
+    HidePrompt();  // drawn again (or not) at the next status look
+    Unlock();
+}
 
 void Navigate(nav::Input input) {
     if (inputs != nullptr) {
