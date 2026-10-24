@@ -1,8 +1,8 @@
 // The screens behind the PIN pad (x4-design.md): the status bar on LVGL's top
 // layer (over every screen, the pad's too), the password list in pages with a
-// tab per page at the bottom, Settings pulled down from the top and the FIDO2
-// list pulled up from the bottom (both stubs for now). nav_logic.h,
-// list_logic.h and status_logic.h decide; this draws. Typing runs in a task
+// tab per page at the bottom, Settings pulled down from the top (a stub for
+// now) and the U2F / FIDO2 keys pulled up from the bottom. nav_logic.h,
+// list_logic.h, fido_list_logic.h and status_logic.h decide; this draws. Typing runs in a task
 // of its own (ui::SetTypist; a password takes a second over BLE).
 
 #include <cstdio>
@@ -10,6 +10,9 @@
 #include <ctime>
 
 #include "esp_app_desc.h"
+#include "esp_heap_caps.h"
+#include "fido_ctap.h"
+#include "fido_list_logic.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/task.h"
@@ -33,6 +36,7 @@ constexpr uint32_t kStatusMs = 500;   // the bar's source, polled (FIDO2's promp
 constexpr uint32_t kPollMs = 30;      // buttons, swipes, the vault, the codes
 constexpr uint32_t kToastMs = 3000;
 constexpr uint32_t kVaultMs = 500;    // the vault's changes, looked at
+constexpr uint32_t kFidoMs = 2000;    // the FIDO2 store's, while its list is shown
 constexpr int32_t kBarHeight = 44;
 constexpr int32_t kTabHeight = 72;
 constexpr unsigned kQueueDepth = 8;
@@ -44,6 +48,7 @@ constexpr int32_t kRight = kWidth - kInsetRight;
 constexpr int32_t kRowWidth = kRight - kLeft;
 constexpr int32_t kContentTop = kInsetTop + kBarHeight;
 constexpr int32_t kContentBottom = kHeight - kInsetBottom - kTabHeight;
+constexpr int32_t kScreenBottom = kHeight - kInsetBottom;  // no tabs (Settings, FIDO2)
 // Over the rows, under the status bar: what a tap in each quarter does.
 constexpr int32_t kHintHeight = 34;
 constexpr int32_t kRowHeight = (kContentBottom - kContentTop - kHintHeight) / list::kRowsPerPage;
@@ -76,6 +81,7 @@ uint32_t toast_at = 0;
 uint32_t looked_at = 0;
 int tapped_tab = -1;  // OnTab: for Poll (the matrix is not changed in its own event)
 bool back_tapped = false;  // OnBack: for Poll (the arrow is deleted with the page)
+bool fido_wait = false;    // a FIDO2 request waits for the button: its store is busy
 char tab_text[nav::kTabs][16];
 const char *tab_map[nav::kTabs + 1];
 
@@ -153,6 +159,7 @@ void UpdateStatus(lv_timer_t *) {
     }
     status::Status s;
     source(&s);
+    fido_wait = s.fido_wait;
     shown_level = status::ShownLevel(shown_level, s.battery);
     s.battery = shown_level;
     char text[status::kTextSize];
@@ -384,7 +391,7 @@ void OnBack(lv_event_t *) {
 // Settings / FIDO2: a back arrow and the screen's name over the page.
 constexpr int32_t kTitleHeight = 56;
 
-void TitleBar(const char *title) {
+void TitleBar(const char *title, const char *right = nullptr) {
     lv_obj_t *head = lv_obj_create(content);
     lv_obj_remove_style_all(head);
     lv_obj_remove_flag(head, LV_OBJ_FLAG_SCROLLABLE);
@@ -404,6 +411,153 @@ void TitleBar(const char *title) {
     lv_obj_t *name = Label(head, &lv_font_montserrat_28);
     lv_label_set_text(name, title);
     lv_obj_align(name, LV_ALIGN_LEFT_MID, 60, 0);
+    if (right != nullptr) {
+        lv_obj_t *r = Label(head, &lv_font_montserrat_24);
+        lv_label_set_text(r, right);
+        lv_obj_align(r, LV_ALIGN_RIGHT_MID, -12, 0);
+    }
+}
+
+// --- the U2F / FIDO2 keys ----------------------------------------------------------
+
+constexpr int32_t kFidoRowHeight =
+    (kScreenBottom - kContentTop - kTitleHeight) / fido_list::kRowsPerPage;
+
+// What the FIDO2 list shows: redrawn when the store changes.
+struct FidoSeen {
+    esp_err_t err;
+    size_t count;
+    uint32_t version;
+};
+FidoSeen fido_seen = {ESP_FAIL, 0, 0};
+uint32_t fido_looked_at = 0;
+// The store's credentials (~360 bytes each, up to 125: PSRAM) and their
+// order by site; kept between showings.
+fido_ctap_credential_t *fido_keys = nullptr;
+uint16_t *fido_order = nullptr;
+size_t fido_capacity = 0;
+
+FidoSeen FidoLook() {
+    fido_ctap_info_t info;
+    const esp_err_t err = fido_ctap_info(&info);
+    return err == ESP_OK ? FidoSeen{err, info.credentials, info.file_version}
+                         : FidoSeen{err, 0, 0};
+}
+
+// All the credentials into fido_keys, sorted by site, then user; `seen`:
+// the store they came from.
+esp_err_t FidoLoad(size_t *count, FidoSeen *seen) {
+    *count = 0;
+    fido_ctap_info_t info;
+    esp_err_t err = fido_ctap_info(&info);
+    *seen = {err, err == ESP_OK ? info.credentials : 0, err == ESP_OK ? info.file_version : 0};
+    if (err != ESP_OK) {
+        return err;
+    }
+    if (fido_capacity < info.max_credentials) {
+        heap_caps_free(fido_keys);
+        heap_caps_free(fido_order);
+        fido_capacity = 0;
+        const size_t n = info.max_credentials;
+        const uint32_t caps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
+        fido_keys = static_cast<fido_ctap_credential_t *>(
+            heap_caps_malloc(n * sizeof(fido_ctap_credential_t), caps));
+        fido_order = static_cast<uint16_t *>(heap_caps_malloc(n * sizeof(uint16_t), caps));
+        if (fido_keys == nullptr || fido_order == nullptr) {
+            return ESP_ERR_NO_MEM;
+        }
+        fido_capacity = n;
+    }
+    err = fido_ctap_list(fido_keys, fido_capacity, count);
+    if (err != ESP_OK) {
+        return err;
+    }
+    fido_list::Sort(fido_order, *count, [](uint16_t a, uint16_t b) {
+        const fido_ctap_credential_t &x = fido_keys[a];
+        const fido_ctap_credential_t &y = fido_keys[b];
+        const int site = fido_list::Compare(x.rp_id, y.rp_id);
+        return site != 0 ? site < 0 : fido_list::Compare(x.user_name, y.user_name) < 0;
+    });
+    return ESP_OK;
+}
+
+void AddFidoRow(uint8_t i, const fido_ctap_credential_t &c) {
+    lv_obj_t *row = lv_obj_create(content);
+    lv_obj_remove_style_all(row);
+    lv_obj_remove_flag(row, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_remove_flag(row, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_pos(row, 0, kTitleHeight + i * kFidoRowHeight);
+    lv_obj_set_size(row, kRowWidth, kFidoRowHeight);
+    lv_obj_set_style_border_side(row, LV_BORDER_SIDE_BOTTOM, 0);
+    lv_obj_set_style_border_width(row, 1, 0);
+    lv_obj_set_style_border_color(row, lv_color_black(), 0);
+
+    char text[2 * FIDO_CTAP_TEXT_SIZE + 4];
+    lv_obj_t *site = Label(row, &lv_font_montserrat_28);
+    lv_label_set_long_mode(site, LV_LABEL_LONG_MODE_DOTS);
+    lv_obj_set_size(site, kRowWidth - 24, kSiteLine);
+    snprintf(text, sizeof text, "%s%s", c.rp_id, c.rp_id_truncated ? "..." : "");
+    lv_label_set_text(site, text);
+    lv_obj_set_pos(site, 12, 8);
+
+    lv_obj_t *user = Label(row, &lv_font_montserrat_24);
+    lv_label_set_long_mode(user, LV_LABEL_LONG_MODE_DOTS);
+    lv_obj_set_size(user, kRowWidth - 24, kUserLine);
+    fido_list::User(c.user_name, c.display_name, text, sizeof text);
+    lv_label_set_text(user, text);
+    lv_obj_set_pos(user, 12, 46);
+
+    const bool dated = c.origin.created_utc > 0;
+    struct tm local = {};
+    if (dated) {
+        const time_t when = static_cast<time_t>(c.origin.created_utc);
+        localtime_r(&when, &local);
+    }
+    fido_list::Details(dated ? static_cast<uint16_t>(local.tm_year + 1900) : 0,
+                       static_cast<uint8_t>(local.tm_mon + 1), static_cast<uint8_t>(local.tm_mday),
+                       c.alg, c.u2f, c.discoverable, text, sizeof text);
+    lv_obj_t *details = Label(row, &lv_font_montserrat_20);
+    lv_label_set_text(details, text);
+    lv_obj_set_pos(details, 12, 80);
+}
+
+// The title bar says how many keys and the page; Left / Right flip the pages.
+void ShowFido() {
+    size_t count = 0;
+    // While a request waits for the button, the store's lock is taken.
+    const esp_err_t err = fido_wait ? ESP_ERR_TIMEOUT : FidoLoad(&count, &fido_seen);
+    nav_state.SetFidoPages(nav::PagesFor(count, fido_list::kRowsPerPage));
+    char right[32] = "";
+    if (err == ESP_OK && count > 0) {
+        if (nav_state.fido_pages() > 1) {
+            snprintf(right, sizeof right, "%u   %u/%u", static_cast<unsigned>(count),
+                     nav_state.fido_page() + 1u, static_cast<unsigned>(nav_state.fido_pages()));
+        } else {
+            snprintf(right, sizeof right, "%u", static_cast<unsigned>(count));
+        }
+    }
+    TitleBar("U2F / FIDO2", right);
+    const char *why = nullptr;
+    if (err == ESP_ERR_TIMEOUT) {
+        why = "Busy: a FIDO2 request is running.";
+        fido_seen = {err, 0, 0};  // drawn again when it is done
+    } else if (err == ESP_ERR_NO_MEM) {
+        why = "No memory for the list.";
+    } else if (err != ESP_OK) {
+        why = fido_ctap_stopped_reason();
+        why = why != nullptr ? why : "FIDO2 is not running.";
+    } else if (count == 0) {
+        why = "No keys yet: a site makes one when this device is registered as a security key "
+              "or a passkey.";
+    }
+    if (why != nullptr) {
+        Stub(nullptr, why, kTitleHeight + 24);
+        return;
+    }
+    const size_t first = static_cast<size_t>(nav_state.fido_page()) * fido_list::kRowsPerPage;
+    for (uint8_t i = 0; i < fido_list::kRowsPerPage && first + i < count; ++i) {
+        AddFidoRow(i, fido_keys[fido_order[first + i]]);
+    }
 }
 
 // A tab per page, at most nav::kTabs; arrows where more pages are hidden.
@@ -467,6 +621,9 @@ void Show() {
     }
     row_count = 0;
     lv_obj_clean(content);
+    lv_obj_set_height(content, (nav_state.mode() == nav::Mode::kList ? kContentBottom
+                                                                       : kScreenBottom) -
+                                   kContentTop);
     char text[160];
     switch (nav_state.mode()) {
         case nav::Mode::kList:
@@ -481,11 +638,7 @@ void Show() {
             Stub(nullptr, text, kTitleHeight + 24);
             break;
         case nav::Mode::kFido:
-            TitleBar("U2F / FIDO2");
-            Stub(nullptr,
-                 "The keys sites made on this device come here.\n\n"
-                 "Back: the arrow, a swipe down or Home.",
-                 kTitleHeight + 24);
+            ShowFido();
             break;
     }
     ShowTabs();
@@ -615,6 +768,14 @@ void Poll(lv_timer_t *) {
         const Seen now = Look();
         changed |= now.state != seen.state || now.count != seen.count ||
                    now.version != seen.version;
+    }
+    // The store's lock is held while a request waits for the button.
+    if (nav_state.mode() == nav::Mode::kFido && !fido_wait && HomeShown() &&
+        lv_tick_elaps(fido_looked_at) >= kFidoMs) {
+        fido_looked_at = lv_tick_get();
+        const FidoSeen now = FidoLook();
+        changed |= now.err != fido_seen.err || now.count != fido_seen.count ||
+                   now.version != fido_seen.version;
     }
     if (changed) {
         Show();

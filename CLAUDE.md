@@ -27,8 +27,8 @@ Firmware: C/C++ on **ESP-IDF**.
   charger STAT on a leased I2C bus (`battery`, BLE Battery Level); microSD
   (SDMMC, FAT at `/sdcard`, `sd` read-only but wallpapers), the store files in
   `/sdcard/.authenticator` on the X4 Pro (no card: no stores); LVGL 9 on the e-ink panel (480x800 portrait, status bar, the password list in pages: a tap types
-  the user / password / TOTP or shows the password; Settings and FIDO2 by
-  swipes, stubs; FIDO2 presence Left yes / Right no; PIN pad while
+  the user / password / TOTP or shows the password; Settings (a stub) and the
+  U2F / FIDO2 keys by swipes; FIDO2 presence Left yes / Right no; PIN pad while
 the vault is locked, GT911 touch as the pointer, `ui`); power-off
   (Power held / x3 locked / idle `power.idleMinutes` / `off`): a random PNG from
   `/sdcard/wallpapers` (dithered to 4 grey levels on

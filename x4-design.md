@@ -48,12 +48,14 @@ Portrait, 480x800. The panel scans landscape (hardware.md): `ui_logic.h` turns t
   Left / Right flip them, Home: page 1.
 - **Settings**: a swipe down from the top quarter; its back arrow, a swipe
   up or Home closes it.
-- **U2F / FIDO2 list**: a swipe up from the bottom quarter; its back arrow,
-  a swipe down or Home closes it.
+- **U2F / FIDO2 list**: a swipe up from the bottom quarter; the keys by site
+  (A to Z), 6 a page: site, user, "made <date>, <alg>, resident / U2F";
+  Left / Right flip the pages, the title says the count and the page; its
+  back arrow, a swipe down or Home closes it.
 - **Lock screen**: PIN pad (touch), shown while the vault is locked (at boot,
   `pin lock`); done (`pin_pad.cpp`).
   See PIN below.
-- Settings (frontlight, Wi-Fi) and the FIDO2 list are stubs for now.
+- Settings (frontlight, Wi-Fi) is a stub for now.
 
 E-ink: 1-bit LVGL, redraw at most every 200 ms; partial updates for list and
 status changes, a full refresh now and then against ghosting (driver's choice).

@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 
+#include "fido_list_logic.h"
 #include "list_logic.h"
 #include "nav_logic.h"
 #include "pin_pad_logic.h"
@@ -313,6 +314,61 @@ void test_nav_swipes(void) {
     TEST_ASSERT_TRUE(n.mode() == Mode::kList);
 }
 
+void test_nav_fido_pages(void) {
+    using ui::nav::Gesture;
+    using ui::nav::Input;
+    ui::nav::Nav n;
+    n.SetPages(3);
+    n.Swipe(Gesture::kUpFromBottom);
+    TEST_ASSERT_FALSE(n.Apply(Input::kRight));  // one page
+    n.SetFidoPages(3);
+    // Left / Right flip the FIDO2 pages (round), not the list's.
+    TEST_ASSERT_TRUE(n.Apply(Input::kLeft));
+    TEST_ASSERT_EQUAL_UINT8(2, n.fido_page());
+    TEST_ASSERT_EQUAL_UINT8(0, n.page());
+    TEST_ASSERT_TRUE(n.Apply(Input::kRight));
+    TEST_ASSERT_EQUAL_UINT8(0, n.fido_page());
+    n.Apply(Input::kLeft);
+    TEST_ASSERT_TRUE(n.SetFidoPages(2));  // keys gone: the page stays inside
+    TEST_ASSERT_EQUAL_UINT8(1, n.fido_page());
+    // Back keeps it, Home starts over.
+    n.Back();
+    n.Swipe(Gesture::kUpFromBottom);
+    TEST_ASSERT_EQUAL_UINT8(1, n.fido_page());
+    n.Apply(Input::kHome);
+    TEST_ASSERT_EQUAL_UINT8(0, n.fido_page());
+}
+
+void test_fido_list_rows(void) {
+    namespace fl = ui::fido_list;
+    TEST_ASSERT_EQUAL_INT(0, fl::Compare("GitHub.com", "github.com"));
+    TEST_ASSERT_EQUAL_INT(-1, fl::Compare("github.com", "google.com"));
+    TEST_ASSERT_EQUAL_INT(-1, fl::Compare("a", "ab"));
+    TEST_ASSERT_EQUAL_INT(1, fl::Compare("b", "A"));
+    const char *sites[5] = {"webauthn.io", "Github.com", "amazon.com", "github.com", "U2F 1a2b3c4d"};
+    uint16_t order[5] = {};
+    fl::Sort(order, 5, [&sites](uint16_t a, uint16_t b) { return fl::Compare(sites[a], sites[b]) < 0; });
+    const uint16_t want[5] = {2, 1, 3, 4, 0};  // equal sites keep the store's order
+    TEST_ASSERT_EQUAL_UINT16_ARRAY(want, order, 5);
+    fl::Sort(order, 0, [](uint16_t, uint16_t) { return false; });
+
+    char text[64];
+    fl::Details(2026, 10, 4, -7, false, true, text, sizeof text);
+    TEST_ASSERT_EQUAL_STRING("made 2026-10-04, ES256, resident", text);
+    fl::Details(0, 0, 0, -8, false, false, text, sizeof text);
+    TEST_ASSERT_EQUAL_STRING("EdDSA, non-resident", text);
+    fl::Details(2025, 1, 31, -7, true, false, text, sizeof text);
+    TEST_ASSERT_EQUAL_STRING("made 2025-01-31, ES256, U2F", text);
+    fl::User("alice", "Alice Smith", text, sizeof text);
+    TEST_ASSERT_EQUAL_STRING("alice (Alice Smith)", text);
+    fl::User("alice", "Alice", text, sizeof text);
+    TEST_ASSERT_EQUAL_STRING("alice", text);
+    fl::User("", "Alice", text, sizeof text);
+    TEST_ASSERT_EQUAL_STRING("Alice", text);
+    fl::User("", "", text, sizeof text);
+    TEST_ASSERT_EQUAL_STRING("-", text);
+}
+
 void test_nav_classify(void) {
     using ui::nav::Classify;
     using ui::nav::Gesture;
@@ -383,6 +439,8 @@ void RegisterUiTests(void) {
     RUN_TEST(test_status_battery);
     RUN_TEST(test_nav_pages_and_tabs);
     RUN_TEST(test_nav_swipes);
+    RUN_TEST(test_nav_fido_pages);
+    RUN_TEST(test_fido_list_rows);
     RUN_TEST(test_nav_classify);
     RUN_TEST(test_list_rows);
     RUN_TEST(test_status_fido_prompt);

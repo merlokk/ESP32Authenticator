@@ -15,7 +15,7 @@ Target and status. Screen design and the open questions: [x4-design.md](x4-desig
 | Store file header (version, modification time) and rollback check (highest version in NVS) | done (`storefile`) |
 | Encrypted stores: `vault.bin` and `fido.bin`, AES-256-GCM with a key from the PIN (the same on every device with the PIN and the files), loaded whole into PSRAM | done |
 | Sync over the internet, the later modification time wins | not yet; service not chosen |
-| X4 Pro screen: status bar, credential list, pages, settings | status bar, the password list (pages, typing, TOTP), swipes, PIN pad done; Settings and the FIDO2 list are stubs |
+| X4 Pro screen: status bar, credential list, pages, settings | status bar, the password list (pages, typing, TOTP), swipes, PIN pad, the U2F / FIDO2 list done; Settings is a stub |
 | Settings: frontlight, Wi-Fi | Wi-Fi on the console and the site; frontlight not yet |
 | Time: SNTP, zones, clock | done |
 | Battery: voltage, level, charging | done (CW2017 + charger STAT, console `battery`, BLE Battery Level); screen not yet |
@@ -300,8 +300,11 @@ at most 4: the row scrolls with the page, arrows where pages are hidden.
 Left / Right pressed flip the pages (round), Home: page 1 (`ui::Navigate`,
 queued from the keypad task; nothing under the PIN pad or while FIDO2
 waits). The touch reports the finger's moves too: a swipe down from the top
-quarter opens Settings, up from the bottom quarter the U2F / FIDO2 list
-(both stubs, a back arrow and the name over them), the arrow (the list at
+quarter opens Settings (a stub), up from the bottom quarter the U2F / FIDO2
+keys (`fido_ctap_list`, by site A to Z, 6 a page: site, user, made / alg /
+kind; Left / Right flip its pages; the count and page in its title; looked at
+each 2 s, not while a request waits: `fido_list_logic.h`), both with a back
+arrow and the name over them; the arrow (the list at
 its page), the opposite swipe or Home closes them (`nav::Classify`; a slid tap
 is no tap). FIDO2 presence: Left allows, Right refuses (OPERATION_DENIED,
 `deny_pressed` hook).

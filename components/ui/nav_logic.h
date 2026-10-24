@@ -4,8 +4,8 @@
 // the bottom (at most kTabs shown; with more pages the row scrolls so the
 // current one is in it). Left / Right flip the pages (round). A swipe down
 // from the top quarter opens Settings, a swipe up from the bottom quarter the
-// FIDO2 list; the opposite swipe, their back arrow or Home closes them.
-// Home on the list: its first page. Pure (host-tested); the PIN pad stands over all of it while
+// FIDO2 list (in pages of its own, Left / Right flip them too); the opposite
+// swipe, their back arrow or Home closes them. Home: the list's first page. Pure (host-tested); the PIN pad stands over all of it while
 // the vault is locked.
 
 #include <cstddef>
@@ -71,6 +71,8 @@ class Nav {
     // The first page with a tab: tabs show pages first() .. first() + tabs() - 1.
     constexpr uint8_t first() const { return first_; }
     constexpr uint8_t tabs() const { return pages_ < kTabs ? pages_ : kTabs; }
+    constexpr uint8_t fido_page() const { return fido_page_; }
+    constexpr uint8_t fido_pages() const { return fido_pages_; }
 
     // The list's page count (records added or gone); the page stays inside.
     // True when the page moved.
@@ -81,6 +83,16 @@ class Nav {
             page_ = static_cast<uint8_t>(pages_ - 1);
         }
         Follow();
+        return moved;
+    }
+
+    // The FIDO2 list's page count; its page stays inside. True when it moved.
+    constexpr bool SetFidoPages(uint8_t n) {
+        fido_pages_ = n < 1 ? 1 : n;
+        const bool moved = fido_page_ >= fido_pages_;
+        if (moved) {
+            fido_page_ = static_cast<uint8_t>(fido_pages_ - 1);
+        }
         return moved;
     }
 
@@ -101,14 +113,21 @@ class Nav {
             const bool changed = mode_ != Mode::kList || page_ != 0;
             mode_ = Mode::kList;
             page_ = 0;
+            fido_page_ = 0;
             Follow();
             return changed;
+        }
+        if (mode_ == Mode::kFido) {
+            if (fido_pages_ < 2) {
+                return false;
+            }
+            fido_page_ = Flip(fido_page_, fido_pages_, in);
+            return true;
         }
         if (mode_ != Mode::kList || pages_ < 2) {
             return false;
         }
-        page_ = in == Input::kRight ? static_cast<uint8_t>((page_ + 1) % pages_)
-                                    : static_cast<uint8_t>((page_ + pages_ - 1) % pages_);
+        page_ = Flip(page_, pages_, in);
         Follow();
         return true;
     }
@@ -143,6 +162,12 @@ class Nav {
     }
 
    private:
+    // Left / Right: the page before / after, round.
+    static constexpr uint8_t Flip(uint8_t page, uint8_t pages, Input in) {
+        return in == Input::kRight ? static_cast<uint8_t>((page + 1) % pages)
+                                   : static_cast<uint8_t>((page + pages - 1) % pages);
+    }
+
     // The tab row scrolls only as far as it takes to show the page.
     constexpr void Follow() {
         if (page_ < first_) {
@@ -160,6 +185,8 @@ class Nav {
     uint8_t page_ = 0;
     uint8_t pages_ = 1;
     uint8_t first_ = 0;
+    uint8_t fido_page_ = 0;
+    uint8_t fido_pages_ = 1;
 };
 
 }  // namespace ui::nav
