@@ -132,6 +132,7 @@ enum class JobKind : uint8_t {
     kBleForget,   // the host `ssid`
     kBlePair,     // the pairing window opened (`flag`) or closed
     kSaveTouch,   // `calibration` into config.json
+    kDisplaySet,  // Display & power: `setting` to `id`
 };
 
 struct Job {
@@ -144,6 +145,7 @@ struct Job {
     char ssid[wifi_view::kSsidSize];
     char password[wifi_view::kPasswordSize];  // wiped after use
     touch_cal::Calibration calibration;
+    display_view::Setting setting;
 };
 
 // A job with only its kind set.
@@ -1823,6 +1825,136 @@ bool PollBle() {
     return changed;
 }
 
+// --- Settings: Display & power -----------------------------------------------------
+
+const DisplayHooks *display_hooks = nullptr;
+display_view::View display_shown;
+display_view::View display_now;
+display_view::Setting choice_setting = display_view::Setting::kIdle;  // the choice page's
+int setting_tapped = -1;
+int option_tapped = -1;
+
+void OnSettingRow(lv_event_t *event) {
+    if (LastWasTap()) {
+        setting_tapped = static_cast<int>(reinterpret_cast<intptr_t>(lv_event_get_user_data(event)));
+    }
+}
+
+void OnOption(lv_event_t *event) {
+    if (LastWasTap()) {
+        option_tapped = static_cast<int>(reinterpret_cast<intptr_t>(lv_event_get_user_data(event)));
+    }
+}
+
+// A row: its name, its value and ">" (no value: a check, or nothing), tapped as `id`.
+lv_obj_t *ChoiceRow(int32_t y, const char *name, const char *value, bool check,
+                    lv_event_cb_t cb, int id) {
+    lv_obj_t *row = Panel(content, y, kNetRow);
+    lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_border_width(row, 1, 0);
+    lv_obj_add_event_cb(row, cb, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<intptr_t>(id)));
+    lv_obj_t *n = Label(row, &lv_font_montserrat_24);
+    lv_label_set_text(n, name);
+    lv_obj_set_pos(n, 12, (kNetRow - 30) / 2);
+    if (value != nullptr) {
+        lv_obj_t *v = Label(row, &lv_font_montserrat_20);
+        lv_label_set_text(v, value);
+        lv_obj_align(v, LV_ALIGN_RIGHT_MID, -44, 0);
+    }
+    lv_obj_t *mark = Label(row, &lv_font_montserrat_24);
+    lv_label_set_text(mark, value != nullptr ? LV_SYMBOL_RIGHT : check ? LV_SYMBOL_OK : "");
+    lv_obj_align(mark, LV_ALIGN_RIGHT_MID, -12, 0);
+    return row;
+}
+
+// The battery, a row per setting, what Power does, "Power off".
+void ShowDisplay() {
+    TitleBar("Display & power");
+    display_hooks->view(&display_shown);
+    const display_view::View &v = display_shown;
+    int32_t y = kTitleHeight;
+    lv_obj_t *bat = Panel(content, y, 56);
+    lv_obj_set_style_border_width(bat, 2, 0);
+    lv_obj_t *l = Label(bat, &lv_font_montserrat_24);
+    lv_label_set_text(l, "Battery");
+    lv_obj_set_pos(l, 12, 12);
+    char text[48];
+    if (v.battery >= 0) {
+        snprintf(text, sizeof text, "%d %%%s", v.battery, v.charging ? ", charging" : "");
+    } else {
+        snprintf(text, sizeof text, "no gauge");
+    }
+    lv_obj_t *b = Label(bat, &lv_font_montserrat_24);
+    lv_label_set_text(b, text);
+    lv_obj_align(b, LV_ALIGN_RIGHT_MID, -12, 0);
+    y += 56 + 16;
+    for (uint8_t i = 0; i < display_view::kSettingCount; ++i, y += kNetRow) {
+        const display_view::Setting s = display_view::kSettings[i];
+        display_view::Label(s, v.value[i], text, sizeof text);
+        ChoiceRow(y, display_view::Title(s), text, false, OnSettingRow, i);
+    }
+    lv_obj_t *help = Label(content, &lv_font_montserrat_20);
+    lv_label_set_long_mode(help, LV_LABEL_LONG_MODE_WRAP);
+    lv_obj_set_width(help, kRowWidth - 24);
+    lv_label_set_text(help,
+                      "The Power button: twice, the frontlight; three times, off and locked "
+                      "(the PIN at the wake); held, off.");
+    lv_obj_set_pos(help, 12, y + 20);
+    lv_obj_t *off = AskButton(content, kRowWidth - 48, "Power off");
+    lv_obj_align(off, LV_ALIGN_BOTTOM_MID, 0, -16);
+    lv_obj_add_event_cb(off, OnAction, LV_EVENT_CLICKED, nullptr);
+}
+
+// One setting's choices, a check at the one in use.
+void ShowDisplayChoice() {
+    TitleBar(display_view::Title(choice_setting));
+    size_t n = 0;
+    const display_view::Option *o = display_view::Options(choice_setting, &n);
+    uint16_t now = 0;
+    for (uint8_t i = 0; i < display_view::kSettingCount; ++i) {
+        if (display_view::kSettings[i] == choice_setting) {
+            now = display_shown.value[i];
+        }
+    }
+    const int in_use = display_view::Index(choice_setting, now);
+    int32_t y = kTitleHeight;
+    for (size_t i = 0; i < n; ++i, y += kNetRow) {
+        ChoiceRow(y, o[i].label, nullptr, static_cast<int>(i) == in_use, OnOption,
+                  static_cast<int>(i));
+    }
+}
+
+// The rows' and choices' taps (Poll). True when the page is to be drawn again.
+bool PollDisplay() {
+    bool changed = false;
+    if (setting_tapped >= 0) {
+        if (setting_tapped < display_view::kSettingCount) {
+            choice_setting = display_view::kSettings[setting_tapped];
+            changed |= nav_state.OpenSettings(static_cast<uint8_t>(settings::Page::kDisplayChoice));
+        }
+        setting_tapped = -1;
+    }
+    if (option_tapped >= 0) {
+        size_t n = 0;
+        const display_view::Option *o = display_view::Options(choice_setting, &n);
+        if (static_cast<size_t>(option_tapped) < n) {
+            Job job = MakeJob(JobKind::kDisplaySet);
+            job.setting = choice_setting;
+            job.id = o[option_tapped].value;
+            SendJob(job);
+            // Shown at once: the save follows in the ui's own task.
+            for (uint8_t i = 0; i < display_view::kSettingCount; ++i) {
+                if (display_view::kSettings[i] == choice_setting) {
+                    display_shown.value[i] = o[option_tapped].value;
+                }
+            }
+            changed |= nav_state.Back();
+        }
+        option_tapped = -1;
+    }
+    return changed;
+}
+
 // --- Settings: the touch's calibration ---------------------------------------------
 
 bool cal_active = false;  // the crosses are up: no calibration in use
@@ -1980,6 +2112,14 @@ void ShowSettings() {
     }
     if (ble_hooks != nullptr && page == settings::Page::kBluetooth) {
         ShowBluetooth();
+        return;
+    }
+    if (display_hooks != nullptr && page == settings::Page::kDisplay) {
+        ShowDisplay();
+        return;
+    }
+    if (display_hooks != nullptr && page == settings::Page::kDisplayChoice) {
+        ShowDisplayChoice();
         return;
     }
     if (ble_hooks != nullptr && page == settings::Page::kBlePair) {
@@ -2273,6 +2413,9 @@ void TypeTask(void *) {
                 case JobKind::kBleUse: said = ble_hooks->use(job.flag ? nullptr : job.ssid); break;
                 case JobKind::kBleForget: said = ble_hooks->forget(job.ssid); break;
                 case JobKind::kBlePair: said = ble_hooks->pair(job.flag); break;
+                case JobKind::kDisplaySet:
+                    said = display_hooks->set(job.setting, static_cast<uint16_t>(job.id));
+                    break;
                 case JobKind::kSaveTouch:
                     said = SaveTouchCalibration(job.calibration) == ESP_OK
                                ? "saved"
@@ -2396,12 +2539,16 @@ void Poll(lv_timer_t *) {
     if (nav_state.mode() == nav::Mode::kSettings) {
         changed |= PollTouch();
     }
+    if (nav_state.mode() == nav::Mode::kSettings && display_hooks != nullptr) {
+        changed |= PollDisplay();
+    }
     // Settings' texts (Wi-Fi joined, the clock); the switch follows Power x2.
     // Not under a sheet, nor over a password being typed or a scan.
     if (nav_state.mode() == nav::Mode::kSettings && settings_hooks != nullptr && HomeShown() &&
         !FingerDown() && sheet == nullptr && settings_page != settings::Page::kWifiPassword &&
         settings_page != settings::Page::kWifiScan && settings_page != settings::Page::kBlePair &&
         settings_page != settings::Page::kTouch &&
+        settings_page != settings::Page::kDisplayChoice &&
         lv_tick_elaps(settings_looked_at) >= kSettingsMs) {
         settings_looked_at = lv_tick_get();
         if (settings_page == settings::Page::kWifi && wifi_hooks != nullptr) {
@@ -2410,6 +2557,9 @@ void Poll(lv_timer_t *) {
         } else if (settings_page == settings::Page::kBluetooth && ble_hooks != nullptr) {
             ble_hooks->view(&ble_now);
             changed |= !ble_view::Equal(ble_now, ble_shown);
+        } else if (settings_page == settings::Page::kDisplay && display_hooks != nullptr) {
+            display_hooks->view(&display_now);
+            changed |= !display_view::Equal(display_now, display_shown);
         } else {
             SettingsText(settings_page, settings_now, sizeof settings_now);
             changed |= strcmp(settings_now, settings_shown) != 0;
@@ -2502,6 +2652,8 @@ void SetSettingsHooks(const SettingsHooks *hooks) { settings_hooks = hooks; }
 void SetWifiHooks(const WifiHooks *hooks) { wifi_hooks = hooks; }
 
 void SetBleHooks(const BleHooks *hooks) { ble_hooks = hooks; }
+
+void SetDisplayHooks(const DisplayHooks *hooks) { display_hooks = hooks; }
 
 void Navigate(nav::Input input) {
     if (inputs != nullptr) {

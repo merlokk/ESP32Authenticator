@@ -62,8 +62,11 @@ Portrait, 480x800. The panel scans landscape (hardware.md): `ui_logic.h` turns t
   do on the host, the passkey in big digits. Touchscreen: five crosses one by
   one, a straight line per axis through the raw taps (scale and offset,
   `display.touch` in config.json), Save / Again / Use the default; a fit far
-  off (a tap beside a cross) is refused. The other pages are read-only for
-  now: editing on the site.
+  off (a tap beside a cross) is refused. Display & power: the battery, then
+  Power off after (never .. 1 hour), PIN after sleep (always .. a week),
+  Wallpaper (grey / black & white): a tap lists the choices with a check at
+  the one in use, a tap keeps one (config.json); what the Power button does;
+  Power off. The other pages are read-only for now: editing on the site.
 - **U2F / FIDO2 list**: a swipe up from the bottom quarter; the keys by site
   (A to Z), 6 a page: site, user, "made <date>, <alg>, resident / U2F";
   Left / Right or the bar under it (‹, "1 / 2", ›) flip the pages, the title says the count; its

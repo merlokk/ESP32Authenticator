@@ -11,6 +11,7 @@
 #include "wifi_view_logic.h"
 #include "touch_cal_logic.h"
 #include "ble_view_logic.h"
+#include "display_view_logic.h"
 #include "list_logic.h"
 #include "nav_logic.h"
 #include "pin_pad_logic.h"
@@ -681,6 +682,43 @@ void test_ble_view(void) {
     TEST_ASSERT_FALSE(bv::Equal(a, b));
 }
 
+void test_display_view(void) {
+    namespace dv = ui::display_view;
+    namespace st = ui::settings;
+    TEST_ASSERT_TRUE(st::Parent(st::Page::kDisplayChoice) == st::Page::kDisplay);
+    TEST_ASSERT_EQUAL_INT(3, dv::Index(dv::Setting::kIdle, 10));
+    TEST_ASSERT_EQUAL_INT(0, dv::Index(dv::Setting::kKeepPin, 0));
+    TEST_ASSERT_EQUAL_INT(-1, dv::Index(dv::Setting::kIdle, 7));
+    TEST_ASSERT_EQUAL_INT(1, dv::Index(dv::Setting::kWallpaper, 1));
+    char text[24];
+    dv::Label(dv::Setting::kIdle, 0, text, sizeof text);
+    TEST_ASSERT_EQUAL_STRING("Never", text);
+    dv::Label(dv::Setting::kIdle, 7, text, sizeof text);
+    TEST_ASSERT_EQUAL_STRING("7 min", text);  // set on the site
+    dv::Label(dv::Setting::kKeepPin, 8, text, sizeof text);
+    TEST_ASSERT_EQUAL_STRING("After 8 hours", text);
+    dv::Label(dv::Setting::kKeepPin, 12, text, sizeof text);
+    TEST_ASSERT_EQUAL_STRING("After 12 hours", text);
+    dv::Label(dv::Setting::kWallpaper, 0, text, sizeof text);
+    TEST_ASSERT_EQUAL_STRING("Grey", text);
+    size_t n = 0;
+    TEST_ASSERT_NOT_NULL(dv::Options(dv::Setting::kKeepPin, &n));
+    TEST_ASSERT_EQUAL_UINT(7, n);
+    TEST_ASSERT_EQUAL_STRING("PIN after sleep", dv::Title(dv::Setting::kKeepPin));
+    // Every choice fits config.json's range.
+    for (const dv::Option &o : dv::kIdle) {
+        TEST_ASSERT_TRUE(o.value <= 1440);
+    }
+    for (const dv::Option &o : dv::kKeepPin) {
+        TEST_ASSERT_TRUE(o.value <= 168);
+    }
+    dv::View a = {50, false, {10, 8, 0}};
+    dv::View b = a;
+    TEST_ASSERT_TRUE(dv::Equal(a, b));
+    b.value[1] = 4;
+    TEST_ASSERT_FALSE(dv::Equal(a, b));
+}
+
 void test_list_rows(void) {
     using ui::list::Zone;
     TEST_ASSERT_TRUE(ui::list::ZoneAt(0, 472) == Zone::kTypeUser);
@@ -745,6 +783,7 @@ void RegisterUiTests(void) {
     RUN_TEST(test_wifi_view);
     RUN_TEST(test_touch_calibration);
     RUN_TEST(test_ble_view);
+    RUN_TEST(test_display_view);
     RUN_TEST(test_list_rows);
     RUN_TEST(test_status_fido_prompt);
 }

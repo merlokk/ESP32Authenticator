@@ -23,6 +23,7 @@ enum class Page : uint8_t {
     kWifiPassword,  // a network's password, on the keyboard
     kBlePair,       // Bluetooth's "Pair a new host": the window, the passkey
     kTouch,         // the touch's calibration: five crosses
+    kDisplayChoice, // Display & power: one setting's choices
 };
 
 // Where a page's back arrow goes.
@@ -30,6 +31,7 @@ constexpr Page Parent(Page p) {
     return p == Page::kWifiScan       ? Page::kWifi
            : p == Page::kWifiPassword ? Page::kWifiScan
            : p == Page::kBlePair      ? Page::kBluetooth
+           : p == Page::kDisplayChoice ? Page::kDisplay
                                       : Page::kMain;
 }
 
@@ -52,6 +54,7 @@ constexpr const char *Title(Page p) {
         case Page::kWifiPassword: return "Password";
         case Page::kBlePair: return "Pair a new host";
         case Page::kTouch: return "Touchscreen";
+        case Page::kDisplayChoice: return "Display & power";
     }
     return "";
 }

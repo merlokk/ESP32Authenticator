@@ -12,6 +12,7 @@
 #include "status_logic.h"
 #include "wifi_view_logic.h"
 #include "ble_view_logic.h"
+#include "display_view_logic.h"
 #include "touch_cal_logic.h"
 
 namespace ui {
@@ -94,6 +95,15 @@ struct BleHooks {
     const char *(*pair)(bool start);  // the pairing window opened / closed
 };
 void SetBleHooks(const BleHooks *hooks);
+
+// The Display & power window (display_view_logic.h), filled by the device.
+struct DisplayHooks {
+    // What it shows. ui task, every 2 s while shown: keep it quick.
+    void (*view)(display_view::View *out);
+    // A choice kept (config.json); what to say. The ui's own task.
+    const char *(*set)(display_view::Setting setting, uint16_t value);
+};
+void SetDisplayHooks(const DisplayHooks *hooks);
 
 // The touch's calibration (touch_cal_logic.h), applied to every real touch;
 // saved by `save` (the ui's own task) when Settings > Touchscreen keeps a new one.

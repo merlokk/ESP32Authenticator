@@ -486,7 +486,8 @@ void SettingsDescribe(ui::settings::Page page, bool summary, char *out, size_t s
         case Page::kMain:
         case Page::kWifiScan:
         case Page::kWifiPassword:
-        case Page::kBlePair: break;
+        case Page::kBlePair:
+        case Page::kDisplayChoice: break;
     }
 }
 
@@ -672,6 +673,49 @@ const char *BlePair(bool start) {
 const ui::BleHooks kBleHooks = {BleView,  BlePairingEvent, BlePairingLeft, BleSetActive,
                                 BleUse,   BleForget,       BlePair};
 
+// --- The Display & power window (ui::DisplayHooks) -----------------------------------
+
+void DisplayView(ui::display_view::View *out) {
+    namespace dv = ui::display_view;
+    // The gauge over I2C: read every 30 s, as for the status bar.
+    constexpr int64_t kBatteryMs = 30 * 1000;
+    static int64_t read_at = -kBatteryMs;
+    static int level = -1;
+    const int64_t now_ms = esp_timer_get_time() / 1000;
+    if (now_ms - read_at >= kBatteryMs) {
+        level = battery::Level();
+        read_at = now_ms;
+    }
+    out->battery = static_cast<int8_t>(level);
+    out->charging = battery::ChargeState() == battery::Charge::kCharging;
+    const config::Data &c = config::Get();
+    for (uint8_t i = 0; i < dv::kSettingCount; ++i) {
+        switch (dv::kSettings[i]) {
+            case dv::Setting::kIdle: out->value[i] = c.power.idle_minutes; break;
+            case dv::Setting::kKeepPin: out->value[i] = c.power.keep_pin_hours; break;
+            case dv::Setting::kWallpaper:
+                out->value[i] = c.display.wallpaper == config::WallpaperMode::kBw ? 1 : 0;
+                break;
+        }
+    }
+}
+
+// Read where used (power, the sleep, the wallpaper): saved is applied.
+const char *DisplaySet(ui::display_view::Setting setting, uint16_t value) {
+    namespace dv = ui::display_view;
+    config::Data &c = config::Get();
+    switch (setting) {
+        case dv::Setting::kIdle: c.power.idle_minutes = value; break;
+        case dv::Setting::kKeepPin: c.power.keep_pin_hours = static_cast<uint8_t>(value); break;
+        case dv::Setting::kWallpaper:
+            c.display.wallpaper = value == 1 ? config::WallpaperMode::kBw : config::WallpaperMode::kGrey;
+            break;
+    }
+    return config::Save() == ESP_OK ? "saved" : "in use, but config.json is not saved";
+}
+
+const ui::DisplayHooks kDisplayHooks = {DisplayView, DisplaySet};
+
 // Settings > Touchscreen keeps a new calibration (the ui's own task).
 esp_err_t SaveTouch(const ui::touch_cal::Calibration &c) {
     config::Get().display.touch = {c.x_scale, c.x_offset, c.y_scale, c.y_offset};
@@ -719,6 +763,7 @@ extern "C" void app_main() {
     ui::SetSettingsHooks(&kSettingsHooks);
     ui::SetWifiHooks(&kWifiHooks);
     ui::SetBleHooks(&kBleHooks);
+    ui::SetDisplayHooks(&kDisplayHooks);
     {
         const config::TouchCalibration &t = config::Get().display.touch;
         ui::SetTouchCalibration({t.x_scale, t.x_offset, t.y_scale, t.y_offset}, SaveTouch);
