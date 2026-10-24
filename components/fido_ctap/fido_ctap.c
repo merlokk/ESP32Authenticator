@@ -74,6 +74,8 @@ void ctap_send_keepalive_if_needed(ctap_keepalive_status_t current_status) {
 
 static bool button(void) { return hooks.button_pressed != NULL && hooks.button_pressed(); }
 
+static bool deny_button(void) { return hooks.deny_pressed != NULL && hooks.deny_pressed(); }
+
 static void waiting_for_user(fido_ctap_wait_t what) {
     if (hooks.waiting_for_user != NULL) {
         hooks.waiting_for_user(what);
@@ -82,7 +84,8 @@ static void waiting_for_user(fido_ctap_wait_t what) {
 
 // Waits for a fresh press (a button already held when the request comes in
 // does not count), held for `hold_ms` (0: the press itself). A long touch
-// released early is not a refusal: the next press starts over.
+// released early is not a refusal: the next press starts over. A fresh press
+// of the deny button refuses.
 static ctap_user_presence_result_t wait_for_press(uint32_t hold_ms) {
     if (hold_ms != 0) {
         ESP_LOGI(TAG, "reset: hold the button for %u s", (unsigned)(hold_ms / 1000));
@@ -92,6 +95,7 @@ static ctap_user_presence_result_t wait_for_press(uint32_t hold_ms) {
     ctap_send_keepalive_if_needed(CTAP_STATUS_UPNEEDED);
     const uint32_t start = now_ms();
     bool was_pressed = button();
+    bool was_denied = deny_button();
     bool holding = false;
     uint32_t pressed_at = 0;
     while (true) {
@@ -104,6 +108,12 @@ static ctap_user_presence_result_t wait_for_press(uint32_t hold_ms) {
             ESP_LOGI(TAG, "user presence: timeout");
             return CTAP_UP_RESULT_TIMEOUT;
         }
+        const bool denied = deny_button();
+        if (denied && !was_denied) {
+            ESP_LOGI(TAG, "user presence: refused");
+            return CTAP_UP_RESULT_DENY;
+        }
+        was_denied = denied;
         const bool pressed = button();
         if (pressed && !was_pressed) {
             if (hold_ms == 0) {

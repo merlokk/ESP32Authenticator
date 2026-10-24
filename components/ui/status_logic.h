@@ -15,6 +15,8 @@ inline constexpr const char *kWifi = "\xEF\x87\xAB";
 inline constexpr const char *kBluetooth = "\xEF\x8A\x93";
 inline constexpr const char *kSdCard = "\xEF\x9F\x82";
 inline constexpr const char *kCharge = "\xEF\x83\xA7";
+inline constexpr const char *kArrowLeft = "\xEF\x81\x93";
+inline constexpr const char *kArrowRight = "\xEF\x81\x94";
 // Empty, 1, 2, 3, full.
 inline constexpr const char *kBattery[5] = {"\xEF\x89\x84", "\xEF\x89\x83", "\xEF\x89\x82",
                                             "\xEF\x89\x81", "\xEF\x89\x80"};
@@ -39,7 +41,8 @@ struct Status {
     Ble ble = Ble::kOff;
     int8_t battery = -1;  // percent, -1 no gauge
     bool charging = false;
-    bool sd = false;        // mounted
+    bool sd = false;         // mounted
+    bool fido_wait = false;  // a FIDO2 request waits for the user
     bool time_set = false;  // the clock is believable
     uint8_t hour = 0;       // local
     uint8_t minute = 0;
@@ -108,8 +111,13 @@ class Text {
 inline constexpr const char *kGap = "   ";
 
 // Left: "<wifi> [state]   <bt> [state]   <sd>"; what is off is left out.
+// While FIDO2 waits, the buttons' meaning instead: "FIDO2  <- yes  -> no".
 constexpr void Left(const Status &s, char *out, size_t size) {
     Text t(out, size);
+    if (s.fido_wait) {
+        t.Add("FIDO2   ").Add(kArrowLeft).Add(" yes   ").Add(kArrowRight).Add(" no");
+        return;
+    }
     auto add = [&t](const char *icon, const char *state) {
         if (t.size() > 0) {
             t.Add(kGap);

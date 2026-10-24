@@ -19,6 +19,8 @@ namespace ui {
 
 void StartPinPad();   // pin_pad.cpp
 void StartScreens();  // screens.cpp
+nav::Gesture TakeGesture();
+bool LastWasTap();
 
 namespace {
 
@@ -77,6 +79,9 @@ volatile bool held = false;   // HoldPanel: frames stay off the panel
 lv_indev_t *pointer = nullptr;
 ScreenPoint last_point = {};  // LVGL wants a point on release too
 bool last_down = false;
+ScreenPoint down_point = {};  // where the finger went down
+nav::Gesture gesture = nav::Gesture::kTap;  // the last lift's path
+bool gesture_new = false;                    // ... not taken by the screens yet
 uint32_t presses = 0;
 void (*press_hook)() = nullptr;
 
@@ -140,19 +145,31 @@ void PushTask(void *) {
 // The GT911 as LVGL's pointer, read in the ui task (lv_timer_handler): the
 // edges the keypad task recorded, one per read (continue_reading for the
 // rest), so a tap shorter than a busy ui task is still a press and a release.
+// Between the edges the finger's place now: a swipe (nav::Classify, from the
+// down point to the last place) is taken by the screens at the lift.
 void ReadTouch(lv_indev_t *, lv_indev_data_t *data) {
     touch::gt911::Edge e = {};
     uint8_t more = 0;
     if (touch::NextEdge(&e, &more)) {
         if (e.down) {
             last_point = TouchToScreen(e.x, e.y);
+            down_point = last_point;
             ++presses;
             if (press_hook != nullptr) {
                 press_hook();
             }
+        } else {
+            gesture = nav::Classify(down_point.x, down_point.y, last_point.x, last_point.y,
+                                    kHeight);
+            gesture_new = gesture != nav::Gesture::kTap;
         }
         last_down = e.down;
         data->continue_reading = more > 0;
+    } else if (last_down) {
+        touch::gt911::Point p = {};
+        if (touch::Contact(&p)) {
+            last_point = TouchToScreen(p.x, p.y);
+        }
     }
     const bool down = last_down;
     data->point.x = last_point.x;
@@ -238,6 +255,16 @@ esp_err_t Init() {
 bool Ready() { return started; }
 
 bool HasDisplay() { return task != nullptr; }
+
+// For the screens (ui task): the last lift's swipe, once.
+nav::Gesture TakeGesture() {
+    const bool fresh = gesture_new;
+    gesture_new = false;
+    return fresh ? gesture : nav::Gesture::kNone;
+}
+
+// For a click handler (ui task, right after the lift): the finger did not slide.
+bool LastWasTap() { return gesture == nav::Gesture::kTap; }
 
 void SetPressHook(void (*hook)()) { press_hook = hook; }
 

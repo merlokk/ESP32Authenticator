@@ -61,6 +61,9 @@ typedef struct {
     // (development: config.json test.autoPresence). Asked at every wait; not
     // for the reset's long touch. May be NULL.
     bool (*auto_presence)(void);
+    // Level of the refusal input (Right held down): a fresh press answers
+    // OPERATION_DENIED, for the reset's long touch too. May be NULL.
+    bool (*deny_pressed)(void);
 } fido_ctap_hooks_t;
 
 // RAM log for `n` credentials (~635 bytes each at most, rounded up), plus the

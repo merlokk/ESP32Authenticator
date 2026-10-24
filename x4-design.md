@@ -26,33 +26,31 @@ Portrait, 480x800. The panel scans landscape (hardware.md): `ui_logic.h` turns t
 
 ```
 +------------------------------+
-| WiFi BT bat SD sync   12:34  |  status bar
+| WiFi BT SD        12:34 bat  |  status bar (FIDO2: <- yes -> no)
 +------------------------------+
-| github.com                   |
-|   user@mail                  |
-| mail.google.com              |  credential list
-|   user@gmail.com             |  (one row per record)
-| ...                          |
-|                              |
+| github.com           123 456 |
+| user@mail          ********  |  a record: tap a quarter to type the
+|  user | passw. | show | TOTP |  user / password, show it, type TOTP
+| ...  (6 records a page)      |
 +------------------------------+
-|  <   [1]  2   3   4   >      |  pages of the list
+| [1]   2    3    4 >          |  a tab per page, 4 shown
 +------------------------------+
 ```
 
-- **Status bar**: Wi-Fi, Bluetooth (host connected), battery, SD card,
-  connection to the sync storage.
-- **List**: records as in a password manager. A tap on a row types into the
-  host: left third the login, centre the password, right third the current
-  TOTP code.
-- **Pages**: pages of the credential list; the Left / Right buttons flip
-  them, past the ends to the screen before / after; Home: the list's first
-  page.
-- **Tabs** (bottom): Passwords, TOTP, FIDO2, Settings. Done with the status
-  bar (`screens.cpp`); the screens themselves are stubs.
+- **Status bar**: Wi-Fi, Bluetooth (host connected), SD card, time,
+  battery; later the sync storage. While FIDO2 waits: Left yes, Right no.
+- **List**: the records in the vault's order (site, then user; to choose
+  from the web later). The password hidden, the TOTP code shown (new every
+  30 s). A row's quarters: type the user, type the password, show the
+  password (20 s), type the TOTP code.
+- **Pages**: a tab per page at the bottom, 4 at most (the row scrolls);
+  Left / Right flip them, Home: page 1.
+- **Settings**: a swipe down from the top quarter; up or Home closes it.
+- **FIDO2 list**: a swipe up from the bottom quarter; down or Home closes it.
 - **Lock screen**: PIN pad (touch), shown while the vault is locked (at boot,
   `pin lock`); done (`pin_pad.cpp`).
   See PIN below.
-- **Settings**: frontlight, Wi-Fi.
+- Settings (frontlight, Wi-Fi) and the FIDO2 list are stubs for now.
 
 E-ink: 1-bit LVGL, redraw at most every 200 ms; partial updates for list and
 status changes, a full refresh now and then against ghosting (driver's choice).

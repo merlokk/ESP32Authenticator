@@ -1,11 +1,12 @@
 // The portrait screen on the landscape panel, the full-refresh plan
 // (components/ui/ui_logic.h); the PIN pad (pin_pad_logic.h); the status bar
-// (status_logic.h) and the navigation (nav_logic.h).
+// (status_logic.h), the navigation (nav_logic.h) and the list (list_logic.h).
 
 #include <cstring>
 #include <string>
 #include <vector>
 
+#include "list_logic.h"
 #include "nav_logic.h"
 #include "pin_pad_logic.h"
 #include "status_logic.h"
@@ -238,54 +239,124 @@ void test_status_battery(void) {
     TEST_ASSERT_EQUAL_INT8(-1, st::ShownLevel(40, -1));
 }
 
-void test_nav_buttons(void) {
+void test_nav_pages_and_tabs(void) {
     using ui::nav::Input;
-    using ui::nav::Screen;
     ui::nav::Nav n;
-    TEST_ASSERT_TRUE(n.screen() == Screen::kPasswords);
-    n.SetPages(Screen::kPasswords, 3);
-    // Right through the pages, then the next screen.
-    TEST_ASSERT_TRUE(n.Apply(Input::kRight));
-    TEST_ASSERT_EQUAL_UINT8(1, n.page());
+    TEST_ASSERT_EQUAL_UINT8(1, n.pages());
+    TEST_ASSERT_FALSE(n.Apply(Input::kRight));  // one page: nothing to flip
+    n.SetPages(6);
+    TEST_ASSERT_EQUAL_UINT8(4, n.tabs());
+    TEST_ASSERT_EQUAL_UINT8(0, n.first());
+    // Right: pages in turn; the tab row scrolls to keep the page in it.
+    for (int i = 0; i < 4; ++i) {
+        TEST_ASSERT_TRUE(n.Apply(Input::kRight));
+    }
+    TEST_ASSERT_EQUAL_UINT8(4, n.page());
+    TEST_ASSERT_EQUAL_UINT8(1, n.first());
     n.Apply(Input::kRight);
+    TEST_ASSERT_EQUAL_UINT8(5, n.page());
+    TEST_ASSERT_EQUAL_UINT8(2, n.first());
+    // Round: after the last, the first.
     n.Apply(Input::kRight);
-    TEST_ASSERT_TRUE(n.screen() == Screen::kTotp);
     TEST_ASSERT_EQUAL_UINT8(0, n.page());
-    // Left back: the last page of Passwords.
+    TEST_ASSERT_EQUAL_UINT8(0, n.first());
     n.Apply(Input::kLeft);
-    TEST_ASSERT_TRUE(n.screen() == Screen::kPasswords);
+    TEST_ASSERT_EQUAL_UINT8(5, n.page());
+    TEST_ASSERT_EQUAL_UINT8(2, n.first());
+    // A tab: the page under it; the row stays.
+    TEST_ASSERT_TRUE(n.Tab(1));
+    TEST_ASSERT_EQUAL_UINT8(3, n.page());
+    TEST_ASSERT_EQUAL_UINT8(2, n.first());
+    TEST_ASSERT_FALSE(n.Tab(1));
+    TEST_ASSERT_FALSE(n.Tab(4));
+    // Records gone: the page and the row stay inside.
+    TEST_ASSERT_TRUE(n.SetPages(3));
     TEST_ASSERT_EQUAL_UINT8(2, n.page());
-    // Round: left of Passwords' first page is Settings.
-    n.Apply(Input::kHome);
+    TEST_ASSERT_EQUAL_UINT8(0, n.first());
+    TEST_ASSERT_EQUAL_UINT8(3, n.tabs());
+    // Home: the first page.
+    TEST_ASSERT_TRUE(n.Apply(Input::kHome));
     TEST_ASSERT_EQUAL_UINT8(0, n.page());
-    n.Apply(Input::kLeft);
-    TEST_ASSERT_TRUE(n.screen() == Screen::kSettings);
-    n.Apply(Input::kRight);
-    TEST_ASSERT_TRUE(n.screen() == Screen::kPasswords);
-    TEST_ASSERT_FALSE(n.Apply(Input::kHome));  // already there
+    TEST_ASSERT_FALSE(n.Apply(Input::kHome));
+    TEST_ASSERT_EQUAL_UINT8(1, ui::nav::PagesFor(0, 6));
+    TEST_ASSERT_EQUAL_UINT8(2, ui::nav::PagesFor(7, 6));
 }
 
-void test_nav_tabs_and_pages(void) {
-    using ui::nav::Screen;
+void test_nav_swipes(void) {
+    using ui::nav::Gesture;
+    using ui::nav::Mode;
     ui::nav::Nav n;
-    n.SetPages(Screen::kTotp, 4);
-    TEST_ASSERT_TRUE(n.Go(Screen::kTotp));
-    TEST_ASSERT_FALSE(n.Go(Screen::kTotp));
-    n.Apply(ui::nav::Input::kRight);
-    n.Apply(ui::nav::Input::kRight);
-    n.Go(Screen::kFido);
-    n.Go(Screen::kTotp);
-    TEST_ASSERT_EQUAL_UINT8(2, n.page());  // kept
-    // The list shrank: the page stays inside.
-    TEST_ASSERT_TRUE(n.SetPages(Screen::kTotp, 2));
-    TEST_ASSERT_EQUAL_UINT8(1, n.page());
-    TEST_ASSERT_TRUE(n.SetPages(Screen::kTotp, 0));  // at least one page
-    TEST_ASSERT_EQUAL_UINT8(1, n.pages());
-    TEST_ASSERT_EQUAL_UINT8(0, n.page());
-    TEST_ASSERT_EQUAL_UINT8(1, ui::nav::PagesFor(0, 8));
-    TEST_ASSERT_EQUAL_UINT8(1, ui::nav::PagesFor(8, 8));
-    TEST_ASSERT_EQUAL_UINT8(2, ui::nav::PagesFor(9, 8));
-    TEST_ASSERT_EQUAL_STRING("TOTP", ui::nav::Title(Screen::kTotp));
+    n.SetPages(3);
+    TEST_ASSERT_FALSE(n.Swipe(Gesture::kDown));  // not from the top
+    TEST_ASSERT_TRUE(n.Swipe(Gesture::kDownFromTop));
+    TEST_ASSERT_TRUE(n.mode() == Mode::kSettings);
+    // In Settings the buttons and tabs do nothing; a swipe up closes it.
+    TEST_ASSERT_FALSE(n.Apply(ui::nav::Input::kRight));
+    TEST_ASSERT_FALSE(n.Tab(1));
+    TEST_ASSERT_FALSE(n.Swipe(Gesture::kDownFromTop));
+    TEST_ASSERT_TRUE(n.Swipe(Gesture::kUp));
+    TEST_ASSERT_TRUE(n.mode() == Mode::kList);
+    TEST_ASSERT_TRUE(n.Swipe(Gesture::kUpFromBottom));
+    TEST_ASSERT_TRUE(n.mode() == Mode::kFido);
+    TEST_ASSERT_TRUE(n.Swipe(Gesture::kDown));
+    TEST_ASSERT_TRUE(n.mode() == Mode::kList);
+    // Home closes them too.
+    n.Swipe(Gesture::kUpFromBottom);
+    TEST_ASSERT_TRUE(n.Apply(ui::nav::Input::kHome));
+    TEST_ASSERT_TRUE(n.mode() == Mode::kList);
+}
+
+void test_nav_classify(void) {
+    using ui::nav::Classify;
+    using ui::nav::Gesture;
+    TEST_ASSERT_TRUE(Classify(100, 400, 110, 390, 800) == Gesture::kTap);
+    TEST_ASSERT_TRUE(Classify(100, 400, 160, 400, 800) == Gesture::kNone);  // sideways
+    TEST_ASSERT_TRUE(Classify(200, 60, 210, 400, 800) == Gesture::kDownFromTop);
+    TEST_ASSERT_TRUE(Classify(200, 199, 200, 400, 800) == Gesture::kDownFromTop);
+    TEST_ASSERT_TRUE(Classify(200, 200, 200, 400, 800) == Gesture::kDown);
+    TEST_ASSERT_TRUE(Classify(200, 760, 200, 300, 800) == Gesture::kUpFromBottom);
+    TEST_ASSERT_TRUE(Classify(200, 500, 200, 300, 800) == Gesture::kUp);
+    TEST_ASSERT_TRUE(Classify(200, 60, 200, 140, 800) == Gesture::kNone);  // too short
+    TEST_ASSERT_TRUE(Classify(100, 60, 300, 200, 800) == Gesture::kNone);  // too slanted
+}
+
+void test_list_rows(void) {
+    using ui::list::Zone;
+    TEST_ASSERT_TRUE(ui::list::ZoneAt(0, 472) == Zone::kTypeUser);
+    TEST_ASSERT_TRUE(ui::list::ZoneAt(117, 472) == Zone::kTypeUser);
+    TEST_ASSERT_TRUE(ui::list::ZoneAt(118, 472) == Zone::kTypePassword);
+    TEST_ASSERT_TRUE(ui::list::ZoneAt(236, 472) == Zone::kShowPassword);
+    TEST_ASSERT_TRUE(ui::list::ZoneAt(400, 472) == Zone::kTypeTotp);
+    TEST_ASSERT_TRUE(ui::list::ZoneAt(500, 472) == Zone::kTypeTotp);
+    TEST_ASSERT_TRUE(ui::list::ZoneAt(-3, 472) == Zone::kTypeUser);
+
+    ui::list::Span s = ui::list::PageSpan(14, 0);
+    TEST_ASSERT_EQUAL_size_t(0, s.first);
+    TEST_ASSERT_EQUAL_UINT8(6, s.count);
+    s = ui::list::PageSpan(14, 2);
+    TEST_ASSERT_EQUAL_size_t(12, s.first);
+    TEST_ASSERT_EQUAL_UINT8(2, s.count);
+    TEST_ASSERT_EQUAL_UINT8(0, ui::list::PageSpan(14, 3).count);
+
+    char code[8];
+    ui::list::FormatCode(42, code);
+    TEST_ASSERT_EQUAL_STRING("000 042", code);
+    ui::list::FormatCode(987654, code);
+    TEST_ASSERT_EQUAL_STRING("987 654", code);
+    TEST_ASSERT_EQUAL_INT64(ui::list::Window(59), ui::list::Window(30));
+    TEST_ASSERT_TRUE(ui::list::Window(60) != ui::list::Window(59));
+}
+
+void test_status_fido_prompt(void) {
+    namespace st = ui::status;
+    st::Status s;
+    s.wifi = st::Wifi::kOnline;
+    s.fido_wait = true;
+    char t[st::kTextSize];
+    st::Left(s, t, sizeof t);
+    const std::string want = std::string("FIDO2   ") + st::kArrowLeft + " yes   " +
+                             st::kArrowRight + " no";
+    TEST_ASSERT_EQUAL_STRING(want.c_str(), t);
 }
 
 }  // namespace
@@ -303,6 +374,9 @@ void RegisterUiTests(void) {
     RUN_TEST(test_pin_pad_texts);
     RUN_TEST(test_status_texts);
     RUN_TEST(test_status_battery);
-    RUN_TEST(test_nav_buttons);
-    RUN_TEST(test_nav_tabs_and_pages);
+    RUN_TEST(test_nav_pages_and_tabs);
+    RUN_TEST(test_nav_swipes);
+    RUN_TEST(test_nav_classify);
+    RUN_TEST(test_list_rows);
+    RUN_TEST(test_status_fido_prompt);
 }

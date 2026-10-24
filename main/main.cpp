@@ -1,5 +1,6 @@
 #include <sys/stat.h>
 
+#include <atomic>
 #include <cstdio>
 #include <cstring>
 #include <ctime>
@@ -77,9 +78,12 @@ const char *StorageDir() {
     return spiffs_fs::Mounted() ? spiffs_fs::kBasePath : nullptr;
 }
 
+// A FIDO2 request waits for the user: Left / Right answer it, not the screens.
+std::atomic<bool> fido_waiting{false};
+
 // FIDO2 over BLE: the LionKey CTAP core behind the ble_fido transport. User
 // presence: the board's Left button (BOOT on the dev board), debounced by the
-// keypad task, which owns the pins.
+// keypad task, which owns the pins; Right refuses.
 void InitFido(const char *dir) {
     static char store[64];
     const bool have_fs = dir != nullptr && snprintf(store, sizeof store, "%s/fido.bin", dir) <
@@ -94,9 +98,11 @@ void InitFido(const char *dir) {
             return ble::PeerIdentity(&out->addr_type, out->addr);
         },
         [](fido_ctap_wait_t what) {
+            fido_waiting = what != FIDO_CTAP_WAIT_NONE;
             boards::LedWaitingForUser(static_cast<boards::UserWait>(what));
         },
-        [] { return config::Get().test.auto_presence; }};
+        [] { return config::Get().test.auto_presence; },
+        [] { return keypad::Pressed(boards::ButtonId::kRight); }};
     static_assert(static_cast<int>(boards::UserWait::kLongTouchHeld) ==
                   FIDO_CTAP_WAIT_LONG_TOUCH_HELD);
     fido_ctap_set_reset_window(boards::kBoard.fido_reset_window_s);
@@ -208,6 +214,7 @@ void StatusSource(ui::status::Status *s) {
              : ble::ConnHandle() != BLE_HS_CONN_HANDLE_NONE ? st::Ble::kConnected
                                                               : st::Ble::kWaiting;
     s->sd = sd_card::Mounted();
+    s->fido_wait = fido_waiting;
 
     const time_t now = time(nullptr);
     s->time_set = now >= 1704067200;  // 2024-01-01, rtc::Believable's floor
@@ -218,12 +225,12 @@ void StatusSource(ui::status::Status *s) {
 }
 
 // Button bindings, from the keypad task; any key is activity. Left / Right /
-// Home pressed: the screens (ui::Navigate). Power x2: the
+// Home pressed: the screens (ui::Navigate), unless FIDO2 waits for them. Power x2: the
 // frontlight on / off; Power held: off (wallpaper, deep sleep); Power x3: off
 // locked (the PIN after the wake, whatever power.keepPinHours says).
 void OnKey(const buttons::KeyEvent &e) {
     power::NoteActivity();
-    if (e.kind == buttons::Kind::kPressed) {
+    if (e.kind == buttons::Kind::kPressed && !fido_waiting) {
         switch (static_cast<boards::ButtonId>(e.key)) {
             case boards::ButtonId::kLeft: ui::Navigate(ui::nav::Input::kLeft); break;
             case boards::ButtonId::kRight: ui::Navigate(ui::nav::Input::kRight); break;
@@ -275,6 +282,7 @@ extern "C" void app_main() {
     ui::Init();  // LVGL on the panel (portrait), the boot screen
     ui::SetPressHook(power::NoteActivity);
     ui::SetStatusSource(StatusSource);
+    ui::SetTypist(ble_kb::Type);
 
     ble_kb::Register();  // BLE profiles, before the stack starts
     ble_kb::SetTypingHook([] {

@@ -1,44 +1,61 @@
 // The screens behind the PIN pad (x4-design.md): the status bar on LVGL's top
-// layer (over every screen, the pad's too), the tab bar at the bottom, and
-// between them the current screen's page. nav_logic.h and status_logic.h
-// decide; this draws. The screens are stubs for now: a title, what comes
-// there, and the page.
+// layer (over every screen, the pad's too), the password list in pages with a
+// tab per page at the bottom, Settings pulled down from the top and the FIDO2
+// list pulled up from the bottom (both stubs for now). nav_logic.h,
+// list_logic.h and status_logic.h decide; this draws. Typing runs in a task
+// of its own (ui::SetTypist; a password takes a second over BLE).
 
 #include <cstdio>
 #include <cstring>
+#include <ctime>
 
 #include "esp_app_desc.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
+#include "freertos/task.h"
+#include "list_logic.h"
 #include "lvgl.h"
 #include "nav_logic.h"
 #include "status_logic.h"
+#include "codes.h"
 #include "ui.h"
 #include "ui_logic.h"
 #include "vault.h"
 
 namespace ui {
 
+nav::Gesture TakeGesture();  // ui.cpp
+bool LastWasTap();
+
 namespace {
 
-constexpr uint32_t kStatusMs = 2000;  // the bar's source, polled
-constexpr uint32_t kInputMs = 30;     // the buttons' queue, drained
+constexpr uint32_t kStatusMs = 500;   // the bar's source, polled (FIDO2's prompt)
+constexpr uint32_t kPollMs = 30;      // buttons, swipes, the vault, the codes
+constexpr uint32_t kToastMs = 3000;
+constexpr uint32_t kVaultMs = 500;    // the vault's changes, looked at
 constexpr int32_t kBarHeight = 44;
 constexpr int32_t kTabHeight = 72;
-constexpr uint8_t kRowsPerPage = 8;  // the Passwords list (later)
 constexpr unsigned kQueueDepth = 8;
+constexpr uint32_t kTypeStackBytes = 4096;
+constexpr int64_t kTimeFloor = 1704067200;  // 2024-01-01, rtc::Believable's floor
 
 constexpr int32_t kLeft = kInsetLeft;
 constexpr int32_t kRight = kWidth - kInsetRight;
+constexpr int32_t kRowWidth = kRight - kLeft;
 constexpr int32_t kContentTop = kInsetTop + kBarHeight;
 constexpr int32_t kContentBottom = kHeight - kInsetBottom - kTabHeight;
+constexpr int32_t kRowHeight = (kContentBottom - kContentTop) / list::kRowsPerPage;
+constexpr const char *kMask = "********";
+constexpr int32_t kLine = 24;  // a Montserrat 20 line: "..." cuts it there, no wrap
 
 nav::Nav nav_state;
 QueueHandle_t inputs = nullptr;
 StaticQueue_t inputs_storage;
 uint8_t inputs_buffer[kQueueDepth];
 void (*source)(status::Status *out) = nullptr;
+esp_err_t (*typist)(const char *text) = nullptr;
 
+lv_obj_t *home = nullptr;
 lv_obj_t *bar_left = nullptr;
 lv_obj_t *bar_right = nullptr;
 char left_text[status::kTextSize] = "";
@@ -47,11 +64,45 @@ int8_t shown_level = -1;
 
 lv_obj_t *content = nullptr;
 lv_obj_t *tabs = nullptr;
-size_t shown_records = static_cast<size_t>(-1);
+lv_obj_t *toast = nullptr;
+uint32_t toast_at = 0;
+uint32_t looked_at = 0;
+int tapped_tab = -1;  // OnTab: for Poll (the matrix is not changed in its own event)
+char tab_text[nav::kTabs][16];
+const char *tab_map[nav::kTabs + 1];
 
-// The pad's map form: "" ends it.
-const char *const kTabMap[] = {nav::kTitles[0], nav::kTitles[1], nav::kTitles[2],
-                               nav::kTitles[3], ""};
+// What the list shows: redrawn when the vault changes (count, version, state).
+struct Seen {
+    vault::State state;
+    size_t count;
+    uint32_t version;
+};
+Seen seen = {vault::State::kOff, static_cast<size_t>(-1), 0};
+
+struct Row {
+    uint32_t id;
+    bool has_otp;
+    bool shown;  // the password is on the glass
+    uint32_t shown_at;
+    lv_obj_t *user;
+    lv_obj_t *pass;
+    lv_obj_t *code;
+};
+Row rows[list::kRowsPerPage];
+uint8_t row_count = 0;
+int64_t code_window = -2;
+vault::Record record;  // the ui task's copy, wiped after each use
+
+struct Job {
+    uint32_t id;
+    list::Zone zone;
+};
+QueueHandle_t jobs = nullptr;
+StaticQueue_t jobs_storage;
+uint8_t jobs_buffer[4 * sizeof(Job)];
+StackType_t type_stack[kTypeStackBytes];
+StaticTask_t type_storage;
+vault::Record type_record;  // the typing task's copy
 
 lv_obj_t *Label(lv_obj_t *parent, const lv_font_t *font) {
     lv_obj_t *l = lv_label_create(parent);
@@ -68,8 +119,28 @@ void SetIfChanged(lv_obj_t *label, char *kept, const char *text) {
     }
 }
 
-void UpdateStatus() {
-    if (source == nullptr || bar_left == nullptr) {
+// A label's text wiped in LVGL's heap before it is replaced (a password).
+void SetWiped(lv_obj_t *label, const char *text) {
+    char *old = lv_label_get_text(label);
+    if (old != nullptr) {
+        memset(old, 0, strlen(old));
+    }
+    lv_label_set_text(label, text);
+}
+
+bool HomeShown() { return lv_screen_active() == home; }
+
+void Toast(const char *text) {
+    lv_label_set_text(toast, text);
+    lv_obj_remove_flag(toast, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_align(toast, LV_ALIGN_BOTTOM_MID, 0, -(kInsetBottom + kTabHeight + 12));
+    toast_at = lv_tick_get();
+}
+
+// --- status bar ------------------------------------------------------------------
+
+void UpdateStatus(lv_timer_t *) {
+    if (source == nullptr) {
         return;
     }
     status::Status s;
@@ -88,7 +159,7 @@ void StartBar() {
     lv_obj_remove_style_all(bar);
     lv_obj_remove_flag(bar, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_set_pos(bar, kLeft, kInsetTop);
-    lv_obj_set_size(bar, kRight - kLeft, kBarHeight);
+    lv_obj_set_size(bar, kRowWidth, kBarHeight);
     lv_obj_set_style_bg_color(bar, lv_color_white(), 0);
     lv_obj_set_style_bg_opa(bar, LV_OPA_COVER, 0);
     lv_obj_set_style_border_side(bar, LV_BORDER_SIDE_BOTTOM, 0);
@@ -102,100 +173,284 @@ void StartBar() {
     bar_right = Label(bar, &lv_font_montserrat_20);
     lv_label_set_text(bar_right, "");
     lv_obj_align(bar_right, LV_ALIGN_RIGHT_MID, 0, 0);
+
+    // Under the bar, over the tabs: what a tap did.
+    toast = Label(lv_layer_top(), &lv_font_montserrat_20);
+    lv_obj_set_style_bg_color(toast, lv_color_white(), 0);
+    lv_obj_set_style_bg_opa(toast, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(toast, 2, 0);
+    lv_obj_set_style_border_color(toast, lv_color_black(), 0);
+    lv_obj_set_style_radius(toast, 10, 0);
+    lv_obj_set_style_pad_all(toast, 12, 0);
+    lv_obj_add_flag(toast, LV_OBJ_FLAG_HIDDEN);
 }
 
-// Records in the vault (0 while it is locked) for the Passwords pages.
-size_t Records() {
+// --- the list ----------------------------------------------------------------------
+
+// The state without the vault's lock (Unlock holds it for a second); the
+// count and version only when open.
+Seen Look() {
+    const vault::State state = vault::GetState();
+    if (state != vault::State::kOpen) {
+        return {state, 0, 0};
+    }
     const vault::Info info = vault::GetInfo();
-    return info.state == vault::State::kOpen ? info.count : 0;
+    return {info.state, info.state == vault::State::kOpen ? info.count : 0, info.version};
 }
 
-void Stub(const char *what) {
-    lv_obj_t *l = Label(content, &lv_font_montserrat_20);
-    lv_label_set_long_mode(l, LV_LABEL_LONG_WRAP);
-    lv_obj_set_width(l, kRight - kLeft - 48);
-    lv_label_set_text(l, what);
-    lv_obj_align(l, LV_ALIGN_TOP_LEFT, 24, 80);
+bool TimeSet(int64_t now) { return now >= kTimeFloor; }
+
+// The record behind a row into `record` (wipe it after); false if gone.
+bool Fetch(uint32_t id, vault::Record *out) {
+    const long pos = vault::Position(id);
+    return pos >= 0 && vault::Get(static_cast<size_t>(pos), out) == vault::Error::kOk;
 }
 
-// The current screen's page, drawn anew.
-void ShowPage() {
-    lv_obj_clean(content);
-    const nav::Screen s = nav_state.screen();
-    lv_obj_t *title = Label(content, &lv_font_montserrat_32);
-    lv_label_set_text(title, nav::Title(s));
-    lv_obj_align(title, LV_ALIGN_TOP_LEFT, 24, 20);
-
-    char text[160];
-    switch (s) {
-        case nav::Screen::kPasswords:
-            snprintf(text, sizeof text,
-                     "%u record(s).\n\nThe list comes here, %u a page: a tap on a row types the "
-                     "login (left), the password (centre) or the TOTP code (right).",
-                     static_cast<unsigned>(Records()), static_cast<unsigned>(kRowsPerPage));
-            Stub(text);
-            break;
-        case nav::Screen::kTotp:
-            Stub("The TOTP codes of the records come here.");
-            break;
-        case nav::Screen::kFido:
-            Stub("The FIDO2 keys sites made on this device come here.");
-            break;
-        case nav::Screen::kSettings:
-            snprintf(text, sizeof text,
-                     "Frontlight, Wi-Fi and Bluetooth come here.\n\nfirmware %s\nLVGL %s",
-                     esp_app_get_description()->version, LvglVersion());
-            Stub(text);
-            break;
-    }
-
-    if (nav_state.pages() > 1) {
-        lv_obj_t *page = Label(content, &lv_font_montserrat_20);
-        lv_label_set_text_fmt(page, LV_SYMBOL_LEFT "   %u / %u   " LV_SYMBOL_RIGHT,
-                              static_cast<unsigned>(nav_state.page() + 1),
-                              static_cast<unsigned>(nav_state.pages()));
-        lv_obj_align(page, LV_ALIGN_BOTTOM_MID, 0, -16);
-    }
-    for (uint8_t i = 0; i < nav::kScreens; ++i) {
-        if (i == static_cast<uint8_t>(s)) {
-            lv_buttonmatrix_set_button_ctrl(tabs, i, LV_BUTTONMATRIX_CTRL_CHECKED);
-        } else {
-            lv_buttonmatrix_clear_button_ctrl(tabs, i, LV_BUTTONMATRIX_CTRL_CHECKED);
+// The rows' TOTP codes, for the window `now` is in.
+void UpdateCodes(int64_t now) {
+    code_window = list::Window(now);
+    for (uint8_t i = 0; i < row_count; ++i) {
+        if (!rows[i].has_otp) {
+            continue;
+        }
+        char text[8] = "--- ---";
+        totp::Codes codes = {};
+        if (TimeSet(now) && Fetch(rows[i].id, &record) &&
+            totp::Generate(record.otp, now, &codes) == ESP_OK) {
+            list::FormatCode(codes.code[1], text);
+        }
+        vault::Wipe(&record, sizeof record);
+        if (strcmp(lv_label_get_text(rows[i].code), text) != 0) {
+            lv_label_set_text(rows[i].code, text);
         }
     }
 }
 
-// The Passwords pages follow the vault (opened, a record added).
-void FollowRecords() {
-    const size_t n = Records();
-    if (n == shown_records) {
+void HidePassword(Row &r) {
+    SetWiped(r.pass, kMask);
+    lv_obj_set_pos(r.pass, kRowWidth / 2 + 6, 44);
+    lv_obj_set_size(r.pass, kRowWidth / 2 - 18, kLine);
+    lv_obj_remove_flag(r.user, LV_OBJ_FLAG_HIDDEN);
+    r.shown = false;
+}
+
+void ShowPassword(Row &r) {
+    if (!Fetch(r.id, &record)) {
+        Toast("the record is gone");
         return;
     }
-    shown_records = n;
-    const bool moved = nav_state.SetPages(nav::Screen::kPasswords, nav::PagesFor(n, kRowsPerPage));
-    if (nav_state.screen() == nav::Screen::kPasswords || moved) {
-        ShowPage();
+    if (record.password[0] == '\0') {
+        Toast("no password");
+    } else {
+        // Over the user's place: the whole width.
+        lv_obj_add_flag(r.user, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_pos(r.pass, 12, 44);
+        lv_obj_set_size(r.pass, kRowWidth - 24, kLine);
+        SetWiped(r.pass, record.password);
+        r.shown = true;
+        r.shown_at = lv_tick_get();
     }
+    vault::Wipe(&record, sizeof record);
+}
+
+void OnRow(lv_event_t *event) {
+    if (!LastWasTap()) {
+        return;  // the finger slid: a swipe, not a tap
+    }
+    Row &r = rows[reinterpret_cast<uintptr_t>(lv_event_get_user_data(event))];
+    lv_point_t p = {};
+    lv_indev_get_point(lv_indev_active(), &p);
+    lv_area_t a = {};
+    lv_obj_get_coords(static_cast<lv_obj_t *>(lv_event_get_target(event)), &a);
+    const list::Zone zone = list::ZoneAt(p.x - a.x1, lv_area_get_width(&a));
+    if (zone == list::Zone::kShowPassword) {
+        if (r.shown) {
+            HidePassword(r);
+        } else {
+            ShowPassword(r);
+        }
+        return;
+    }
+    if (zone == list::Zone::kTypeTotp && !r.has_otp) {
+        Toast("no TOTP for this record");
+        return;
+    }
+    const Job job = {r.id, zone};
+    if (xQueueSend(jobs, &job, 0) != pdTRUE) {
+        Toast("busy typing");
+    }
+}
+
+void AddRow(uint8_t i, const vault::Record &rec) {
+    Row &r = rows[i];
+    r = Row{};
+    r.id = rec.id;
+    r.has_otp = rec.otp[0] != '\0';
+
+    lv_obj_t *row = lv_obj_create(content);
+    lv_obj_remove_style_all(row);
+    lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_remove_flag(row, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_pos(row, 0, i * kRowHeight);
+    lv_obj_set_size(row, kRowWidth, kRowHeight);
+    lv_obj_set_style_border_side(row, LV_BORDER_SIDE_BOTTOM, 0);
+    lv_obj_set_style_border_width(row, 1, 0);
+    lv_obj_set_style_border_color(row, lv_color_black(), 0);
+    lv_obj_add_event_cb(row, OnRow, LV_EVENT_CLICKED, reinterpret_cast<void *>(uintptr_t{i}));
+
+    lv_obj_t *site = Label(row, &lv_font_montserrat_20);
+    lv_label_set_long_mode(site, LV_LABEL_LONG_MODE_DOTS);
+    lv_obj_set_size(site, r.has_otp ? kRowWidth - 180 : kRowWidth - 24, kLine);
+    lv_label_set_text(site, rec.site);
+    lv_obj_set_pos(site, 12, 10);
+
+    r.code = Label(row, &lv_font_montserrat_32);
+    lv_label_set_text(r.code, "");
+    lv_obj_align(r.code, LV_ALIGN_TOP_RIGHT, -12, 2);
+    if (!r.has_otp) {
+        lv_obj_add_flag(r.code, LV_OBJ_FLAG_HIDDEN);
+    }
+
+    r.user = Label(row, &lv_font_montserrat_20);
+    lv_label_set_long_mode(r.user, LV_LABEL_LONG_MODE_DOTS);
+    lv_obj_set_size(r.user, kRowWidth / 2 - 18, kLine);
+    lv_label_set_text(r.user, rec.user[0] != '\0' ? rec.user : "-");
+    lv_obj_set_pos(r.user, 12, 44);
+
+    r.pass = Label(row, &lv_font_montserrat_20);
+    lv_label_set_long_mode(r.pass, LV_LABEL_LONG_MODE_DOTS);
+    lv_label_set_text(r.pass, rec.password[0] != '\0' ? kMask : "-");
+    lv_obj_set_pos(r.pass, kRowWidth / 2 + 6, 44);
+    lv_obj_set_size(r.pass, kRowWidth / 2 - 18, kLine);
+
+    // What a tap in each quarter does, with ticks between them.
+    static const char *const kHints[4] = {LV_SYMBOL_KEYBOARD " user",
+                                          LV_SYMBOL_KEYBOARD " password",
+                                          LV_SYMBOL_EYE_OPEN " show",
+                                          LV_SYMBOL_KEYBOARD " TOTP"};
+    const int32_t quarter = kRowWidth / 4;
+    for (uint8_t q = 0; q < 4; ++q) {
+        if (q == 3 && !r.has_otp) {
+            break;
+        }
+        lv_obj_t *hint = Label(row, &lv_font_montserrat_14);
+        lv_label_set_text(hint, kHints[q]);
+        lv_obj_set_width(hint, quarter);
+        lv_obj_set_style_text_align(hint, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_pos(hint, q * quarter, kRowHeight - 28);
+        if (q > 0) {
+            lv_obj_t *tick = lv_obj_create(row);
+            lv_obj_remove_style_all(tick);
+            lv_obj_set_style_bg_color(tick, lv_color_black(), 0);
+            lv_obj_set_style_bg_opa(tick, LV_OPA_COVER, 0);
+            lv_obj_set_size(tick, 1, 18);
+            lv_obj_set_pos(tick, q * quarter, kRowHeight - 28);
+        }
+    }
+}
+
+void Stub(const char *title, const char *what) {
+    lv_obj_t *t = Label(content, &lv_font_montserrat_32);
+    lv_label_set_text(t, title);
+    lv_obj_align(t, LV_ALIGN_TOP_LEFT, 24, 20);
+    lv_obj_t *l = Label(content, &lv_font_montserrat_20);
+    lv_label_set_long_mode(l, LV_LABEL_LONG_MODE_WRAP);
+    lv_obj_set_width(l, kRowWidth - 48);
+    lv_label_set_text(l, what);
+    lv_obj_align(l, LV_ALIGN_TOP_LEFT, 24, 80);
+}
+
+// A tab per page, at most nav::kTabs; arrows where more pages are hidden.
+void ShowTabs() {
+    const uint8_t n = nav_state.tabs();
+    if (nav_state.mode() != nav::Mode::kList || nav_state.pages() < 2) {
+        lv_obj_add_flag(tabs, LV_OBJ_FLAG_HIDDEN);
+        return;
+    }
+    for (uint8_t i = 0; i < n; ++i) {
+        const unsigned p = nav_state.first() + i;
+        const bool more_left = i == 0 && nav_state.first() > 0;
+        const bool more_right = i + 1 == n && p + 1 < nav_state.pages();
+        snprintf(tab_text[i], sizeof tab_text[i], "%s%u%s", more_left ? LV_SYMBOL_LEFT " " : "",
+                 p + 1, more_right ? " " LV_SYMBOL_RIGHT : "");
+        tab_map[i] = tab_text[i];
+    }
+    tab_map[n] = "";
+    lv_buttonmatrix_set_map(tabs, tab_map);
+    lv_buttonmatrix_clear_button_ctrl_all(tabs, LV_BUTTONMATRIX_CTRL_CHECKED);
+    for (uint8_t i = 0; i < n; ++i) {
+        if (nav_state.first() + i == nav_state.page()) {
+            lv_buttonmatrix_set_button_ctrl(tabs, i, LV_BUTTONMATRIX_CTRL_CHECKED);
+        }
+    }
+    lv_obj_remove_flag(tabs, LV_OBJ_FLAG_HIDDEN);
+}
+
+void ShowList() {
+    seen = Look();
+    nav_state.SetPages(nav::PagesFor(seen.count, list::kRowsPerPage));
+    if (seen.state != vault::State::kOpen) {
+        Stub("Passwords", "The vault is locked.");
+        return;
+    }
+    if (seen.count == 0) {
+        Stub("Passwords",
+             "No records yet: add them on the web site (Passwords) or on the console "
+             "(pass add).");
+        return;
+    }
+    const list::Span span = list::PageSpan(seen.count, nav_state.page());
+    for (uint8_t i = 0; i < span.count; ++i) {
+        if (vault::Get(span.first + i, &record) != vault::Error::kOk) {
+            break;
+        }
+        AddRow(i, record);
+        ++row_count;
+    }
+    vault::Wipe(&record, sizeof record);
+    UpdateCodes(time(nullptr));
+}
+
+// The current mode and page, drawn anew.
+void Show() {
+    for (uint8_t i = 0; i < row_count; ++i) {
+        if (rows[i].shown) {
+            SetWiped(rows[i].pass, "");
+        }
+    }
+    row_count = 0;
+    lv_obj_clean(content);
+    char text[160];
+    switch (nav_state.mode()) {
+        case nav::Mode::kList:
+            ShowList();
+            break;
+        case nav::Mode::kSettings:
+            snprintf(text, sizeof text,
+                     "Frontlight, Wi-Fi and Bluetooth come here.\n\nfirmware %s\nLVGL %s\n\n"
+                     "Swipe up or Home: back to the passwords.",
+                     esp_app_get_description()->version, LvglVersion());
+            Stub("Settings", text);
+            break;
+        case nav::Mode::kFido:
+            Stub("FIDO2", "The keys sites made on this device come here.\n\n"
+                          "Swipe down or Home: back to the passwords.");
+            break;
+    }
+    ShowTabs();
 }
 
 void OnTab(lv_event_t *event) {
     auto *m = static_cast<lv_obj_t *>(lv_event_get_target(event));
-    const uint32_t id = lv_buttonmatrix_get_selected_button(m);
-    if (id < nav::kScreens && nav_state.Go(static_cast<nav::Screen>(id))) {
-        ShowPage();
-    }
+    tapped_tab = static_cast<int>(lv_buttonmatrix_get_selected_button(m));
 }
 
 void StartTabs(lv_obj_t *scr) {
     tabs = lv_buttonmatrix_create(scr);
-    lv_buttonmatrix_set_map(tabs, kTabMap);
-    // The longer names wider: "Passwords" fills a quarter.
-    const uint8_t kTabWidths[nav::kScreens] = {4, 3, 3, 4};
-    for (uint8_t i = 0; i < nav::kScreens; ++i) {
-        lv_buttonmatrix_set_button_width(tabs, i, kTabWidths[i]);
-    }
+    tab_map[0] = "";
+    lv_buttonmatrix_set_map(tabs, tab_map);
     lv_obj_set_pos(tabs, kLeft, kContentBottom);
-    lv_obj_set_size(tabs, kRight - kLeft, kTabHeight);
+    lv_obj_set_size(tabs, kRowWidth, kTabHeight);
     lv_obj_set_style_bg_color(tabs, lv_color_white(), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(tabs, LV_OPA_COVER, LV_PART_MAIN);
     lv_obj_set_style_border_side(tabs, LV_BORDER_SIDE_TOP, LV_PART_MAIN);
@@ -204,14 +459,15 @@ void StartTabs(lv_obj_t *scr) {
     lv_obj_set_style_radius(tabs, 0, LV_PART_MAIN);
     lv_obj_set_style_pad_all(tabs, 8, LV_PART_MAIN);
     lv_obj_set_style_pad_gap(tabs, 6, LV_PART_MAIN);
-    // E-ink: no pressed look (as the PIN pad); the current tab inverted.
+    // E-ink: no pressed look (as the PIN pad); the current page inverted.
     const lv_style_selector_t kStates[] = {LV_STATE_DEFAULT, LV_STATE_PRESSED, LV_STATE_FOCUSED,
                                            LV_STATE_FOCUS_KEY};
     for (const lv_style_selector_t state : kStates) {
         const auto part = static_cast<lv_style_selector_t>(LV_PART_ITEMS) | state;
         lv_obj_set_style_bg_color(tabs, lv_color_white(), part);
         lv_obj_set_style_bg_opa(tabs, LV_OPA_COVER, part);
-        lv_obj_set_style_border_width(tabs, 0, part);
+        lv_obj_set_style_border_width(tabs, 2, part);
+        lv_obj_set_style_border_color(tabs, lv_color_black(), part);
         lv_obj_set_style_outline_width(tabs, 0, part);
         lv_obj_set_style_shadow_width(tabs, 0, part);
         lv_obj_set_style_radius(tabs, 10, part);
@@ -231,50 +487,129 @@ void StartTabs(lv_obj_t *scr) {
     lv_obj_add_event_cb(tabs, OnTab, LV_EVENT_VALUE_CHANGED, nullptr);
 }
 
-// In the ui task: the buttons' inputs, the vault's records.
+// --- typing ------------------------------------------------------------------------
+
+const char *TypeJob(const Job &job) {
+    if (!Fetch(job.id, &type_record)) {
+        return "the record is gone";
+    }
+    char code[8] = "";
+    const char *text = job.zone == list::Zone::kTypeUser ? type_record.user
+                       : job.zone == list::Zone::kTypePassword ? type_record.password
+                                                               : code;
+    if (job.zone == list::Zone::kTypeTotp) {
+        const time_t now = time(nullptr);
+        totp::Codes codes = {};
+        if (!TimeSet(now) || totp::Generate(type_record.otp, now, &codes) != ESP_OK) {
+            return "no TOTP code: the clock is not set";
+        }
+        snprintf(code, sizeof code, "%06u", static_cast<unsigned>(codes.code[1] % 1000000));
+    }
+    if (text[0] == '\0') {
+        return job.zone == list::Zone::kTypeUser ? "no user" : "no password";
+    }
+    const esp_err_t err = typist != nullptr ? typist(text) : ESP_ERR_NOT_SUPPORTED;
+    vault::Wipe(code, sizeof code);
+    switch (err) {
+        case ESP_OK:
+            return job.zone == list::Zone::kTypeUser       ? "typed the user"
+                   : job.zone == list::Zone::kTypePassword ? "typed the password"
+                                                           : "typed the TOTP code";
+        case ESP_ERR_INVALID_STATE:
+            return "no keyboard host connected";
+        case ESP_ERR_INVALID_ARG:
+            return "cannot type it: a character not on a US keyboard";
+        default:
+            return "cannot type";
+    }
+}
+
+void TypeTask(void *) {
+    for (;;) {
+        Job job = {};
+        xQueueReceive(jobs, &job, portMAX_DELAY);
+        const char *said = TypeJob(job);
+        vault::Wipe(&type_record, sizeof type_record);
+        Lock();
+        Toast(said);
+        Unlock();
+    }
+}
+
+// --- the ui task's timers ------------------------------------------------------------
+
+// Buttons, swipes, the vault's changes, the codes, the hidden passwords.
 void Poll(lv_timer_t *) {
     uint8_t in = 0;
     bool changed = false;
     while (xQueueReceive(inputs, &in, 0) == pdTRUE) {
-        // Under the PIN pad the buttons do nothing here.
-        if (lv_screen_active() == lv_obj_get_screen(content)) {
+        if (HomeShown()) {  // under the PIN pad the buttons do nothing here
             changed |= nav_state.Apply(static_cast<nav::Input>(in));
         }
     }
-    if (changed) {
-        ShowPage();
+    if (tapped_tab >= 0) {
+        changed |= nav_state.Tab(static_cast<uint8_t>(tapped_tab));
+        tapped_tab = -1;
     }
-    FollowRecords();
+    const nav::Gesture g = TakeGesture();
+    if (g != nav::Gesture::kNone && HomeShown()) {
+        changed |= nav_state.Swipe(g);
+    }
+    if (nav_state.mode() == nav::Mode::kList && lv_tick_elaps(looked_at) >= kVaultMs) {
+        looked_at = lv_tick_get();
+        const Seen now = Look();
+        changed |= now.state != seen.state || now.count != seen.count ||
+                   now.version != seen.version;
+    }
+    if (changed) {
+        Show();
+        return;
+    }
+    const time_t now = time(nullptr);
+    if (row_count > 0 && list::Window(now) != code_window) {
+        UpdateCodes(now);
+    }
+    for (uint8_t i = 0; i < row_count; ++i) {
+        if (rows[i].shown && lv_tick_elaps(rows[i].shown_at) >= list::kRevealMs) {
+            HidePassword(rows[i]);
+        }
+    }
+    if (!lv_obj_has_flag(toast, LV_OBJ_FLAG_HIDDEN) && lv_tick_elaps(toast_at) >= kToastMs) {
+        lv_obj_add_flag(toast, LV_OBJ_FLAG_HIDDEN);
+    }
 }
-
-void StatusTimer(lv_timer_t *) { UpdateStatus(); }
 
 }  // namespace
 
 // From ui.cpp, under Lock: on the screen shown at boot.
 void StartScreens() {
     inputs = xQueueCreateStatic(kQueueDepth, 1, inputs_buffer, &inputs_storage);
-    lv_obj_t *scr = lv_screen_active();
-    lv_obj_set_style_bg_color(scr, lv_color_white(), 0);
-    lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, 0);
-    lv_obj_remove_flag(scr, LV_OBJ_FLAG_SCROLLABLE);
+    jobs = xQueueCreateStatic(sizeof jobs_buffer / sizeof(Job), sizeof(Job), jobs_buffer,
+                              &jobs_storage);
+    xTaskCreateStatic(&TypeTask, "ui_type", kTypeStackBytes, nullptr, 2, type_stack,
+                      &type_storage);
+    home = lv_screen_active();
+    lv_obj_set_style_bg_color(home, lv_color_white(), 0);
+    lv_obj_set_style_bg_opa(home, LV_OPA_COVER, 0);
+    lv_obj_remove_flag(home, LV_OBJ_FLAG_SCROLLABLE);
 
-    content = lv_obj_create(scr);
+    content = lv_obj_create(home);
     lv_obj_remove_style_all(content);
     lv_obj_remove_flag(content, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_pos(content, kLeft, kContentTop);
-    lv_obj_set_size(content, kRight - kLeft, kContentBottom - kContentTop);
+    lv_obj_set_size(content, kRowWidth, kContentBottom - kContentTop);
 
-    StartTabs(scr);
+    StartTabs(home);
     StartBar();
-    FollowRecords();
-    ShowPage();
-    UpdateStatus();
-    lv_timer_create(Poll, kInputMs, nullptr);
-    lv_timer_create(StatusTimer, kStatusMs, nullptr);
+    Show();
+    UpdateStatus(nullptr);
+    lv_timer_create(Poll, kPollMs, nullptr);
+    lv_timer_create(UpdateStatus, kStatusMs, nullptr);
 }
 
 void SetStatusSource(void (*fn)(status::Status *out)) { source = fn; }
+
+void SetTypist(esp_err_t (*type)(const char *text)) { typist = type; }
 
 void Navigate(nav::Input input) {
     if (inputs != nullptr) {

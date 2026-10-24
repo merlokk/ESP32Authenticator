@@ -40,6 +40,9 @@ esp_err_t PreviewWallpaper(bool grey, const char **shown);
 // The status bar's source (status_logic.h): called in the ui task every 2 s,
 // fills what the board reports. Keep it quick (cache slow reads).
 void SetStatusSource(void (*source)(status::Status *out));
+// Types a record's user, password or TOTP code on the host (ble_kb::Type),
+// called from a task of the ui's own. ESP_ERR_INVALID_STATE: no host.
+void SetTypist(esp_err_t (*type)(const char *text));
 // Left / Right / Home (nav_logic.h), from any task: queued for the ui task;
 // nothing while the PIN pad is up.
 void Navigate(nav::Input input);

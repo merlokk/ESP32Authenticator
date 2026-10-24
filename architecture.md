@@ -15,7 +15,7 @@ Target and status. Screen design and the open questions: [x4-design.md](x4-desig
 | Store file header (version, modification time) and rollback check (highest version in NVS) | done (`storefile`) |
 | Encrypted stores: `vault.bin` and `fido.bin`, AES-256-GCM with a key from the PIN (the same on every device with the PIN and the files), loaded whole into PSRAM | done |
 | Sync over the internet, the later modification time wins | not yet; service not chosen |
-| X4 Pro screen: status bar, credential list, pages, settings | status bar, tabs and page navigation done; the screens are stubs; PIN pad done |
+| X4 Pro screen: status bar, credential list, pages, settings | status bar, the password list (pages, typing, TOTP), swipes, PIN pad done; Settings and the FIDO2 list are stubs |
 | Settings: frontlight, Wi-Fi | Wi-Fi on the console and the site; frontlight not yet |
 | Time: SNTP, zones, clock | done |
 | Battery: voltage, level, charging | done (CW2017 + charger STAT, console `battery`, BLE Battery Level); screen not yet |
@@ -281,18 +281,28 @@ every 20 ms (the default 200 ms misses short taps); its coordinates are the
 portrait screen's as they are (`TouchToScreen`, checked by eye: no swap or
 flip).
 
-Screens (`screens.cpp`; `status_logic.h`, `nav_logic.h` pure): the status bar
-on LVGL's top layer (over every screen and the PIN pad): Wi-Fi (off: none;
-"..." trying, "!" no internet, "AP"), Bluetooth ("..." no host, "pair"), the
-microSD, the local time (once believable) and the battery (icon by 25 %,
-charging mark, percent; moves by 2 % or more). `main.cpp` fills it
-(`ui::SetStatusSource`, every 2 s; the gauge every 30 s); a label is set only
-when its text changed (each change is a fast refresh). Tabs at the bottom:
-Passwords, TOTP, FIDO2, Settings (stubs; Passwords counts its pages from the
-vault, 8 rows a page). Left / Right pressed flip the pages, past the ends the
-screen before / after (round); Home: Passwords, page 1 (`ui::Navigate`,
-queued from the keypad task; nothing under the PIN pad). Left is also the
-FIDO2 presence button: a press for a site flips a page too.
+Screens (`screens.cpp`; `status_logic.h`, `nav_logic.h`, `list_logic.h`
+pure): the status bar on LVGL's top layer (over every screen and the PIN
+pad): Wi-Fi (off: none; "..." trying, "!" no internet, "AP"), Bluetooth
+("..." no host, "pair"), the microSD, the local time (once believable) and
+the battery (icon by 25 %, charging mark, percent; moves by 2 % or more);
+while FIDO2 waits, "FIDO2 <- yes -> no" instead of the left half. `main.cpp`
+fills it (`ui::SetStatusSource`, every 0.5 s; the gauge every 30 s); a label
+is set only when its text changed (each change is a fast refresh). The list:
+the vault's records in its order (site, user), 6 a page; a row shows the
+site, the TOTP code (redrawn each 30 s window), the user and the password
+as `********`; a tap in a quarter types the user, types the password, shows
+the password (20 s, or a tap again; wiped in LVGL's heap after) or types
+the TOTP code (`ui::SetTypist` = `ble_kb::Type`, in the `ui_type` task; a
+note says what happened). A tab per page at the bottom (none for one page),
+at most 4: the row scrolls with the page, arrows where pages are hidden.
+Left / Right pressed flip the pages (round), Home: page 1 (`ui::Navigate`,
+queued from the keypad task; nothing under the PIN pad or while FIDO2
+waits). The touch reports the finger's moves too: a swipe down from the top
+quarter opens Settings, up from the bottom quarter the FIDO2 list (both
+stubs), the opposite swipe or Home closes them (`nav::Classify`; a slid tap
+is no tap). FIDO2 presence: Left allows, Right refuses (OPERATION_DENIED,
+`deny_pressed` hook).
 
 PIN pad (`pin_pad.cpp`, `pin_pad_logic.h` pure): shown while the vault is
 locked (polled each second with `vault::GetState`, no lock): at boot unless
