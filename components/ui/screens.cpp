@@ -140,6 +140,9 @@ enum class JobKind : uint8_t {
     kPinWipe,     // the wipe PIN `password` (`flag`), or none
     kPinLock,     // the lock after wrong PINs: `id` minutes
     kPinComplexity,  // `flag`
+    kWebMode,     // web.mode `id`
+    kWebWrite,    // web.write `flag`
+    kWebLogin,    // the login `ssid` / `password` (`flag`), or none
 };
 
 struct Job {
@@ -877,7 +880,7 @@ void ShowFido() {
 // --- Settings ----------------------------------------------------------------------
 
 constexpr int32_t kLightRow = 64;
-constexpr int32_t kMenuRow = 64;
+constexpr int32_t kMenuRow = 58;
 constexpr int32_t kLineHeight = 50;
 constexpr size_t kSettingsText = 512;
 // What the shown page says (describe; the main page: its rows' summaries, a
@@ -1567,6 +1570,9 @@ bool PollWifi() {
                 changed |= nav_state.OpenSettings(static_cast<uint8_t>(settings::Page::kWifi));
             }
         }
+    }
+    if (nav_state.settings_page() != static_cast<uint8_t>(settings::Page::kWifiPassword)) {
+        return changed;
     }
     if (password_cancel) {
         password_cancel = false;
@@ -2580,6 +2586,224 @@ void ShowAbout() {
     lv_obj_add_event_cb(b, OnAction, LV_EVENT_CLICKED, nullptr);
 }
 
+// --- Settings: Web site ------------------------------------------------------------
+
+const WebHooks *web_hooks = nullptr;
+web_view::View web_shown;
+web_view::View web_now;
+bool login_on_password = false;  // the login page: the user typed, now the password
+char login_user[web_view::kUserSize];
+int web_row_tapped = -1;  // 0 mode, 2 login
+bool web_write_tapped = false;
+int web_mode_tapped = -1;
+
+void OnWebRow(lv_event_t *event) {
+    if (LastWasTap()) {
+        web_row_tapped = static_cast<int>(reinterpret_cast<intptr_t>(lv_event_get_user_data(event)));
+    }
+}
+
+void OnWebWrite(lv_event_t *) { web_write_tapped = true; }
+
+void OnWebMode(lv_event_t *event) {
+    if (LastWasTap()) {
+        web_mode_tapped = static_cast<int>(reinterpret_cast<intptr_t>(lv_event_get_user_data(event)));
+    }
+}
+
+// The state, a QR code of the address, when it runs, changes, the login.
+void ShowWeb() {
+    TitleBar("Web site");
+    web_hooks->view(&web_shown);
+    const web_view::View &v = web_shown;
+    int32_t y = kTitleHeight;
+    lv_obj_t *state = Panel(content, y, 52);
+    lv_obj_set_style_border_width(state, 2, 0);
+    lv_obj_t *s = Label(state, &lv_font_montserrat_24);
+    lv_label_set_long_mode(s, LV_LABEL_LONG_MODE_DOTS);
+    lv_obj_set_width(s, kRowWidth - 24);
+    lv_label_set_text(s, v.state);
+    lv_obj_set_pos(s, 12, 10);
+    y += 52 + 12;
+    if (v.url[0] != '\0') {
+        constexpr int32_t kQr = 176;
+        lv_obj_t *qr = lv_qrcode_create(content);
+        lv_qrcode_set_size(qr, kQr);
+        lv_qrcode_set_dark_color(qr, lv_color_black());
+        lv_qrcode_set_light_color(qr, lv_color_white());
+        lv_qrcode_update(qr, v.url, strlen(v.url));
+        lv_obj_align(qr, LV_ALIGN_TOP_MID, 0, y);
+        lv_obj_t *url = Label(content, &lv_font_montserrat_24);
+        lv_label_set_text(url, v.url);
+        lv_obj_align(url, LV_ALIGN_TOP_MID, 0, y + kQr + 8);
+        y += kQr + 48;
+    }
+    ChoiceRow(y, "Runs", web_view::ModeLabel(v.mode), false, OnWebRow, 0);
+    y += kNetRow;
+    lv_obj_t *row = Panel(content, y, kNetRow);
+    lv_obj_set_style_border_width(row, 1, 0);
+    lv_obj_t *l = Label(row, &lv_font_montserrat_24);
+    lv_label_set_text(l, "Changes from the site");
+    lv_obj_set_pos(l, 12, (kNetRow - 30) / 2);
+    lv_obj_t *sw = Switch(row, v.write);
+    lv_obj_align(sw, LV_ALIGN_RIGHT_MID, -12, 0);
+    lv_obj_add_event_cb(sw, OnWebWrite, LV_EVENT_VALUE_CHANGED, nullptr);
+    y += kNetRow;
+    ChoiceRow(y, "Login", v.login ? v.user : "off", false, OnWebRow, 2);
+    y += kNetRow;
+    lv_obj_t *note = Label(content, &lv_font_montserrat_20);
+    lv_label_set_long_mode(note, LV_LABEL_LONG_MODE_WRAP);
+    lv_obj_set_width(note, kRowWidth - 24);
+    lv_label_set_text(note, v.login ? "The browser asks for the login."
+                                    : "No login: anyone on the network may open the site.");
+    lv_obj_set_pos(note, 12, y + 12);
+}
+
+void ShowWebMode() {
+    TitleBar("Web site runs");
+    int32_t y = kTitleHeight;
+    for (uint8_t i = 0; i < web_view::kModeCount; ++i, y += kNetRow) {
+        ChoiceRow(y, web_view::kModes[i].label, nullptr, web_view::kModes[i].value == web_shown.mode,
+                  OnWebMode, i);
+    }
+    lv_obj_t *note = Label(content, &lv_font_montserrat_20);
+    lv_label_set_long_mode(note, LV_LABEL_LONG_MODE_WRAP);
+    lv_obj_set_width(note, kRowWidth - 24);
+    lv_label_set_text(note, "The access point: the one the device opens when no network "
+                            "answers (Wi-Fi), or always in its AP mode.");
+    lv_obj_set_pos(note, 12, y + 16);
+}
+
+// The user, then the password (hidden), on the keyboard; OK goes on.
+void ShowWebLogin() {
+    TitleBar(login_on_password ? "Login: password" : "Login: user");
+    password_area = lv_textarea_create(content);
+    lv_obj_remove_style_all(password_area);
+    lv_textarea_set_one_line(password_area, true);
+    lv_textarea_set_password_mode(password_area, login_on_password);
+    lv_textarea_set_password_show_time(password_area, 0);
+    lv_textarea_set_password_bullet(password_area, "*");
+    lv_textarea_set_max_length(password_area, login_on_password ? web_view::kPasswordSize - 1
+                                                                : web_view::kUserSize - 1);
+    lv_textarea_set_placeholder_text(password_area, login_on_password ? "password" : "user");
+    lv_obj_set_size(password_area, kRowWidth - 24, 60);
+    lv_obj_set_pos(password_area, 12, kTitleHeight + 16);
+    lv_obj_set_style_text_font(password_area, &lv_font_montserrat_28, 0);
+    lv_obj_set_style_text_color(password_area, lv_color_black(), 0);
+    lv_obj_set_style_border_width(password_area, 2, 0);
+    lv_obj_set_style_border_color(password_area, lv_color_black(), 0);
+    lv_obj_set_style_radius(password_area, 8, 0);
+    lv_obj_set_style_pad_hor(password_area, 12, 0);
+    lv_obj_set_style_pad_ver(password_area, 12, 0);
+    lv_obj_set_style_anim_duration(password_area, 0, LV_PART_CURSOR);
+    lv_obj_set_style_border_side(password_area, LV_BORDER_SIDE_LEFT, LV_PART_CURSOR);
+    lv_obj_set_style_border_width(password_area, 2, LV_PART_CURSOR);
+    lv_obj_set_style_border_color(password_area, lv_color_black(), LV_PART_CURSOR);
+    lv_obj_add_state(password_area, LV_STATE_FOCUSED);
+    lv_obj_t *hint = Label(content, &lv_font_montserrat_20);
+    lv_label_set_long_mode(hint, LV_LABEL_LONG_MODE_WRAP);
+    lv_obj_set_width(hint, kRowWidth - 24);
+    lv_label_set_text(hint, login_on_password
+                                ? "1..64 characters. " LV_SYMBOL_OK ": save, " LV_SYMBOL_KEYBOARD ": back."
+                                : "1..32 characters, no ':'. " LV_SYMBOL_OK ": the password next.");
+    lv_obj_set_pos(hint, 12, kTitleHeight + 90);
+    lv_obj_t *kb = lv_keyboard_create(content);
+    StyleKeyboard(kb);
+    lv_obj_set_size(kb, kRowWidth, 440);
+    lv_obj_align(kb, LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_keyboard_set_textarea(kb, password_area);
+    lv_obj_add_event_cb(kb, OnPassword, LV_EVENT_READY, nullptr);
+    lv_obj_add_event_cb(kb, OnPassword, LV_EVENT_CANCEL, nullptr);
+}
+
+// The Web site pages' taps (Poll). True when the page is to be drawn again.
+bool PollWeb() {
+    bool changed = false;
+    const auto page = static_cast<settings::Page>(nav_state.settings_page());
+    auto open = [&](settings::Page p) {
+        changed |= nav_state.OpenSettings(static_cast<uint8_t>(p));
+    };
+    if (web_row_tapped >= 0) {
+        const int row = web_row_tapped;
+        web_row_tapped = -1;
+        if (row == 0) {
+            open(settings::Page::kWebMode);
+        } else if (sheet == nullptr) {
+            const SheetButton set[] = {{"Set a login", 1}, {"Cancel", 3}};
+            const SheetButton change[] = {{"Change the login", 1}, {"Turn the login off", 2}, {"Cancel", 3}};
+            if (web_shown.login) {
+                OpenSheet("Login", change, 3);
+            } else {
+                OpenSheet("Login", set, 2);
+            }
+        }
+    }
+    if (sheet_choice != 0 && page == settings::Page::kWeb) {
+        const int choice = sheet_choice;
+        sheet_choice = 0;
+        CloseSheet();
+        if (choice == 1) {
+            login_on_password = false;
+            open(settings::Page::kWebLogin);
+        } else if (choice == 2) {
+            Job job = MakeJob(JobKind::kWebLogin);
+            job.flag = false;  // off
+            SendJob(job);
+            web_shown.login = false;
+            changed = true;
+        }
+    }
+    if (web_write_tapped) {
+        web_write_tapped = false;
+        Job job = MakeJob(JobKind::kWebWrite);
+        job.flag = !web_shown.write;
+        web_shown.write = job.flag;
+        SendJob(job);
+    }
+    if (web_mode_tapped >= 0) {
+        if (web_mode_tapped < web_view::kModeCount) {
+            Job job = MakeJob(JobKind::kWebMode);
+            job.id = web_view::kModes[web_mode_tapped].value;
+            web_shown.mode = web_view::kModes[web_mode_tapped].value;
+            SendJob(job);
+            changed |= nav_state.Back();
+        }
+        web_mode_tapped = -1;
+    }
+    if (page != settings::Page::kWebLogin) {
+        return changed;
+    }
+    if (password_cancel) {
+        password_cancel = false;
+        vault::Wipe(login_user, sizeof login_user);
+        changed |= nav_state.Back();
+    }
+    if (password_ready && password_area != nullptr) {
+        password_ready = false;
+        const char *typed = lv_textarea_get_text(password_area);
+        if (!login_on_password) {
+            if (!web_view::UserOk(typed)) {
+                Toast("1..32 characters, no ':'");
+            } else {
+                snprintf(login_user, sizeof login_user, "%s", typed);
+                login_on_password = true;
+                changed = true;  // the password page
+            }
+        } else if (!web_view::PasswordOk(typed)) {
+            Toast("1..64 characters");
+        } else {
+            Job job = MakeJob(JobKind::kWebLogin);
+            job.flag = true;
+            snprintf(job.ssid, sizeof job.ssid, "%s", login_user);
+            snprintf(job.password, sizeof job.password, "%s", typed);
+            vault::Wipe(login_user, sizeof login_user);
+            SendAndWipe(job);
+            changed |= nav_state.Back();
+        }
+    }
+    return changed;
+}
+
 // --- Settings: the touch's calibration ---------------------------------------------
 
 bool cal_active = false;  // the crosses are up: no calibration in use
@@ -2746,6 +2970,17 @@ void ShowSettings() {
         SettingsText(page, settings_shown, sizeof settings_shown);
         ShowAbout();
         return;
+    }
+    if (page != settings::Page::kWebLogin) {
+        login_on_password = page == settings::Page::kWebLogin && login_on_password;
+    }
+    if (web_hooks != nullptr) {
+        switch (page) {
+            case settings::Page::kWeb: ShowWeb(); return;
+            case settings::Page::kWebMode: ShowWebMode(); return;
+            case settings::Page::kWebLogin: ShowWebLogin(); return;
+            default: break;
+        }
     }
     if (security_hooks != nullptr) {
         switch (page) {
@@ -3086,6 +3321,12 @@ void TypeTask(void *) {
                     said = security_hooks->set_lock(static_cast<uint16_t>(job.id));
                     break;
                 case JobKind::kPinComplexity: said = security_hooks->set_complexity(job.flag); break;
+                case JobKind::kWebMode: said = web_hooks->set_mode(static_cast<uint8_t>(job.id)); break;
+                case JobKind::kWebWrite: said = web_hooks->set_write(job.flag); break;
+                case JobKind::kWebLogin:
+                    said = web_hooks->set_login(job.flag ? job.ssid : nullptr,
+                                                job.flag ? job.password : nullptr);
+                    break;
                 case JobKind::kDisplaySet:
                     said = display_hooks->set(job.setting, static_cast<uint16_t>(job.id));
                     break;
@@ -3238,6 +3479,9 @@ void Poll(lv_timer_t *) {
     if (nav_state.mode() == nav::Mode::kSettings && security_hooks != nullptr) {
         changed |= PollSecurity();
     }
+    if (nav_state.mode() == nav::Mode::kSettings && web_hooks != nullptr) {
+        changed |= PollWeb();
+    }
     // Settings' texts (Wi-Fi joined, the clock); the switch follows Power x2.
     // Not under a sheet, nor over a password being typed or a scan.
     if (nav_state.mode() == nav::Mode::kSettings && settings_hooks != nullptr && HomeShown() &&
@@ -3249,6 +3493,7 @@ void Poll(lv_timer_t *) {
         settings_page != settings::Page::kTimeZone && settings_page != settings::Page::kTimeSet &&
         settings_page != settings::Page::kSecurityLock &&
         settings_page != settings::Page::kSecurityPin && settings_page != settings::Page::kAbout &&
+        settings_page != settings::Page::kWebMode && settings_page != settings::Page::kWebLogin &&
         lv_tick_elaps(settings_looked_at) >= kSettingsMs) {
         settings_looked_at = lv_tick_get();
         if (settings_page == settings::Page::kWifi && wifi_hooks != nullptr) {
@@ -3257,6 +3502,9 @@ void Poll(lv_timer_t *) {
         } else if (settings_page == settings::Page::kBluetooth && ble_hooks != nullptr) {
             ble_hooks->view(&ble_now);
             changed |= !ble_view::Equal(ble_now, ble_shown);
+        } else if (settings_page == settings::Page::kWeb && web_hooks != nullptr) {
+            web_hooks->view(&web_now);
+            changed |= !web_view::Equal(web_now, web_shown);
         } else if (settings_page == settings::Page::kSecurity && security_hooks != nullptr) {
             security_hooks->view(&security_now);
             changed |= !security_view::Equal(security_now, security_shown);
@@ -3364,6 +3612,8 @@ void SetDisplayHooks(const DisplayHooks *hooks) { display_hooks = hooks; }
 void SetTimeHooks(const TimeHooks *hooks) { time_hooks = hooks; }
 
 void SetSecurityHooks(const SecurityHooks *hooks) { security_hooks = hooks; }
+
+void SetWebHooks(const WebHooks *hooks) { web_hooks = hooks; }
 
 void Navigate(nav::Input input) {
     if (inputs != nullptr) {

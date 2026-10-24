@@ -15,6 +15,7 @@
 #include "display_view_logic.h"
 #include "time_view_logic.h"
 #include "security_view_logic.h"
+#include "web_view_logic.h"
 #include "touch_cal_logic.h"
 
 namespace ui {
@@ -133,6 +134,17 @@ struct SecurityHooks {
     const char *(*set_complexity)(bool on);
 };
 void SetSecurityHooks(const SecurityHooks *hooks);
+
+// The Web site window (web_view_logic.h), filled by the device.
+struct WebHooks {
+    // What it shows. ui task, every 2 s while shown: keep it quick.
+    void (*view)(web_view::View *out);
+    // The rest in the ui's own task, saying what happened.
+    const char *(*set_mode)(uint8_t mode);
+    const char *(*set_write)(bool on);
+    const char *(*set_login)(const char *user, const char *password);  // nullptr: none
+};
+void SetWebHooks(const WebHooks *hooks);
 
 // The touch's calibration (touch_cal_logic.h), applied to every real touch;
 // saved by `save` (the ui's own task) when Settings > Touchscreen keeps a new one.

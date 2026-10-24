@@ -30,6 +30,9 @@ enum class Page : uint8_t {
     kTimeSet,       // Date & time: the time by hand
     kSecurityLock,  // Security: the lock after wrong PINs
     kSecurityPin,   // Security: a PIN typed (change it, the wipe PIN)
+    kWeb,           // the web site
+    kWebMode,       // Web site: when it runs
+    kWebLogin,      // Web site: the login on the keyboard
 };
 
 // Where a page's back arrow goes.
@@ -41,13 +44,14 @@ constexpr Page Parent(Page p) {
            : p == Page::kTimeSync || p == Page::kTimeRegion || p == Page::kTimeSet ? Page::kTime
            : p == Page::kTimeZone ? Page::kTimeRegion
            : p == Page::kSecurityLock || p == Page::kSecurityPin ? Page::kSecurity
+           : p == Page::kWebMode || p == Page::kWebLogin ? Page::kWeb
                                       : Page::kMain;
 }
 
 // The main page's rows, under the frontlight.
-inline constexpr Page kRows[] = {Page::kWifi,     Page::kBluetooth, Page::kTouch,
-                                 Page::kDisplay,  Page::kSecurity,  Page::kTime,
-                                 Page::kAbout};
+inline constexpr Page kRows[] = {Page::kWifi,     Page::kBluetooth, Page::kWeb,
+                                 Page::kTouch,    Page::kDisplay,   Page::kSecurity,
+                                 Page::kTime,     Page::kAbout};
 inline constexpr uint8_t kRowCount = sizeof kRows / sizeof kRows[0];
 
 constexpr const char *Title(Page p) {
@@ -70,6 +74,9 @@ constexpr const char *Title(Page p) {
         case Page::kTimeSet: return "Set the time";
         case Page::kSecurityLock: return "Lock after wrong PINs";
         case Page::kSecurityPin: return "PIN";
+        case Page::kWeb: return "Web site";
+        case Page::kWebMode: return "Web site";
+        case Page::kWebLogin: return "Login";
     }
     return "";
 }

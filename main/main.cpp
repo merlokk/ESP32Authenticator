@@ -527,7 +527,22 @@ void SettingsDescribe(ui::settings::Page page, bool summary, char *out, size_t s
         case Page::kTimeZone:
         case Page::kTimeSet:
         case Page::kSecurityLock:
-        case Page::kSecurityPin: break;
+        case Page::kSecurityPin:
+        case Page::kWebMode:
+        case Page::kWebLogin: break;
+        case Page::kWeb:
+            if (summary) {
+                const web::Status w = web::Get();
+                const wifimgr::Snapshot net = wifimgr::Get();
+                if (w.running && net.radio.ip != 0) {
+                    char ip[16];
+                    Ip(net.radio.ip, ip, sizeof ip);
+                    snprintf(out, size, "%s", ip);
+                } else {
+                    snprintf(out, size, "%s", w.running ? "on" : "off");
+                }
+            }
+            break;
     }
 }
 
@@ -921,6 +936,71 @@ const char *SecuritySetComplexity(bool on) {
 const ui::SecurityHooks kSecurityHooks = {SecurityView, SecurityChangePin, SecuritySetWipe,
                                           SecuritySetLock, SecuritySetComplexity};
 
+// --- The Web site window (ui::WebHooks) ----------------------------------------------
+
+void WebView(ui::web_view::View *out) {
+    *out = {};
+    const config::Web &cfg = config::Get().web;
+    const web::Status w = web::Get();
+    const wifimgr::Snapshot net = wifimgr::Get();
+    out->running = w.running;
+    out->mode = static_cast<uint8_t>(cfg.mode);
+    out->write = cfg.write;
+    out->login = cfg.user[0] != '\0' && cfg.password[0] != '\0';
+    snprintf(out->user, sizeof out->user, "%s", cfg.user);
+    char ip[16] = "";
+    if (w.running && (net.radio.ip != 0 || net.radio.ap_ip != 0)) {
+        Ip(net.radio.ip != 0 ? net.radio.ip : net.radio.ap_ip, ip, sizeof ip);
+        snprintf(out->url, sizeof out->url, "http://%s/", ip);
+    }
+    if (w.running) {
+        snprintf(out->state, sizeof out->state, "Running%s", w.auth ? ", with a login" : "");
+    } else if (w.desired == web::Desired::kOff) {
+        snprintf(out->state, sizeof out->state, "Off");
+    } else if (!net.stack_up) {
+        snprintf(out->state, sizeof out->state, "Stopped: Wi-Fi is off");
+    } else if (w.desired == web::Desired::kAuto) {
+        snprintf(out->state, sizeof out->state, "Waits for the access point");
+    } else {
+        snprintf(out->state, sizeof out->state, "Starting...");
+    }
+}
+
+// Saved, then the server follows (as the console's `web`).
+const char *WebSave(const char *done) {
+    web::Apply();
+    return config::Save() == ESP_OK ? done : "in use, but config.json is not saved";
+}
+
+const char *WebSetMode(uint8_t mode) {
+    config::Get().web.mode = static_cast<config::WebMode>(mode);
+    return WebSave(mode == 0 ? "web site off" : "saved");
+}
+
+const char *WebSetWrite(bool on) {
+    config::Get().web.write = on;
+    return WebSave(on ? "the site may change settings" : "the site is read-only");
+}
+
+// Both or neither: half a credential is an open site.
+const char *WebSetLogin(const char *user, const char *password) {
+    config::Web &cfg = config::Get().web;
+    if (user == nullptr || password == nullptr) {
+        cfg.user[0] = '\0';
+        vault::Wipe(cfg.password, sizeof cfg.password);
+        return WebSave("login off: the site is open");
+    }
+    if (!config::ValidWebUser(user) || user[0] == '\0' || password[0] == '\0' ||
+        strlen(password) >= sizeof cfg.password) {
+        return "user: 1..32 characters, no ':'; password: 1..64";
+    }
+    snprintf(cfg.user, sizeof cfg.user, "%s", user);
+    snprintf(cfg.password, sizeof cfg.password, "%s", password);
+    return WebSave("login set");
+}
+
+const ui::WebHooks kWebHooks = {WebView, WebSetMode, WebSetWrite, WebSetLogin};
+
 // Settings > Touchscreen keeps a new calibration (the ui's own task).
 esp_err_t SaveTouch(const ui::touch_cal::Calibration &c) {
     config::Get().display.touch = {c.x_scale, c.x_offset, c.y_scale, c.y_offset};
@@ -971,6 +1051,7 @@ extern "C" void app_main() {
     ui::SetDisplayHooks(&kDisplayHooks);
     ui::SetTimeHooks(&kTimeHooks);
     ui::SetSecurityHooks(&kSecurityHooks);
+    ui::SetWebHooks(&kWebHooks);
     {
         const config::TouchCalibration &t = config::Get().display.touch;
         ui::SetTouchCalibration({t.x_scale, t.x_offset, t.y_scale, t.y_offset}, SaveTouch);

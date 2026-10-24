@@ -50,8 +50,8 @@ Portrait, 480x800. The panel scans landscape (hardware.md): `ui_logic.h` turns t
 - **Settings**: a swipe down from the top quarter; its back arrow, a swipe
   up or Home closes it. As on a phone: the frontlight on top (a switch,
   Level and Warmth sliders: lit at once, saved when let go), then a row per
-  page with its summary and ">": Wi-Fi, Bluetooth, Touchscreen, Display &
-  power, Security, Date & time, About. A page lists "label  value" lines (looked at every
+  page with its summary and ">": Wi-Fi, Bluetooth, Web site, Touchscreen,
+  Display & power, Security, Date & time, About. A page lists "label  value" lines (looked at every
   2 s) and may have one button: Power off, Lock now, Sync the time now; its
   arrow goes back to Settings. Wi-Fi is a window of its own: a switch, the
   state, the saved networks (a tap: Connect, i.e. tried first, or Forget),
@@ -78,7 +78,10 @@ Portrait, 480x800. The panel scans landscape (hardware.md): `ui_logic.h` turns t
   change / off), Lock now. About: the name and the model big, then
   firmware, build, ESP-IDF, LVGL, chip, flash and PSRAM, the MACs, the web
   site, uptime, free memory, SD card (a snapshot), Restart (asked first: the
-  PIN after it).
+  PIN after it). Web site: running or why not, the address and its QR code,
+  Runs (off / on / on the device's access point), Changes from the site
+  (web.write), Login (set on the keyboard, the user then the password; or
+  off).
 - **U2F / FIDO2 list**: a swipe up from the bottom quarter; the keys by site
   (A to Z), 6 a page: site, user, "made <date>, <alg>, resident / U2F";
   Left / Right or the bar under it (‹, "1 / 2", ›) flip the pages, the title says the count; its

@@ -14,6 +14,7 @@
 #include "display_view_logic.h"
 #include "time_view_logic.h"
 #include "security_view_logic.h"
+#include "web_view_logic.h"
 #include "list_logic.h"
 #include "nav_logic.h"
 #include "pin_pad_logic.h"
@@ -491,7 +492,7 @@ void test_settings_pages(void) {
     TEST_ASSERT_EQUAL_UINT8(0, n.settings_page());
 
     TEST_ASSERT_EQUAL_STRING("Wi-Fi", st::Title(st::kRows[0]));
-    TEST_ASSERT_EQUAL_UINT8(7, st::kRowCount);
+    TEST_ASSERT_EQUAL_UINT8(8, st::kRowCount);
     TEST_ASSERT_TRUE(st::PageAction(st::Page::kSecurity) == st::Action::kLockNow);
     TEST_ASSERT_TRUE(st::PageAction(st::Page::kWifi) == st::Action::kNone);
     TEST_ASSERT_TRUE(st::PageAction(st::Page::kAbout) == st::Action::kRestart);
@@ -842,6 +843,28 @@ void test_security_view(void) {
     TEST_ASSERT_FALSE(tv::CityLess("Asia/Baku", "Asia/Baku"));
 }
 
+void test_web_view(void) {
+    namespace wv = ui::web_view;
+    namespace st = ui::settings;
+    TEST_ASSERT_TRUE(st::Parent(st::Page::kWebLogin) == st::Page::kWeb);
+    TEST_ASSERT_TRUE(st::Parent(st::Page::kWeb) == st::Page::kMain);
+    TEST_ASSERT_EQUAL_STRING("Web site", st::Title(st::kRows[2]));
+    TEST_ASSERT_TRUE(wv::UserOk("admin"));
+    TEST_ASSERT_FALSE(wv::UserOk(""));
+    TEST_ASSERT_FALSE(wv::UserOk("a:b"));
+    TEST_ASSERT_FALSE(wv::UserOk("123456789012345678901234567890123"));  // 33
+    TEST_ASSERT_TRUE(wv::UserOk("12345678901234567890123456789012"));    // 32
+    TEST_ASSERT_TRUE(wv::PasswordOk("x"));
+    TEST_ASSERT_FALSE(wv::PasswordOk(""));
+    TEST_ASSERT_EQUAL_STRING("Its access point", wv::ModeLabel(wv::kModeAuto));
+    TEST_ASSERT_EQUAL_UINT8(3, wv::kModeCount);
+    wv::View a = {};
+    wv::View b = a;
+    TEST_ASSERT_TRUE(wv::Equal(a, b));
+    b.write = true;
+    TEST_ASSERT_FALSE(wv::Equal(a, b));
+}
+
 void test_list_rows(void) {
     using ui::list::Zone;
     TEST_ASSERT_TRUE(ui::list::ZoneAt(0, 472) == Zone::kTypeUser);
@@ -918,6 +941,7 @@ void RegisterUiTests(void) {
     RUN_TEST(test_display_view);
     RUN_TEST(test_time_view);
     RUN_TEST(test_security_view);
+    RUN_TEST(test_web_view);
     RUN_TEST(test_list_rows);
     RUN_TEST(test_status_fido_prompt);
 }
