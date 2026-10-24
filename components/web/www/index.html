@@ -62,8 +62,21 @@ body{padding:0 16px 40px}</style>
   <tr><th>access point</th><td id="ap">&hellip;</td></tr>
 </table>
 
+<h2>Bluetooth</h2>
+<table>
+  <tr><th>ble</th><td id="ble">&hellip;</td></tr>
+  <tr><th>keyboard</th><td id="kb">&hellip;</td></tr>
+  <tr><th>fido2</th><td id="fido">&hellip;</td></tr>
+  <tr><th>stored</th><td><span id="fido-store">&hellip;</span>
+      <div class="meter" id="fido-meter"><i></i></div></td></tr>
+  <tr><th>pin</th><td id="fido-pin">&hellip;</td></tr>
+  <tr><th>counter</th><td id="fido-counter">&hellip;</td></tr>
+  <tr><th>file</th><td id="fido-file">&hellip;</td></tr>
+</table>
+
 <h2>Device</h2>
 <table>
+  <tr><th>pin</th><td id="vault">&hellip;</td></tr>
   <tr><th>time</th><td id="time">&hellip;</td></tr>
   <tr><th>time sync</th><td id="time-sync">&hellip;</td></tr>
   <tr><th>uptime</th><td id="uptime">&hellip;</td></tr>
@@ -71,6 +84,8 @@ body{padding:0 16px 40px}</style>
   <tr><th>psram free</th><td id="psram">&hellip;</td></tr>
   <tr><th>filesystem</th><td><span id="spiffs">&hellip;</span>
       <div class="meter" id="spiffs-meter"><i></i></div></td></tr>
+  <tr id="sd-row"><th>sd card</th><td><span id="sd">&hellip;</span>
+      <div class="meter" id="sd-meter"><i></i></div></td></tr>
   <tr><th>firmware</th><td id="firmware">&hellip;</td></tr>
 </table>
 

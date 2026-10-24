@@ -22,6 +22,7 @@
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "host/ble_hs.h"
+#include "sd_card.h"
 #include "spiffs_fs.h"
 #include "timesync.h"
 #include "timezone.h"
@@ -105,7 +106,7 @@ class Held {
 };
 
 // httpd is one task serving one request at a time: these cannot be re-entered.
-char g_json[1536];
+char g_json[2048];
 char g_body[kMaxSettingsBody + 1];  // a POST body in, or a settings document out
 constexpr size_t kMaxScan = 12;
 wifi::ScanResult g_scan[kMaxScan];
@@ -310,6 +311,14 @@ esp_err_t StatusApi(httpd_req_t *request) {
     std::snprintf(mac, sizeof mac, "%02x:%02x:%02x:%02x:%02x:%02x", mac_bytes[0], mac_bytes[1],
                   mac_bytes[2], mac_bytes[3], mac_bytes[4], mac_bytes[5]);
 
+    // The microSD: "none" on a board without a slot, else the mount outcome.
+    sd_card::Info sd = {};
+    const bool sd_info = sd_card::Mounted() && sd_card::GetInfo(&sd) == ESP_OK;
+    char sd_name[2 * sizeof sd.name + 8];
+    Escape(sd.name, sd_name, sizeof sd_name);
+
+    const vault::Info vault_info = vault::GetInfo();
+
     std::snprintf(
         g_json, sizeof g_json,
         "{\"firmware\":\"%s\",\"idf\":\"%s\",\"uptime_s\":%" PRIu32 ",\"heap_free\":%u"
@@ -325,7 +334,9 @@ esp_err_t StatusApi(httpd_req_t *request) {
         ",\"time_utc\":%lld,\"time_offset\":%d,\"time_zone\":\"%s\",\"time_sync\":\"%s\""
         ",\"time_sync_ago_s\":%ld,\"ble_name\":\"%s\",\"wallpaper\":\"%s\""
         ",\"light\":%s,\"light_on\":%s,\"light_brightness\":%u,\"light_warmth\":%u"
-        ",\"idle_minutes\":%u,\"hold_rail\":%s}",
+        ",\"idle_minutes\":%u,\"hold_rail\":%s"
+        ",\"sd\":\"%s\",\"sd_name\":\"%s\",\"sd_bytes\":%llu,\"sd_total\":%llu,\"sd_free\":%llu"
+        ",\"vault\":\"%s\",\"vault_count\":%u,\"pin_failures\":%u,\"pin_lock_s\":%" PRIu32 "}",
         app->version, app->idf_ver, static_cast<uint32_t>(esp_timer_get_time() / 1000000),
         static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL)),
         static_cast<unsigned>(heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL)),
@@ -351,7 +362,13 @@ esp_err_t StatusApi(httpd_req_t *request) {
         static_cast<unsigned>(config::Get().frontlight.brightness),
         static_cast<unsigned>(config::Get().frontlight.warmth),
         static_cast<unsigned>(config::Get().power.idle_minutes),
-        config::Get().power.hold_rail ? "true" : "false");
+        config::Get().power.hold_rail ? "true" : "false",
+        !boards::kBoard.has_sd_card ? "none" : sd_card::Name(sd_card::Status()), sd_name,
+        static_cast<unsigned long long>(sd.bytes),
+        static_cast<unsigned long long>(sd_info ? sd.fs_total : 0),
+        static_cast<unsigned long long>(sd_info ? sd.fs_free : 0),
+        vault::StateName(vault_info.state), static_cast<unsigned>(vault_info.count),
+        static_cast<unsigned>(vault_info.pin_failures), vault_info.lock_left_s);
     return SendJson(request, nullptr, g_json);
 }
 

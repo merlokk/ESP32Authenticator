@@ -399,7 +399,7 @@ and never starts without lwIP (an assert).
 | Route | |
 |---|---|
 | `GET /`, `/*.html`, `/app.js` | pages: front (network, device), settings (BLE state and name, wallpaper, frontlight, idle off, `holdRail`; each control set and saved at once), passwords, FIDO2, Wi-Fi settings, device status, hardware info (from device status), restart. Whitelist of names/extensions; anything else, e.g. `/config.json`, is the 404 page |
-| `GET /api/status` | firmware, heap, SPIFFS, Wi-Fi (IP, MAC, internet), AP, BLE, FIDO (readiness, requests, credentials stored of max, store bytes, PIN set and attempts, signature counter, file version and modification time; `fido_store` false while a request holds the store, `fido_off` why FIDO2 is off), wallpaper, frontlight (present, on, level), `idle_minutes`, `hold_rail`. No secrets |
+| `GET /api/status` | firmware, heap, SPIFFS, Wi-Fi (IP, MAC, internet), AP, BLE, FIDO (readiness, requests, credentials stored of max, store bytes, PIN set and attempts, signature counter, file version and modification time; `fido_store` false while a request holds the store, `fido_off` why FIDO2 is off), wallpaper, frontlight (present, on, level), `idle_minutes`, `hold_rail`, microSD (`sd`: mount outcome or `none`, CID name, card and FAT bytes, free), vault (`vault` state, records, wrong PINs, PIN lock left). No secrets |
 | `GET /api/devstatus` | the console's `devstatus` dump (stdout swapped for the request) |
 | `GET /api/hwinfo` | the console's `hwinfo` dump, the same way (eFuse key purposes and flags only, no NVS values) |
 | `GET /api/settings`, `POST /api/settings` | Wi-Fi mode, AP, networks (with `ip`; absent `ip` keeps the current one), `ble.name` (applied to the radio at once), `display.wallpaper` (`grey` / `bw`), `frontlight` {`brightness` 1..100, `warmth` 0..100} (applied to the light at once), `power` {`idleMinutes`, `holdRail`; not `keepPinHours`}; the settings page saves each. Whitelist; passwords write-only (absent/null keeps, `""` clears); all-or-nothing; memory only |
@@ -429,9 +429,12 @@ and never starts without lwIP (an assert).
   keyboard, FIDO2 readiness and counts; `stored` with a bar of the slots used,
   amber from 80 %, red from 90 %; PIN and attempts left; signature counter;
   file version and change time; why FIDO2 is off, if it is),
-  Device (local time and zone, time sync, uptime, heap, PSRAM, SPIFFS with a bar of the space used, amber
-  from 80 %, red from 95 %, firmware; the power-off wallpaper switch, 4 grey
-  levels / black and white, set and saved at a click).
+  Device (PIN: locked / unlocked, wrong PINs, lockout; local time and zone,
+  time sync, uptime, heap, PSRAM, SPIFFS with a bar of the space used, amber
+  from 80 %, red from 95 %; the microSD, connected and free space, a bar amber
+  from 90 %, red from 98 %, hidden without a slot; firmware).
+- Settings page: BLE name, power-off wallpaper, frontlight, `idleMinutes`,
+  `holdRail`, each set and saved at once.
 - Pages and `app.js` are cached for an hour: after a reflash, reload with
   Ctrl+F5 to get the new script.
 

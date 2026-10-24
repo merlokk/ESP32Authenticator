@@ -65,6 +65,7 @@
     ".field input:focus{outline:none;border-color:#3a4d42}",
     ".field input:disabled{opacity:.5}",
     ".field input[type=range]{padding:0;border:0;background:none;accent-color:var(--green)}",
+    ".field .btn{flex:0 0 auto;width:auto}",
     ".field .value{flex:0 0 48px;text-align:right;color:var(--faint);font-size:14px;",
     "font-variant-numeric:tabular-nums}",
     "button.reveal{flex:0 0 auto;min-height:48px;padding:0 12px;border:1px solid var(--line);",
@@ -116,7 +117,8 @@
     if (typeof n !== "number" || !isFinite(n)) return "-";
     if (n < 1024) return n + " B";
     if (n < 1048576) return (n / 1024).toFixed(1) + " KB";
-    return (n / 1048576).toFixed(2) + " MB";
+    if (n < 1073741824) return (n / 1048576).toFixed(2) + " MB";
+    return (n / 1073741824).toFixed(2) + " GB";
   }
 
   function duration(seconds) {
@@ -207,7 +209,43 @@
       text(by("mac"), d.mac);
       text(by("internet"), d.internet,
            d.internet === "online" ? "ok" : d.internet === "offline" ? "bad" : "faint");
+      text(by("ble"), d.ble + (d.ble === "connected" ? (d.ble_secure ? ", secure" : ", not secure") : ""),
+           d.ble === "connected" && d.ble_secure ? "ok" : "");
       text(by("ap"), apUp ? d.ap_ssid + " at " + d.ap_ip + ", " + d.ap_clients + " client(s)" : "off");
+
+      text(by("kb"), d.kb_ready ? "ready" : "not subscribed", d.kb_ready ? "ok" : "faint");
+      text(by("fido"), (d.fido_ready ? "ready" : "not subscribed") + ", " + d.fido_requests +
+           " request(s), " + d.fido_errors + " error(s)", d.fido_ready ? "ok" : "faint");
+      if (d.fido_store) {
+        text(by("fido-store"), d.fido_creds + " of " + d.fido_max + " credentials (" +
+             d.fido_resident + " resident), " + bytes(d.fido_used) + " of " +
+             bytes(d.fido_size));
+        text(by("fido-pin"), d.fido_pin ? "set, " + d.fido_pin_retries + " attempt(s) left"
+                                        : "not set",
+             !d.fido_pin ? "faint" : d.fido_pin_retries <= 3 ? "warn" : "ok");
+        text(by("fido-counter"), d.fido_counter + " signature(s)");
+        // Version: +1 per write; an older copy is refused (rollback).
+        text(by("fido-file"), d.fido_version ? "version " + d.fido_version + ", changed " +
+             (d.fido_modified > 0 ? localTime(d.fido_modified, d.time_offset) : "?") : "none yet");
+        by("fido-meter").style.display = "";
+        fill(by("fido-meter"), (d.fido_creds / d.fido_max) * 100, 80, 90);
+      } else {
+        // Off: the store file was refused (rollback...); else a request holds it.
+        text(by("fido-store"), d.fido_off ? "off: " + d.fido_off : "busy", d.fido_off ? "bad" : "faint");
+        text(by("fido-pin"), "-", "faint");
+        text(by("fido-counter"), "-", "faint");
+        text(by("fido-file"), "-", "faint");
+        by("fido-meter").style.display = "none";
+      }
+
+      // The vault: locked until the PIN (on the screen or the Passwords page).
+      if (d.vault === "open") {
+        text(by("vault"), "unlocked, " + d.vault_count + " record(s)", "ok");
+      } else if (d.vault === "locked") {
+        text(by("vault"), d.pin_lock_s > 0 ? "locked, PIN entry blocked for " + duration(d.pin_lock_s)
+             : "locked" + (d.pin_failures ? ", " + d.pin_failures + " wrong PIN(s)" : ""),
+             d.pin_lock_s > 0 ? "bad" : "warn");
+      } else { text(by("vault"), d.vault || "-", d.vault === "refused" ? "bad" : "faint"); }
 
       if (d.time_utc > 0) {
         // The device's local time: UTC shifted by its zone, printed as UTC.
@@ -226,6 +264,14 @@
       text(by("spiffs"), d.spiffs_total > 0 ? bytes(d.spiffs_used) + " of " +
            bytes(d.spiffs_total) + " (" + used.toFixed(0) + "%)" : "not mounted");
       fill(by("spiffs-meter"), used, 80, 95);
+      // The microSD: hidden on a board without a slot.
+      by("sd-row").hidden = d.sd === "none";
+      var sdUsed = d.sd_total > 0 ? (1 - d.sd_free / d.sd_total) * 100 : 0;
+      if (d.sd === "mounted") {
+        text(by("sd"), "connected" + (d.sd_name ? " (" + d.sd_name + ")" : "") +
+             (d.sd_total > 0 ? ", " + bytes(d.sd_free) + " free of " + bytes(d.sd_total) : ""), "ok");
+      } else { text(by("sd"), d.sd || "-", "warn"); }
+      fill(by("sd-meter"), sdUsed, 90, 98);
       text(by("firmware"), d.firmware + " on esp-idf " + d.idf);
     }
 
@@ -280,35 +326,9 @@
     }
 
     function paint(d) {
-      lamp(d.ble === "connected" ? "ok" : "warn", d.ble);
-      text(by("ble"), d.ble + (d.ble === "connected" ? (d.ble_secure ? ", secure" : ", not secure") : ""),
-           d.ble === "connected" && d.ble_secure ? "ok" : "");
+      lamp(d.ble === "connected" ? "ok" : "warn", "ble " + d.ble);
       // The name field follows the device until somebody types in it.
       follow("ble-name", d.ble_name || "");
-      text(by("kb"), d.kb_ready ? "ready" : "not subscribed", d.kb_ready ? "ok" : "faint");
-      text(by("fido"), (d.fido_ready ? "ready" : "not subscribed") + ", " + d.fido_requests +
-           " request(s), " + d.fido_errors + " error(s)", d.fido_ready ? "ok" : "faint");
-      if (d.fido_store) {
-        text(by("fido-store"), d.fido_creds + " of " + d.fido_max + " credentials (" +
-             d.fido_resident + " resident), " + bytes(d.fido_used) + " of " +
-             bytes(d.fido_size));
-        text(by("fido-pin"), d.fido_pin ? "set, " + d.fido_pin_retries + " attempt(s) left"
-                                        : "not set",
-             !d.fido_pin ? "faint" : d.fido_pin_retries <= 3 ? "warn" : "ok");
-        text(by("fido-counter"), d.fido_counter + " signature(s)");
-        // Version: +1 per write; an older copy is refused (rollback).
-        text(by("fido-file"), d.fido_version ? "version " + d.fido_version + ", changed " +
-             (d.fido_modified > 0 ? localTime(d.fido_modified, d.time_offset) : "?") : "none yet");
-        by("fido-meter").style.display = "";
-        fill(by("fido-meter"), (d.fido_creds / d.fido_max) * 100, 80, 90);
-      } else {
-        // Off: the store file was refused (rollback...); else a request holds it.
-        text(by("fido-store"), d.fido_off ? "off: " + d.fido_off : "busy", d.fido_off ? "bad" : "faint");
-        text(by("fido-pin"), "-", "faint");
-        text(by("fido-counter"), "-", "faint");
-        text(by("fido-file"), "-", "faint");
-        by("fido-meter").style.display = "none";
-      }
 
       mark("wallpaper", "data-mode", d.wallpaper);
       by("light-box").hidden = !d.light;
