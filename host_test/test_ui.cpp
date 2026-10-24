@@ -1,10 +1,14 @@
 // The portrait screen on the landscape panel, the full-refresh plan
-// (components/ui/ui_logic.h); the PIN pad (pin_pad_logic.h).
+// (components/ui/ui_logic.h); the PIN pad (pin_pad_logic.h); the status bar
+// (status_logic.h) and the navigation (nav_logic.h).
 
 #include <cstring>
+#include <string>
 #include <vector>
 
+#include "nav_logic.h"
 #include "pin_pad_logic.h"
+#include "status_logic.h"
 #include "ui_logic.h"
 #include "unity.h"
 
@@ -174,6 +178,116 @@ void test_pin_pad_texts(void) {
     TEST_ASSERT_EQUAL_UINT32(10, pp::MinutesUp(599));
 }
 
+void test_status_texts(void) {
+    namespace st = ui::status;
+    char t[st::kTextSize];
+    st::Status s;
+    st::Left(s, t, sizeof t);
+    TEST_ASSERT_EQUAL_STRING("", t);
+    st::Right(s, t, sizeof t);
+    TEST_ASSERT_EQUAL_STRING("", t);
+
+    s.wifi = st::Wifi::kOnline;
+    s.ble = st::Ble::kWaiting;
+    s.sd = true;
+    st::Left(s, t, sizeof t);
+    std::string want = std::string(st::kWifi) + "   " + st::kBluetooth + " ...   " + st::kSdCard;
+    TEST_ASSERT_EQUAL_STRING(want.c_str(), t);
+    s.wifi = st::Wifi::kAp;
+    s.ble = st::Ble::kOff;
+    s.sd = false;
+    st::Left(s, t, sizeof t);
+    want = std::string(st::kWifi) + " AP";
+    TEST_ASSERT_EQUAL_STRING(want.c_str(), t);
+
+    s.time_set = true;
+    s.hour = 9;
+    s.minute = 5;
+    st::Right(s, t, sizeof t);
+    TEST_ASSERT_EQUAL_STRING("09:05", t);
+    s.battery = 75;
+    s.charging = true;
+    st::Right(s, t, sizeof t);
+    want = std::string("09:05   ") + st::kCharge + st::kBattery[3] + " 75%";
+    TEST_ASSERT_EQUAL_STRING(want.c_str(), t);
+    s.time_set = false;
+    s.charging = false;
+    s.battery = 100;
+    st::Right(s, t, sizeof t);
+    want = std::string(st::kBattery[4]) + " 100%";
+    TEST_ASSERT_EQUAL_STRING(want.c_str(), t);
+    // A small buffer: cut, terminated.
+    char small[4];
+    st::Right(s, small, sizeof small);
+    TEST_ASSERT_EQUAL_size_t(3, strlen(small));
+}
+
+void test_status_battery(void) {
+    namespace st = ui::status;
+    TEST_ASSERT_EQUAL_UINT8(0, st::BatteryBars(5));
+    TEST_ASSERT_EQUAL_UINT8(1, st::BatteryBars(25));
+    TEST_ASSERT_EQUAL_UINT8(2, st::BatteryBars(50));
+    TEST_ASSERT_EQUAL_UINT8(3, st::BatteryBars(75));
+    TEST_ASSERT_EQUAL_UINT8(4, st::BatteryBars(95));
+    // Noise of a percent is not shown; two are; the ends always.
+    TEST_ASSERT_EQUAL_INT8(60, st::ShownLevel(60, 61));
+    TEST_ASSERT_EQUAL_INT8(60, st::ShownLevel(60, 59));
+    TEST_ASSERT_EQUAL_INT8(62, st::ShownLevel(60, 62));
+    TEST_ASSERT_EQUAL_INT8(100, st::ShownLevel(99, 100));
+    TEST_ASSERT_EQUAL_INT8(40, st::ShownLevel(-1, 40));
+    TEST_ASSERT_EQUAL_INT8(-1, st::ShownLevel(40, -1));
+}
+
+void test_nav_buttons(void) {
+    using ui::nav::Input;
+    using ui::nav::Screen;
+    ui::nav::Nav n;
+    TEST_ASSERT_TRUE(n.screen() == Screen::kPasswords);
+    n.SetPages(Screen::kPasswords, 3);
+    // Right through the pages, then the next screen.
+    TEST_ASSERT_TRUE(n.Apply(Input::kRight));
+    TEST_ASSERT_EQUAL_UINT8(1, n.page());
+    n.Apply(Input::kRight);
+    n.Apply(Input::kRight);
+    TEST_ASSERT_TRUE(n.screen() == Screen::kTotp);
+    TEST_ASSERT_EQUAL_UINT8(0, n.page());
+    // Left back: the last page of Passwords.
+    n.Apply(Input::kLeft);
+    TEST_ASSERT_TRUE(n.screen() == Screen::kPasswords);
+    TEST_ASSERT_EQUAL_UINT8(2, n.page());
+    // Round: left of Passwords' first page is Settings.
+    n.Apply(Input::kHome);
+    TEST_ASSERT_EQUAL_UINT8(0, n.page());
+    n.Apply(Input::kLeft);
+    TEST_ASSERT_TRUE(n.screen() == Screen::kSettings);
+    n.Apply(Input::kRight);
+    TEST_ASSERT_TRUE(n.screen() == Screen::kPasswords);
+    TEST_ASSERT_FALSE(n.Apply(Input::kHome));  // already there
+}
+
+void test_nav_tabs_and_pages(void) {
+    using ui::nav::Screen;
+    ui::nav::Nav n;
+    n.SetPages(Screen::kTotp, 4);
+    TEST_ASSERT_TRUE(n.Go(Screen::kTotp));
+    TEST_ASSERT_FALSE(n.Go(Screen::kTotp));
+    n.Apply(ui::nav::Input::kRight);
+    n.Apply(ui::nav::Input::kRight);
+    n.Go(Screen::kFido);
+    n.Go(Screen::kTotp);
+    TEST_ASSERT_EQUAL_UINT8(2, n.page());  // kept
+    // The list shrank: the page stays inside.
+    TEST_ASSERT_TRUE(n.SetPages(Screen::kTotp, 2));
+    TEST_ASSERT_EQUAL_UINT8(1, n.page());
+    TEST_ASSERT_TRUE(n.SetPages(Screen::kTotp, 0));  // at least one page
+    TEST_ASSERT_EQUAL_UINT8(1, n.pages());
+    TEST_ASSERT_EQUAL_UINT8(0, n.page());
+    TEST_ASSERT_EQUAL_UINT8(1, ui::nav::PagesFor(0, 8));
+    TEST_ASSERT_EQUAL_UINT8(1, ui::nav::PagesFor(8, 8));
+    TEST_ASSERT_EQUAL_UINT8(2, ui::nav::PagesFor(9, 8));
+    TEST_ASSERT_EQUAL_STRING("TOTP", ui::nav::Title(Screen::kTotp));
+}
+
 }  // namespace
 
 void RegisterUiTests(void) {
@@ -187,4 +301,8 @@ void RegisterUiTests(void) {
     RUN_TEST(test_pin_pad_enter);
     RUN_TEST(test_pin_pad_new_pin_twice);
     RUN_TEST(test_pin_pad_texts);
+    RUN_TEST(test_status_texts);
+    RUN_TEST(test_status_battery);
+    RUN_TEST(test_nav_buttons);
+    RUN_TEST(test_nav_tabs_and_pages);
 }

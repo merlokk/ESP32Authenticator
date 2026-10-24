@@ -7,6 +7,8 @@
 // is LVGL's pointer, mapped onto the portrait screen (TouchToScreen).
 
 #include "esp_err.h"
+#include "nav_logic.h"
+#include "status_logic.h"
 
 namespace ui {
 
@@ -34,6 +36,13 @@ void HoldPanel(bool hold);
 // waits for it; `shown` is the file. The device stays on; the next LVGL
 // change draws over it.
 esp_err_t PreviewWallpaper(bool grey, const char **shown);
+
+// The status bar's source (status_logic.h): called in the ui task every 2 s,
+// fills what the board reports. Keep it quick (cache slow reads).
+void SetStatusSource(void (*source)(status::Status *out));
+// Left / Right / Home (nav_logic.h), from any task: queued for the ui task;
+// nothing while the PIN pad is up.
+void Navigate(nav::Input input);
 
 // Called from the ui task when a finger goes down (power::NoteActivity).
 void SetPressHook(void (*hook)());

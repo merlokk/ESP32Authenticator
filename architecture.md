@@ -15,7 +15,7 @@ Target and status. Screen design and the open questions: [x4-design.md](x4-desig
 | Store file header (version, modification time) and rollback check (highest version in NVS) | done (`storefile`) |
 | Encrypted stores: `vault.bin` and `fido.bin`, AES-256-GCM with a key from the PIN (the same on every device with the PIN and the files), loaded whole into PSRAM | done |
 | Sync over the internet, the later modification time wins | not yet; service not chosen |
-| X4 Pro screen: status bar, credential list, pages, settings | not yet (LVGL on the panel, portrait; boot screen and the PIN pad) |
+| X4 Pro screen: status bar, credential list, pages, settings | status bar, tabs and page navigation done; the screens are stubs; PIN pad done |
 | Settings: frontlight, Wi-Fi | Wi-Fi on the console and the site; frontlight not yet |
 | Time: SNTP, zones, clock | done |
 | Battery: voltage, level, charging | done (CW2017 + charger STAT, console `battery`, BLE Battery Level); screen not yet |
@@ -27,7 +27,7 @@ Target and status. Screen design and the open questions: [x4-design.md](x4-desig
 | Layer | Choice |
 |---|---|
 | Framework | ESP-IDF (C/C++) |
-| UI | LVGL 9 (`components/ui`: 480x800 portrait on the e-ink panel, boot screen, PIN pad; GT911 touch as the pointer; today: USB console + web site) |
+| UI | LVGL 9 (`components/ui`: 480x800 portrait on the e-ink panel, status bar, tabs, PIN pad; GT911 touch as the pointer; today: USB console + web site) |
 | Host link | BLE HID keyboard (types credentials), BLE FIDO2 (CTAP2) |
 | Network | Wi-Fi (client / AP / AP+client) and a configuration web site |
 | Storage | `config.json` on SPIFFS; store files (`vault.bin`, `fido.bin`, encrypted) in `/sdcard/.authenticator` when the board has a card slot (no card: no stores, never a second set on SPIFFS), else SPIFFS |
@@ -279,7 +279,20 @@ inside `ui::Lock` / `ui::Unlock`. Measured on the X4 Pro (UC8179): turn 61 ms,
 full refresh 1.9 s, stack used ~3.4 KB. The GT911 is LVGL's pointer, read
 every 20 ms (the default 200 ms misses short taps); its coordinates are the
 portrait screen's as they are (`TouchToScreen`, checked by eye: no swap or
-flip). Until the real screens the boot screen marks the last press.
+flip).
+
+Screens (`screens.cpp`; `status_logic.h`, `nav_logic.h` pure): the status bar
+on LVGL's top layer (over every screen and the PIN pad): Wi-Fi (off: none;
+"..." trying, "!" no internet, "AP"), Bluetooth ("..." no host, "pair"), the
+microSD, the local time (once believable) and the battery (icon by 25 %,
+charging mark, percent; moves by 2 % or more). `main.cpp` fills it
+(`ui::SetStatusSource`, every 2 s; the gauge every 30 s); a label is set only
+when its text changed (each change is a fast refresh). Tabs at the bottom:
+Passwords, TOTP, FIDO2, Settings (stubs; Passwords counts its pages from the
+vault, 8 rows a page). Left / Right pressed flip the pages, past the ends the
+screen before / after (round); Home: Passwords, page 1 (`ui::Navigate`,
+queued from the keypad task; nothing under the PIN pad). Left is also the
+FIDO2 presence button: a press for a site flips a page too.
 
 PIN pad (`pin_pad.cpp`, `pin_pad_logic.h` pure): shown while the vault is
 locked (polled each second with `vault::GetState`, no lock): at boot unless
@@ -305,7 +318,7 @@ peripheral rail, high (`power.holdRail`): on the battery the board's power drops
 cold boot, RTC memory lost); `power::Boot()` drives them to the same levels
 and releases them first thing at boot. A sleep
 the chip refuses (`esp_deep_sleep_try_to_start` returns): a restart, not a
-drain at full current. A wake is a reboot: the boot screen, the PIN again,
+drain at full current. A wake is a reboot: the screens, the PIN again,
 unless the key was kept. Kept key (`power.keepPinHours`, not after Power x3
 or `off lock`): right before the sleep the vault key (`vault::CopyKey`) goes
 into RTC memory (`RTC_NOINIT`: kept in deep sleep and resets, lost with the

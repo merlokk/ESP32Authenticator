@@ -2,6 +2,7 @@
 
 #include <cstdio>
 #include <cstring>
+#include <ctime>
 
 #include "battery.h"
 #include "ble_fido.h"
@@ -13,9 +14,11 @@
 #include "crypto.h"
 #include "esp_log.h"
 #include "esp_ota_ops.h"
+#include "esp_timer.h"
 #include "epd.h"
 #include "fido_ctap.h"
 #include "frontlight.h"
+#include "host/ble_hs.h"
 #include "keypad.h"
 #include "nvs_flash.h"
 #include "power.h"
@@ -172,11 +175,62 @@ void InitVault(const char *dir) {
     }
 }
 
-// Button bindings, from the keypad task; any key is activity. Power x2: the
+// The status bar (ui task, every 2 s): the gauge is read every 30 s (I2C),
+// the rest is the modules' state.
+void StatusSource(ui::status::Status *s) {
+    namespace st = ui::status;
+    constexpr int64_t kBatteryMs = 30 * 1000;
+    static int64_t battery_at = -kBatteryMs;
+    static int level = -1;
+    const int64_t now_ms = esp_timer_get_time() / 1000;
+    if (now_ms - battery_at >= kBatteryMs) {
+        level = battery::Level();
+        battery_at = now_ms;
+    }
+    s->battery = static_cast<int8_t>(level);
+    s->charging = battery::ChargeState() == battery::Charge::kCharging;
+
+    const wifimgr::Snapshot w = wifimgr::Get();
+    switch (w.state) {
+        case wifimgr::State::kOff: s->wifi = st::Wifi::kOff; break;
+        case wifimgr::State::kConnecting:
+        case wifimgr::State::kWaiting: s->wifi = st::Wifi::kTrying; break;
+        case wifimgr::State::kOnline:
+            s->wifi = w.internet == wifimgr::Internet::kOffline ? st::Wifi::kNoInternet
+                                                                : st::Wifi::kOnline;
+            break;
+        case wifimgr::State::kIdle:
+        case wifimgr::State::kApWindow:
+        case wifimgr::State::kAp: s->wifi = st::Wifi::kAp; break;
+    }
+    s->ble = !ble::IsOn()                                     ? st::Ble::kOff
+             : ble::PairingSecondsLeft() > 0                  ? st::Ble::kPairing
+             : ble::ConnHandle() != BLE_HS_CONN_HANDLE_NONE ? st::Ble::kConnected
+                                                              : st::Ble::kWaiting;
+    s->sd = sd_card::Mounted();
+
+    const time_t now = time(nullptr);
+    s->time_set = now >= 1704067200;  // 2024-01-01, rtc::Believable's floor
+    struct tm local = {};
+    localtime_r(&now, &local);
+    s->hour = static_cast<uint8_t>(local.tm_hour);
+    s->minute = static_cast<uint8_t>(local.tm_min);
+}
+
+// Button bindings, from the keypad task; any key is activity. Left / Right /
+// Home pressed: the screens (ui::Navigate). Power x2: the
 // frontlight on / off; Power held: off (wallpaper, deep sleep); Power x3: off
 // locked (the PIN after the wake, whatever power.keepPinHours says).
 void OnKey(const buttons::KeyEvent &e) {
     power::NoteActivity();
+    if (e.kind == buttons::Kind::kPressed) {
+        switch (static_cast<boards::ButtonId>(e.key)) {
+            case boards::ButtonId::kLeft: ui::Navigate(ui::nav::Input::kLeft); break;
+            case boards::ButtonId::kRight: ui::Navigate(ui::nav::Input::kRight); break;
+            case boards::ButtonId::kHome: ui::Navigate(ui::nav::Input::kHome); break;
+            default: break;
+        }
+    }
     if (e.key != static_cast<uint8_t>(boards::ButtonId::kPower)) {
         return;
     }
@@ -220,6 +274,7 @@ extern "C" void app_main() {
 
     ui::Init();  // LVGL on the panel (portrait), the boot screen
     ui::SetPressHook(power::NoteActivity);
+    ui::SetStatusSource(StatusSource);
 
     ble_kb::Register();  // BLE profiles, before the stack starts
     ble_kb::SetTypingHook([] {

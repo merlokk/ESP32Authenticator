@@ -44,8 +44,11 @@ Portrait, 480x800. The panel scans landscape (hardware.md): `ui_logic.h` turns t
 - **List**: records as in a password manager. A tap on a row types into the
   host: left third the login, centre the password, right third the current
   TOTP code.
-- **Pages**: pages of the credential list; switcher at the bottom, 4 pages
-  for now, the Left / Right buttons flip them as well.
+- **Pages**: pages of the credential list; the Left / Right buttons flip
+  them, past the ends to the screen before / after; Home: the list's first
+  page.
+- **Tabs** (bottom): Passwords, TOTP, FIDO2, Settings. Done with the status
+  bar (`screens.cpp`); the screens themselves are stubs.
 - **Lock screen**: PIN pad (touch), shown while the vault is locked (at boot,
   `pin lock`); done (`pin_pad.cpp`).
   See PIN below.
