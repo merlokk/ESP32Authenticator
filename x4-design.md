@@ -51,7 +51,10 @@ Portrait, 480x800. The panel scans landscape (hardware.md): `ui_logic.h` turns t
 - **U2F / FIDO2 list**: a swipe up from the bottom quarter; the keys by site
   (A to Z), 6 a page: site, user, "made <date>, <alg>, resident / U2F";
   Left / Right or the bar under it (‹, "1 / 2", ›) flip the pages, the title says the count; its
-  back arrow, a swipe down or Home closes it.
+  back arrow, a swipe down or Home closes it. Delete: a swipe left on a key
+  shows a trash can at its right end (a swipe right or a tap elsewhere hides
+  it); the can asks "Delete this key?": No (or Right) at once, Yes held 4 s
+  (it fills from the left; let go early: empty again).
 - **Lock screen**: PIN pad (touch), shown while the vault is locked (at boot,
   `pin lock`); done (`pin_pad.cpp`).
   See PIN below.

@@ -2,11 +2,13 @@
 
 // The U2F / FIDO2 list (x4-design.md): a row per credential, kRowsPerPage a
 // page, by site (A to Z, case not minded), then user. A row: the site, the
-// user, then when it was made, the algorithm and the kind. Pure (host-tested).
+// user, then when it was made, the algorithm and the kind; a key is deleted
+// from its row (Remove). Pure (host-tested).
 
 #include <cstddef>
 #include <cstdint>
 
+#include "nav_logic.h"
 #include "status_logic.h"
 
 namespace ui::fido_list {
@@ -76,5 +78,105 @@ constexpr void Details(uint16_t year, uint8_t month, uint8_t day, int32_t alg, b
     }
     t.Add(AlgName(alg)).Add(", ").Add(u2f ? "U2F" : discoverable ? "resident" : "non-resident");
 }
+
+// The row a point at `y` is on (rows of `height` from `top`), kNoRow off them.
+inline constexpr uint8_t kNoRow = 0xff;
+
+constexpr uint8_t RowAt(int32_t y, int32_t top, int32_t height, uint8_t rows) {
+    if (y < top || height <= 0) {
+        return kNoRow;
+    }
+    const int32_t i = (y - top) / height;
+    return i < rows ? static_cast<uint8_t>(i) : kNoRow;
+}
+
+// Deleting a key: a swipe left on a row shows a trash can at its right end
+// (one row at a time; a swipe right, a tap elsewhere, a page flip or a redraw
+// takes it away). The can asks; No answers at once, Yes only held kHoldMs,
+// filling in kHoldSteps (let go early: empty again). Held long enough: kDelete,
+// the caller deletes the key and calls Clear().
+inline constexpr uint32_t kHoldMs = 4000;
+inline constexpr uint8_t kHoldSteps = 8;
+
+enum class Stage : uint8_t {
+    kNone,
+    kTrash,   // the can on row()
+    kAsk,     // the question over the list
+    kDelete,  // Yes held long enough
+};
+
+class Remove {
+   public:
+    constexpr Stage stage() const { return stage_; }
+    constexpr uint8_t row() const { return row_; }
+    constexpr bool asking() const { return stage_ == Stage::kAsk || stage_ == Stage::kDelete; }
+
+    // A swipe that started on `row` (kNoRow: off the rows). True when the can moved.
+    constexpr bool Swipe(nav::Gesture g, uint8_t row) {
+        if (asking()) {
+            return false;
+        }
+        if (g == nav::Gesture::kLeft && row != kNoRow) {
+            const bool moved = stage_ != Stage::kTrash || row_ != row;
+            stage_ = Stage::kTrash;
+            row_ = row;
+            return moved;
+        }
+        return g == nav::Gesture::kRight && Clear();
+    }
+
+    // A tap on a row but the can, or the list redrawn: the can goes.
+    constexpr bool Drop() { return stage_ == Stage::kTrash && Clear(); }
+
+    // The can tapped: the question. True when asked.
+    constexpr bool Trash() {
+        if (stage_ != Stage::kTrash) {
+            return false;
+        }
+        stage_ = Stage::kAsk;
+        return true;
+    }
+
+    // No (or the list left): nothing to delete, no can. True when it changed.
+    constexpr bool Clear() {
+        const bool changed = stage_ != Stage::kNone;
+        stage_ = Stage::kNone;
+        row_ = kNoRow;
+        holding_ = false;
+        return changed;
+    }
+
+    // Yes pressed at `now` (ms), let go.
+    constexpr void Press(uint32_t now) {
+        if (stage_ == Stage::kAsk) {
+            holding_ = true;
+            from_ = now;
+        }
+    }
+    constexpr void Release() { holding_ = false; }
+
+    // Yes's fill at `now`, 0..kHoldSteps; kHoldSteps: held long enough (kDelete).
+    constexpr uint8_t Fill(uint32_t now) {
+        if (stage_ == Stage::kDelete) {
+            return kHoldSteps;
+        }
+        if (!holding_) {
+            return 0;
+        }
+        const uint32_t held = now - from_;
+        if (held >= kHoldMs) {
+            stage_ = Stage::kDelete;
+            holding_ = false;
+            return kHoldSteps;
+        }
+        return static_cast<uint8_t>(held * kHoldSteps / kHoldMs);
+    }
+
+   private:
+    Stage stage_ = Stage::kNone;
+    uint8_t row_ = kNoRow;
+    bool holding_ = false;
+    uint32_t from_ = 0;
+};
 
 }  // namespace ui::fido_list

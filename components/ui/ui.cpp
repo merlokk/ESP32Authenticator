@@ -21,6 +21,7 @@ void StartPinPad();   // pin_pad.cpp
 void StartScreens();  // screens.cpp
 nav::Gesture TakeGesture();
 bool LastWasTap();
+ScreenPoint GestureStart();
 
 namespace {
 
@@ -152,8 +153,8 @@ void PushTask(void *) {
 struct Fake {
     ScreenPoint from;
     ScreenPoint to;
-    uint8_t steps;
-    uint8_t at;
+    uint16_t steps;
+    uint16_t at;
     bool active;
 };
 Fake fake = {};
@@ -305,6 +306,9 @@ nav::Gesture TakeGesture() {
 // For a click handler (ui task, right after the lift): the finger did not slide.
 bool LastWasTap() { return gesture == nav::Gesture::kTap; }
 
+// Where the last finger went down (a swipe's row).
+ScreenPoint GestureStart() { return down_point; }
+
 void SetPressHook(void (*hook)()) { press_hook = hook; }
 
 void HoldPanel(bool hold) {
@@ -325,7 +329,7 @@ void HoldPanel(bool hold) {
     xSemaphoreGive(pending_mutex);
 }
 
-esp_err_t Touch(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1) {
+esp_err_t Touch(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1, uint16_t hold_ms) {
     if (pointer == nullptr) {
         return ESP_ERR_NOT_SUPPORTED;
     }
@@ -336,7 +340,9 @@ esp_err_t Touch(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1) {
     const bool busy = fake.active || last_down;
     if (!busy) {
         const bool tap = x0 == x1 && y0 == y1;
-        fake = {{x0, y0}, {x1, y1}, static_cast<uint8_t>(tap ? 2 : 10), 0, true};
+        const uint32_t held = hold_ms / kTouchReadMs;
+        fake = {{x0, y0}, {x1, y1}, static_cast<uint16_t>(!tap ? 10 : held > 2 ? held : 2), 0,
+                true};
     }
     Unlock();
     return busy ? ESP_ERR_INVALID_STATE : ESP_OK;

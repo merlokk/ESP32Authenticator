@@ -508,7 +508,7 @@ esp_err_t fido_ctap_delete(const uint8_t id[FIDO_CTAP_CRED_ID_SIZE]) {
     }
     admin_give();
     if (err == ESP_OK) {
-        ESP_LOGI(TAG, "credential deleted from the console");
+        ESP_LOGI(TAG, "credential deleted (console, web or screen)");
     }
     return err;
 }

@@ -55,9 +55,10 @@ bool CopyScreen(uint8_t *out);
 // U2F / FIDO2 list, only on the screen (the store is not touched); 0 none.
 void SetFidoDemo(uint8_t count);
 // Console `ui click` / `ui swipe`: a made-up finger from (x0, y0) to (x1, y1)
-// (the same point: a tap) on the portrait screen, played in ~200 ms as the
-// touch would be. ESP_ERR_INVALID_STATE: a finger (real or not) is down.
-esp_err_t Touch(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1);
+// (the same point: a tap, held `hold_ms` if given) on the portrait screen,
+// played in ~200 ms as the touch would be. ESP_ERR_INVALID_STATE: a finger
+// (real or not) is down.
+esp_err_t Touch(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1, uint16_t hold_ms = 0);
 // Console `ui show`: that screen, as its swipe would open it.
 void ShowScreen(nav::Mode mode);
 

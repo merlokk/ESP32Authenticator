@@ -1,9 +1,11 @@
 // The screens behind the PIN pad (x4-design.md): the status bar on LVGL's top
 // layer (over every screen, the pad's too), the password list in pages with a
 // tab per page at the bottom, Settings pulled down from the top (a stub for
-// now) and the U2F / FIDO2 keys pulled up from the bottom. nav_logic.h,
-// list_logic.h, fido_list_logic.h and status_logic.h decide; this draws. Typing runs in a task
-// of its own (ui::SetTypist; a password takes a second over BLE).
+// now) and the U2F / FIDO2 keys pulled up from the bottom (a swipe left on a
+// key: its trash can). nav_logic.h, list_logic.h, fido_list_logic.h and
+// status_logic.h decide; this draws. Typing runs in a task of its own
+// (ui::SetTypist; a password takes a second over BLE), and so does deleting a
+// key (the store's file is written).
 
 #include <cstdio>
 #include <cstring>
@@ -29,6 +31,7 @@ namespace ui {
 
 nav::Gesture TakeGesture();  // ui.cpp
 bool LastWasTap();
+ScreenPoint GestureStart();
 
 namespace {
 
@@ -111,6 +114,8 @@ vault::Record record;  // the ui task's copy, wiped after each use
 struct Job {
     uint32_t id;
     list::Zone zone;
+    bool fido;  // not typing: the FIDO2 key `key` deleted
+    uint8_t key[FIDO_CTAP_CRED_ID_SIZE];
 };
 QueueHandle_t jobs = nullptr;
 StaticQueue_t jobs_storage;
@@ -291,7 +296,7 @@ void OnRow(lv_event_t *event) {
         Toast("no TOTP for this record");
         return;
     }
-    const Job job = {r.id, zone};
+    const Job job = {r.id, zone, false, {}};
     if (xQueueSend(jobs, &job, 0) != pdTRUE) {
         Toast("busy typing");
     }
@@ -439,6 +444,23 @@ fido_ctap_credential_t *fido_keys = nullptr;
 uint16_t *fido_order = nullptr;
 size_t fido_capacity = 0;
 uint8_t fido_demo = 0;  // made-up keys added to the list (ui demo fido)
+uint32_t demo_gone = 0;  // made-up keys deleted (a bit each)
+// A made-up key's ID: this, then its number.
+constexpr uint8_t kDemoId[] = {'d', 'e', 'm', 'o', 0xde, 0x40};
+
+// Deleting a key (fido_list::Remove): the can on a row, the question over
+// the list, Yes filling while held.
+fido_list::Remove remove_state;
+uint8_t fido_rows = 0;  // rows on the page
+lv_obj_t *fido_trash[fido_list::kRowsPerPage] = {};
+bool trash_tapped = false;  // OnTrash, OnFidoRow, OnNo: for Poll
+bool row_tapped = false;
+bool no_tapped = false;
+lv_obj_t *ask = nullptr;  // the question
+lv_obj_t *yes_fill = nullptr;
+int32_t yes_width = 0;
+uint8_t shown_fill = 0;
+fido_ctap_credential_t asked;  // the key asked about (the list may be read again)
 
 // The made-up keys: site, user, display name, algorithm, kind.
 struct Demo {
@@ -467,9 +489,14 @@ constexpr Demo kDemo[] = {
 void AddDemo(size_t *count) {
     constexpr size_t kKinds = sizeof kDemo / sizeof kDemo[0];
     for (uint8_t i = 0; i < fido_demo && *count < fido_capacity; ++i) {
+        if (demo_gone & (1u << i)) {
+            continue;
+        }
         const Demo &d = kDemo[i % kKinds];
         fido_ctap_credential_t &c = fido_keys[(*count)++];
         memset(&c, 0, sizeof c);
+        memcpy(c.id, kDemoId, sizeof kDemoId);
+        c.id[sizeof kDemoId] = i;
         if (i < kKinds) {
             snprintf(c.rp_id, sizeof c.rp_id, "%s", d.site);
         } else {
@@ -529,10 +556,202 @@ esp_err_t FidoLoad(size_t *count, FidoSeen *seen) {
     return ESP_OK;
 }
 
+void OnFidoRow(lv_event_t *) {
+    if (LastWasTap()) {
+        row_tapped = true;
+    }
+}
+
+void OnTrash(lv_event_t *) {
+    if (LastWasTap()) {
+        trash_tapped = true;
+    }
+}
+
+// The can at the row's right end (shown by ShowTrash), over the text.
+constexpr int32_t kTrashWidth = 96;
+
+void AddTrash(uint8_t i, lv_obj_t *row) {
+    lv_obj_t *t = lv_obj_create(row);
+    lv_obj_remove_style_all(t);
+    lv_obj_add_flag(t, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_remove_flag(t, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_size(t, kTrashWidth, kFidoRowHeight - 12);
+    lv_obj_align(t, LV_ALIGN_RIGHT_MID, -4, 0);
+    lv_obj_set_style_bg_color(t, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(t, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(t, 10, 0);
+    lv_obj_add_event_cb(t, OnTrash, LV_EVENT_CLICKED, nullptr);
+    lv_obj_t *icon = Label(t, &lv_font_montserrat_32);
+    lv_obj_set_style_text_color(icon, lv_color_white(), 0);
+    lv_label_set_text(icon, LV_SYMBOL_TRASH);
+    lv_obj_center(icon);
+    lv_obj_add_flag(t, LV_OBJ_FLAG_HIDDEN);
+    fido_trash[i] = t;
+}
+
+// The can on remove_state's row, none on the others.
+void ShowTrash() {
+    for (uint8_t i = 0; i < fido_rows; ++i) {
+        const bool on = remove_state.stage() != fido_list::Stage::kNone && remove_state.row() == i;
+        if (on != !lv_obj_has_flag(fido_trash[i], LV_OBJ_FLAG_HIDDEN)) {
+            if (on) {
+                lv_obj_remove_flag(fido_trash[i], LV_OBJ_FLAG_HIDDEN);
+            } else {
+                lv_obj_add_flag(fido_trash[i], LV_OBJ_FLAG_HIDDEN);
+            }
+        }
+    }
+}
+
+void OnNo(lv_event_t *) { no_tapped = true; }
+
+// Yes counts only while held (Poll fills it).
+void OnYes(lv_event_t *event) {
+    if (lv_event_get_code(event) == LV_EVENT_PRESSED) {
+        remove_state.Press(lv_tick_get());
+    } else {
+        remove_state.Release();
+    }
+}
+
+lv_obj_t *AskButton(lv_obj_t *parent, int32_t width, const char *text) {
+    lv_obj_t *b = lv_obj_create(parent);
+    lv_obj_remove_style_all(b);
+    lv_obj_add_flag(b, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_remove_flag(b, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_size(b, width, 72);
+    lv_obj_set_style_bg_color(b, lv_color_white(), 0);
+    lv_obj_set_style_bg_opa(b, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(b, 10, 0);
+    // An outline, not a border: the content area is the whole button (the fill's).
+    lv_obj_set_style_outline_width(b, 2, 0);
+    lv_obj_set_style_outline_color(b, lv_color_black(), 0);
+    lv_obj_t *l = Label(b, &lv_font_montserrat_24);
+    lv_label_set_text(l, text);
+    lv_obj_center(l);
+    return b;
+}
+
+// "Delete this key?" over the list (and its bar): the site, the user; No at
+// once, Yes held fido_list::kHoldMs: the fill grows from the left, the text
+// white on it.
+void ShowAsk() {
+    constexpr int32_t kBoxWidth = kRowWidth - 32;
+    constexpr int32_t kPad = 20;
+    constexpr int32_t kInner = kBoxWidth - 2 * kPad - 2 * 3;
+    constexpr int32_t kNoWidth = 120;
+    constexpr const char *kYes = "Delete: hold 4 s";
+    ask = lv_obj_create(home);  // takes the taps around the box
+    lv_obj_remove_style_all(ask);
+    lv_obj_add_flag(ask, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_remove_flag(ask, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_pos(ask, 0, kContentTop);
+    lv_obj_set_size(ask, kWidth, kHeight - kContentTop);
+
+    lv_obj_t *box = lv_obj_create(ask);
+    lv_obj_remove_style_all(box);
+    lv_obj_remove_flag(box, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_remove_flag(box, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_size(box, kBoxWidth, LV_SIZE_CONTENT);
+    lv_obj_set_style_bg_color(box, lv_color_white(), 0);
+    lv_obj_set_style_bg_opa(box, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(box, 3, 0);
+    lv_obj_set_style_border_color(box, lv_color_black(), 0);
+    lv_obj_set_style_radius(box, 16, 0);
+    lv_obj_set_style_pad_all(box, kPad, 0);
+    lv_obj_set_style_pad_row(box, 12, 0);
+    lv_obj_set_flex_flow(box, LV_FLEX_FLOW_COLUMN);
+    lv_obj_center(box);
+
+    char text[2 * FIDO_CTAP_TEXT_SIZE + 4];
+    lv_obj_t *l = Label(box, &lv_font_montserrat_28);
+    lv_label_set_text(l, "Delete this key?");
+    l = Label(box, &lv_font_montserrat_24);
+    lv_label_set_long_mode(l, LV_LABEL_LONG_MODE_DOTS);
+    lv_obj_set_width(l, kInner);
+    snprintf(text, sizeof text, "%s%s", asked.rp_id, asked.rp_id_truncated ? "..." : "");
+    lv_label_set_text(l, text);
+    l = Label(box, &lv_font_montserrat_24);
+    lv_label_set_long_mode(l, LV_LABEL_LONG_MODE_DOTS);
+    lv_obj_set_width(l, kInner);
+    fido_list::User(asked.user_name, asked.display_name, text, sizeof text);
+    lv_label_set_text(l, text);
+    l = Label(box, &lv_font_montserrat_20);
+    lv_label_set_long_mode(l, LV_LABEL_LONG_MODE_WRAP);
+    lv_obj_set_width(l, kInner);
+    lv_label_set_text(l, "The site will not take this device for it any more: sign in another "
+                         "way first.");
+
+    lv_obj_t *buttons = lv_obj_create(box);
+    lv_obj_remove_style_all(buttons);
+    lv_obj_remove_flag(buttons, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_remove_flag(buttons, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_size(buttons, kInner, 80);
+    lv_obj_t *no = AskButton(buttons, kNoWidth, "No");
+    lv_obj_align(no, LV_ALIGN_LEFT_MID, 2, 0);
+    lv_obj_add_event_cb(no, OnNo, LV_EVENT_CLICKED, nullptr);
+    yes_width = kInner - kNoWidth - 20;
+    lv_obj_t *yes = AskButton(buttons, yes_width, kYes);
+    lv_obj_align(yes, LV_ALIGN_RIGHT_MID, -2, 0);
+    // Sliding off it lets go (no press lock).
+    lv_obj_remove_flag(yes, LV_OBJ_FLAG_PRESS_LOCK);
+    lv_obj_add_event_cb(yes, OnYes, LV_EVENT_PRESSED, nullptr);
+    lv_obj_add_event_cb(yes, OnYes, LV_EVENT_RELEASED, nullptr);
+    lv_obj_add_event_cb(yes, OnYes, LV_EVENT_PRESS_LOST, nullptr);
+    // The fill clips a white copy of the button's face to its width.
+    yes_fill = lv_obj_create(yes);
+    lv_obj_remove_style_all(yes_fill);
+    lv_obj_remove_flag(yes_fill, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_remove_flag(yes_fill, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_size(yes_fill, 0, 72);
+    lv_obj_set_style_bg_color(yes_fill, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(yes_fill, LV_OPA_COVER, 0);
+    lv_obj_t *face = lv_obj_create(yes_fill);
+    lv_obj_remove_style_all(face);
+    lv_obj_remove_flag(face, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_size(face, yes_width, 72);
+    l = Label(face, &lv_font_montserrat_24);
+    lv_obj_set_style_text_color(l, lv_color_white(), 0);
+    lv_label_set_text(l, kYes);
+    lv_obj_center(l);
+    shown_fill = 0;
+}
+
+void CloseAsk() {
+    if (ask != nullptr) {
+        lv_obj_delete(ask);
+        ask = nullptr;
+        yes_fill = nullptr;
+    }
+}
+
+// The can tapped: the key on its row asked about.
+void AskRemove() {
+    const size_t at =
+        static_cast<size_t>(nav_state.fido_page()) * fido_list::kRowsPerPage + remove_state.row();
+    if (remove_state.row() >= fido_rows || !remove_state.Trash()) {
+        return;
+    }
+    asked = fido_keys[fido_order[at]];
+    ShowAsk();
+}
+
+// Yes held long enough: the key goes to the typing task to be deleted.
+void DeleteAsked() {
+    Job job = {0, list::Zone::kTypeUser, true, {}};
+    memcpy(job.key, asked.id, sizeof job.key);
+    Toast(xQueueSend(jobs, &job, 0) == pdTRUE ? "deleting the key..." : "busy typing");
+    CloseAsk();
+    remove_state.Clear();
+    ShowTrash();
+}
+
 void AddFidoRow(uint8_t i, const fido_ctap_credential_t &c) {
     lv_obj_t *row = lv_obj_create(content);
     lv_obj_remove_style_all(row);
-    lv_obj_remove_flag(row, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(row, OnFidoRow, LV_EVENT_CLICKED, nullptr);
     lv_obj_remove_flag(row, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_pos(row, 0, kTitleHeight + i * kFidoRowHeight);
     lv_obj_set_size(row, kRowWidth, kFidoRowHeight);
@@ -567,6 +786,7 @@ void AddFidoRow(uint8_t i, const fido_ctap_credential_t &c) {
     lv_obj_t *details = Label(row, &lv_font_montserrat_20);
     lv_label_set_text(details, text);
     lv_obj_set_pos(details, 12, 72);
+    AddTrash(i, row);
 }
 
 // The title bar says how many keys; the bar under the list (ShowTabs) and
@@ -601,6 +821,7 @@ void ShowFido() {
     const size_t first = static_cast<size_t>(nav_state.fido_page()) * fido_list::kRowsPerPage;
     for (uint8_t i = 0; i < fido_list::kRowsPerPage && first + i < count; ++i) {
         AddFidoRow(i, fido_keys[fido_order[first + i]]);
+        ++fido_rows;
     }
 }
 
@@ -682,6 +903,14 @@ void Show() {
         }
     }
     row_count = 0;
+    fido_rows = 0;
+    // A redraw takes the can away; the question stays while the list is shown
+    // (it holds its key).
+    remove_state.Drop();
+    if (nav_state.mode() != nav::Mode::kFido) {
+        remove_state.Clear();
+        CloseAsk();
+    }
     lv_obj_clean(content);
     lv_obj_set_height(content, (nav_state.mode() == nav::Mode::kSettings ? kScreenBottom
                                                                            : kContentBottom) -
@@ -790,10 +1019,39 @@ const char *TypeJob(const Job &job) {
     }
 }
 
+// A key from the U2F / FIDO2 list (a made-up one only from the screen).
+const char *DeleteJob(const Job &job) {
+    if (memcmp(job.key, kDemoId, sizeof kDemoId) == 0) {
+        Lock();
+        demo_gone |= 1u << (job.key[sizeof kDemoId] % 32);
+        Unlock();
+        return "made-up key deleted";
+    }
+    switch (fido_ctap_delete(job.key)) {
+        case ESP_OK:
+            return "key deleted";
+        case ESP_ERR_NOT_FOUND:
+            return "the key is gone already";
+        case ESP_ERR_TIMEOUT:
+            return "busy: a FIDO2 request is running";
+        default:
+            return "cannot delete the key";
+    }
+}
+
 void TypeTask(void *) {
     for (;;) {
         Job job = {};
         xQueueReceive(jobs, &job, portMAX_DELAY);
+        if (job.fido) {
+            const char *said = DeleteJob(job);
+            Lock();
+            fido_seen.err = ESP_FAIL;  // the list read again at the next look
+            fido_looked_at = lv_tick_get() - kFidoMs;
+            Toast(said);
+            Unlock();
+            continue;
+        }
         const char *said = TypeJob(job);
         vault::Wipe(&type_record, sizeof type_record);
         Lock();
@@ -809,9 +1067,15 @@ void Poll(lv_timer_t *) {
     uint8_t in = 0;
     bool changed = false;
     while (xQueueReceive(inputs, &in, 0) == pdTRUE) {
-        if (HomeShown()) {  // under the PIN pad the buttons do nothing here
-            changed |= nav_state.Apply(static_cast<nav::Input>(in));
+        const auto input = static_cast<nav::Input>(in);
+        if (!HomeShown()) {  // under the PIN pad the buttons do nothing here
+            continue;
         }
+        if (remove_state.asking() && input != nav::Input::kHome) {
+            no_tapped |= input == nav::Input::kRight;  // Right: No (as FIDO2's prompt)
+            continue;
+        }
+        changed |= nav_state.Apply(input);
     }
     if (open_mode >= 0) {
         changed |= nav_state.Open(static_cast<nav::Mode>(open_mode));
@@ -826,8 +1090,43 @@ void Poll(lv_timer_t *) {
         tapped_tab = -1;
     }
     const nav::Gesture g = TakeGesture();
-    if (g != nav::Gesture::kNone && HomeShown()) {
+    if (g == nav::Gesture::kLeft || g == nav::Gesture::kRight) {
+        if (nav_state.mode() == nav::Mode::kFido && HomeShown()) {
+            const uint8_t row = fido_list::RowAt(GestureStart().y - kContentTop, kTitleHeight,
+                                                 kFidoRowHeight, fido_rows);
+            if (remove_state.Swipe(g, row)) {
+                ShowTrash();
+            }
+        }
+    } else if (g != nav::Gesture::kNone && HomeShown() && !remove_state.asking()) {
         changed |= nav_state.Swipe(g);
+    }
+    if (row_tapped) {
+        row_tapped = false;
+        if (remove_state.Drop()) {
+            ShowTrash();
+        }
+    }
+    if (trash_tapped) {
+        trash_tapped = false;
+        AskRemove();
+    }
+    if (no_tapped) {
+        no_tapped = false;
+        if (remove_state.asking()) {
+            remove_state.Clear();
+            CloseAsk();
+            ShowTrash();
+        }
+    }
+    if (ask != nullptr) {
+        const uint8_t fill = remove_state.Fill(lv_tick_get());
+        if (remove_state.stage() == fido_list::Stage::kDelete) {
+            DeleteAsked();
+        } else if (fill != shown_fill) {
+            shown_fill = fill;
+            lv_obj_set_width(yes_fill, yes_width * fill / fido_list::kHoldSteps);
+        }
     }
     if (nav_state.mode() == nav::Mode::kList && lv_tick_elaps(looked_at) >= kVaultMs) {
         looked_at = lv_tick_get();

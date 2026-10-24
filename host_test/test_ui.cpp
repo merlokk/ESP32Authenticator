@@ -394,6 +394,66 @@ void test_nav_classify(void) {
     TEST_ASSERT_TRUE(Classify(200, 500, 200, 300, 800) == Gesture::kUp);
     TEST_ASSERT_TRUE(Classify(200, 60, 200, 140, 800) == Gesture::kNone);  // too short
     TEST_ASSERT_TRUE(Classify(100, 60, 300, 200, 800) == Gesture::kNone);  // too slanted
+    TEST_ASSERT_TRUE(Classify(400, 300, 150, 340, 800) == Gesture::kLeft);
+    TEST_ASSERT_TRUE(Classify(100, 300, 220, 300, 800) == Gesture::kRight);
+    TEST_ASSERT_TRUE(Classify(400, 300, 250, 380, 800) == Gesture::kNone);  // too slanted
+}
+
+void test_fido_remove(void) {
+    namespace fl = ui::fido_list;
+    using ui::nav::Gesture;
+    TEST_ASSERT_EQUAL_UINT8(fl::kNoRow, fl::RowAt(50, 56, 103, 6));
+    TEST_ASSERT_EQUAL_UINT8(0, fl::RowAt(56, 56, 103, 6));
+    TEST_ASSERT_EQUAL_UINT8(2, fl::RowAt(56 + 2 * 103 + 5, 56, 103, 6));
+    TEST_ASSERT_EQUAL_UINT8(fl::kNoRow, fl::RowAt(56 + 4 * 103, 56, 103, 4));  // under the last
+
+    fl::Remove r;
+    TEST_ASSERT_FALSE(r.Trash());  // no can
+    TEST_ASSERT_FALSE(r.Swipe(Gesture::kLeft, fl::kNoRow));
+    TEST_ASSERT_FALSE(r.Swipe(Gesture::kUp, 1));
+    TEST_ASSERT_TRUE(r.Swipe(Gesture::kLeft, 1));
+    TEST_ASSERT_TRUE(r.stage() == fl::Stage::kTrash);
+    TEST_ASSERT_EQUAL_UINT8(1, r.row());
+    TEST_ASSERT_FALSE(r.Swipe(Gesture::kLeft, 1));  // already there
+    TEST_ASSERT_TRUE(r.Swipe(Gesture::kLeft, 3));   // one can: moved
+    TEST_ASSERT_TRUE(r.Swipe(Gesture::kRight, fl::kNoRow));
+    TEST_ASSERT_TRUE(r.stage() == fl::Stage::kNone);
+    TEST_ASSERT_FALSE(r.Swipe(Gesture::kRight, 2));
+    r.Swipe(Gesture::kLeft, 2);
+    TEST_ASSERT_TRUE(r.Drop());
+    TEST_ASSERT_FALSE(r.Drop());
+
+    // Asked: swipes do nothing, No at once.
+    r.Swipe(Gesture::kLeft, 2);
+    TEST_ASSERT_TRUE(r.Trash());
+    TEST_ASSERT_TRUE(r.asking());
+    TEST_ASSERT_FALSE(r.Swipe(Gesture::kRight, 2));
+    TEST_ASSERT_FALSE(r.Drop());
+    TEST_ASSERT_EQUAL_UINT8(2, r.row());
+    TEST_ASSERT_TRUE(r.Clear());
+    TEST_ASSERT_FALSE(r.asking());
+    TEST_ASSERT_EQUAL_UINT8(fl::kNoRow, r.row());
+
+    // Yes: held 4 s, filling; let go early: empty.
+    r.Swipe(Gesture::kLeft, 0);
+    r.Press(100);  // not asked yet: no hold
+    TEST_ASSERT_EQUAL_UINT8(0, r.Fill(5000));
+    r.Trash();
+    r.Press(1000);
+    TEST_ASSERT_EQUAL_UINT8(0, r.Fill(1000));
+    TEST_ASSERT_EQUAL_UINT8(1, r.Fill(1500));
+    TEST_ASSERT_EQUAL_UINT8(7, r.Fill(4999));
+    r.Release();
+    TEST_ASSERT_EQUAL_UINT8(0, r.Fill(4999));
+    TEST_ASSERT_TRUE(r.stage() == fl::Stage::kAsk);
+    r.Press(10000);
+    TEST_ASSERT_EQUAL_UINT8(fl::kHoldSteps, r.Fill(14000));
+    TEST_ASSERT_TRUE(r.stage() == fl::Stage::kDelete);
+    r.Release();
+    TEST_ASSERT_EQUAL_UINT8(fl::kHoldSteps, r.Fill(15000));
+    TEST_ASSERT_TRUE(r.Clear());
+    r.Press(0xFFFFF000u);  // the tick wraps
+    TEST_ASSERT_EQUAL_UINT8(0, r.Fill(0xFFFFF000u));
 }
 
 void test_list_rows(void) {
@@ -455,6 +515,7 @@ void RegisterUiTests(void) {
     RUN_TEST(test_nav_fido_pages);
     RUN_TEST(test_fido_list_rows);
     RUN_TEST(test_nav_classify);
+    RUN_TEST(test_fido_remove);
     RUN_TEST(test_list_rows);
     RUN_TEST(test_status_fido_prompt);
 }

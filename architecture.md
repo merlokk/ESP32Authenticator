@@ -300,7 +300,9 @@ waits). The touch reports the finger's moves too: a swipe down from the top
 quarter opens Settings (a stub), up from the bottom quarter the U2F / FIDO2
 keys (`fido_ctap_list`, by site A to Z, 6 a page: site, user, made / alg /
 kind; its pages flipped by Left / Right or the bar under it (‹, "1 / 2", ›, in the tabs' place); the count in its title; looked at
-each 2 s, not while a request waits: `fido_list_logic.h`), both with a back
+each 2 s, not while a request waits; a swipe left on a key: its trash can,
+then "Delete this key?", No at once, Yes held 4 s, `fido_ctap_delete` in the
+typing task: `fido_list_logic.h` `Remove`), both with a back
 arrow and the name over them; the arrow (the list at
 its page), the opposite swipe or Home closes them (`nav::Classify`; a slid tap
 is no tap). FIDO2 presence: Left allows, Right refuses (OPERATION_DENIED,

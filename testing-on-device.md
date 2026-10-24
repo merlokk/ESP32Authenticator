@@ -72,8 +72,8 @@ Portrait coordinates: 480x800, (0, 0) top left; the status bar is the top
 |---|---|
 | `ui show list\|settings\|fido` | opens that screen, as its swipe would |
 | `ui key left\|right\|home` | as the button (pages; Home: the list, page 1) |
-| `ui click <x> <y>` | a made-up tap (down, ~60 ms, up) |
-| `ui swipe <x0> <y0> <x1> <y1>` | a made-up finger moved in ~200 ms; classified as a real one (`nav::Classify`: a tap slides 24 px at most, a swipe goes 100 px, mostly vertically; from the top quarter, y < 200, it opens Settings, from the bottom one, y >= 600, the FIDO2 list) |
+| `ui click <x> <y> [ms]` | a made-up tap (down, ~60 ms or `ms` held, up) |
+| `ui swipe <x0> <y0> <x1> <y1>` | a made-up finger moved in ~200 ms; classified as a real one (`nav::Classify`: a tap slides 24 px at most, a swipe goes 100 px, mostly along one axis; from the top quarter, y < 200, it opens Settings, from the bottom one, y >= 600, the FIDO2 list; sideways on a FIDO2 row, its trash can) |
 | `ui screenshot` | LVGL's 1-bit screen as base64 with length and CRC32 |
 | `ui demo fido [n]` / `ui demo off` | n (default 10, up to 30) made-up keys in the FIDO2 list, on the screen only (the store is not touched) |
 | `ui` | refreshes, the last one, free stacks, touch (last point, presses) |
@@ -82,6 +82,7 @@ Portrait coordinates: 480x800, (0, 0) top left; the status bar is the top
 python utils/screenshot.py -p COM7 [out.png]        # the screen as a PNG
 python utils/console.py -p COM7 "ui swipe 240 780 240 400"   # the FIDO2 list
 python utils/console.py -p COM7 "ui click 60 300"            # a row's first quarter: type the user
+python utils/console.py -p COM7 "ui swipe 400 300 150 300"   # FIDO2: the trash can on the 2nd row
 ```
 
 - A click or swipe is refused while a finger (real or made up) is down.
@@ -94,7 +95,9 @@ python utils/console.py -p COM7 "ui click 60 300"            # a row's first qua
 - Passwords: `pass add <site> [user] [password] [otp]` (made-up records,
   e.g. `pass add test1.example user1 pass1 JBSWY3DPEHPK3PXP`), `pass list`,
   `pass delete <#>`; the order: `pass move`, `pass sort`. Needs the open vault.
-- FIDO2 keys on the screen: `ui demo fido`. Real test credentials only from
+- FIDO2 keys on the screen: `ui demo fido`; deleting one from the screen
+  (trash can, Yes held: `ui click <x> <y> 4500`) drops it from the screen
+  only. Real test credentials only from
   the FIDO2 suite below (`ctap-test*.example`).
 
 ## Web site

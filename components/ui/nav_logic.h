@@ -33,10 +33,12 @@ enum class Gesture : uint8_t {
     kUpFromBottom,  // a swipe up that started in the bottom quarter
     kDown,          // a swipe down from elsewhere
     kUp,
+    kLeft,          // sideways, mostly horizontally (a FIDO2 row's trash can)
+    kRight,
 };
 
 inline constexpr int32_t kTapSlop = 24;    // px a tap may slide
-inline constexpr int32_t kSwipeMin = 100;  // px a swipe goes, mostly vertically
+inline constexpr int32_t kSwipeMin = 100;  // px a swipe goes, mostly along its axis
 
 constexpr Gesture Classify(int32_t x0, int32_t y0, int32_t x1, int32_t y1, int32_t height) {
     const int32_t dx = x1 - x0;
@@ -45,6 +47,9 @@ constexpr Gesture Classify(int32_t x0, int32_t y0, int32_t x1, int32_t y1, int32
     const int32_t ay = dy < 0 ? -dy : dy;
     if (ax <= kTapSlop && ay <= kTapSlop) {
         return Gesture::kTap;
+    }
+    if (ax >= kSwipeMin && ax >= 2 * ay) {
+        return dx < 0 ? Gesture::kLeft : Gesture::kRight;
     }
     if (ay < kSwipeMin || ay < 2 * ax) {
         return Gesture::kNone;

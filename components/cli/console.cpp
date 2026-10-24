@@ -90,24 +90,28 @@ int CmdUi(int argc, char **argv) {
         printf("%s: %s\n", shown[0] != '\0' ? shown : "wallpaper", esp_err_to_name(err));
         return err == ESP_OK ? 0 : 1;
     }
-    const bool click = argc == 4 && strcmp(argv[1], "click") == 0;
+    const bool click = (argc == 4 || argc == 5) && strcmp(argv[1], "click") == 0;
     if (click || (argc == 6 && strcmp(argv[1], "swipe") == 0)) {
         int v[4] = {};
+        int hold = 0;
         for (int i = 0; i < argc - 2; ++i) {
             v[i] = atoi(argv[i + 2]);
         }
         if (click) {
+            hold = v[2];
             v[2] = v[0];
             v[3] = v[1];
         }
         for (const int c : v) {
-            if (c < 0) {
-                printf("usage: ui click <x> <y> | ui swipe <x0> <y0> <x1> <y1> (0..479, 0..799)\n");
+            if (c < 0 || hold < 0 || hold > 10000) {
+                printf("usage: ui click <x> <y> [hold ms, up to 10000] | ui swipe <x0> <y0> <x1> "
+                       "<y1> (0..479, 0..799)\n");
                 return 1;
             }
         }
         const esp_err_t err = ui::Touch(static_cast<uint16_t>(v[0]), static_cast<uint16_t>(v[1]),
-                                        static_cast<uint16_t>(v[2]), static_cast<uint16_t>(v[3]));
+                                        static_cast<uint16_t>(v[2]), static_cast<uint16_t>(v[3]),
+                                        static_cast<uint16_t>(hold));
         if (err != ESP_OK) {
             printf("%s\n", err == ESP_ERR_INVALID_ARG    ? "off the screen (0..479, 0..799)"
                            : err == ESP_ERR_INVALID_STATE ? "a finger is down"
@@ -496,10 +500,11 @@ const esp_console_cmd_t kCommands[] = {
                 "wallpaper [grey|bw]: draw a random power-off wallpaper now, as display.wallpaper in "
                 "config.json or as given (stays on) | demo fido [n] / demo off: n (10) made-up keys in the "
                 "U2F / FIDO2 list, on the screen only | show list|settings|fido: that screen | "
-                "click <x> <y> / swipe <x0> <y0> <x1> <y1>: a made-up finger (portrait px) | "
+                "click <x> <y> [hold ms] / swipe <x0> <y0> <x1> <y1>: a made-up finger (portrait "
+                "px) | "
                 "key left|right|home: as the button | "
                 "screenshot: the screen as base64 (utils/screenshot.py makes a PNG)",
-        .hint = "[wallpaper [grey|bw] | show <screen> | key <key> | click <x> <y> | "
+        .hint = "[wallpaper [grey|bw] | show <screen> | key <key> | click <x> <y> [ms] | "
                 "swipe <x0> <y0> <x1> <y1> | "
                 "demo fido [n] | demo off | screenshot]",
         .func = &CmdUi,
