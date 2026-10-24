@@ -426,10 +426,10 @@ and never starts without lwIP (an assert).
 - Front page (polls `/api/status` every 5 s; a click on the lamp, top right,
   reads it at once): Network (Wi-Fi state and mode,
   network, signal, address static/dhcp, MAC, internet, AP), Bluetooth (BLE,
-  keyboard, FIDO2 readiness and counts; `stored` with a bar of the slots used,
-  amber from 80 %, red from 90 %; PIN and attempts left; signature counter;
-  file version and change time; why FIDO2 is off, if it is),
-  Device (PIN: locked / unlocked, wrong PINs, lockout; local time and zone,
+  keyboard, FIDO2 readiness and counts), Security (PIN: locked / unlocked,
+  wrong PINs, lockout; FIDO2 keys with a bar of the slots used, amber from
+  80 %, red from 90 %; FIDO2 PIN and attempts left; signature counter; file
+  version and change time; why FIDO2 is off, if it is), Device (local time and zone,
   time sync, uptime, heap, PSRAM, SPIFFS with a bar of the space used, amber
   from 80 %, red from 95 %; the microSD, connected and free space, a bar amber
   from 90 %, red from 98 %, hidden without a slot; firmware).
