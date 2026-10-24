@@ -494,6 +494,8 @@ void test_settings_pages(void) {
     TEST_ASSERT_EQUAL_UINT8(7, st::kRowCount);
     TEST_ASSERT_TRUE(st::PageAction(st::Page::kSecurity) == st::Action::kLockNow);
     TEST_ASSERT_TRUE(st::PageAction(st::Page::kWifi) == st::Action::kNone);
+    TEST_ASSERT_TRUE(st::PageAction(st::Page::kAbout) == st::Action::kRestart);
+    TEST_ASSERT_EQUAL_STRING("Restart", st::ActionText(st::Action::kRestart));
     TEST_ASSERT_EQUAL_STRING("Lock now", st::ActionText(st::Action::kLockNow));
 
     char label[8];

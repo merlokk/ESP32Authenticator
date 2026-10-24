@@ -1491,7 +1491,7 @@ void OpenSheet(const char *title, const SheetButton *buttons, size_t count) {
     lv_obj_center(box);
     constexpr int32_t kInner = kRowWidth - 32 - 2 * 20 - 2 * 3;
     lv_obj_t *t = Label(box, &lv_font_montserrat_28);
-    lv_label_set_long_mode(t, LV_LABEL_LONG_MODE_DOTS);
+    lv_label_set_long_mode(t, LV_LABEL_LONG_MODE_WRAP);
     lv_obj_set_width(t, kInner);
     lv_label_set_text(t, title);
     for (size_t i = 0; i < count; ++i) {
@@ -2532,6 +2532,52 @@ bool PollSecurity() {
     return changed;
 }
 
+// --- Settings: About ---------------------------------------------------------------
+
+// The name and the model big, then the lines small; Restart (asked first).
+// A snapshot: not looked at again while shown (the uptime and the memory
+// would redraw it every time).
+void ShowAbout() {
+    TitleBar("About");
+    char label[32];
+    char value[64];
+    uint8_t i = 0;
+    int32_t y = kTitleHeight + 12;
+    if (settings::Line(settings_shown, i, label, sizeof label, value, sizeof value)) {
+        lv_obj_t *name = Label(content, &lv_font_montserrat_28);
+        lv_label_set_text(name, value);
+        lv_obj_align(name, LV_ALIGN_TOP_MID, 0, y);
+        ++i;
+    }
+    if (settings::Line(settings_shown, i, label, sizeof label, value, sizeof value)) {
+        lv_obj_t *model = Label(content, &lv_font_montserrat_20);
+        lv_label_set_text(model, value);
+        lv_obj_align(model, LV_ALIGN_TOP_MID, 0, y + 40);
+        ++i;
+    }
+    y += 80;
+    constexpr int32_t kLine = 40;
+    const int32_t bottom = kScreenBottom - kContentTop - 100;
+    for (; y + kLine <= bottom && settings::Line(settings_shown, i, label, sizeof label, value,
+                                                 sizeof value);
+         ++i, y += kLine) {
+        lv_obj_t *row = Panel(content, y, kLine);
+        lv_obj_set_style_border_width(row, 1, 0);
+        lv_obj_t *l = Label(row, &lv_font_montserrat_20);
+        lv_label_set_text(l, label);
+        lv_obj_set_pos(l, 12, (kLine - 24) / 2);
+        lv_obj_t *v = Label(row, &lv_font_montserrat_20);
+        lv_label_set_long_mode(v, LV_LABEL_LONG_MODE_DOTS);
+        lv_obj_set_style_text_align(v, LV_TEXT_ALIGN_RIGHT, 0);
+        lv_obj_set_size(v, 290, 24);
+        lv_label_set_text(v, value);
+        lv_obj_align(v, LV_ALIGN_RIGHT_MID, -12, 0);
+    }
+    lv_obj_t *b = AskButton(content, kRowWidth - 48, "Restart");
+    lv_obj_align(b, LV_ALIGN_BOTTOM_MID, 0, -16);
+    lv_obj_add_event_cb(b, OnAction, LV_EVENT_CLICKED, nullptr);
+}
+
 // --- Settings: the touch's calibration ---------------------------------------------
 
 bool cal_active = false;  // the crosses are up: no calibration in use
@@ -2693,6 +2739,11 @@ void ShowSettings() {
     }
     if (page != settings::Page::kSecurityPin) {
         pin_flow.Wipe();
+    }
+    if (page == settings::Page::kAbout && settings_hooks != nullptr) {
+        SettingsText(page, settings_shown, sizeof settings_shown);
+        ShowAbout();
+        return;
     }
     if (security_hooks != nullptr) {
         switch (page) {
@@ -3140,8 +3191,25 @@ void Poll(lv_timer_t *) {
         action_tapped = false;
         Job job = MakeJob(JobKind::kAct);
         job.action = settings::PageAction(static_cast<settings::Page>(nav_state.settings_page()));
-        if (xQueueSend(jobs, &job, 0) != pdTRUE) {
+        if (job.action == settings::Action::kRestart) {
+            if (sheet == nullptr) {  // asked first: the vault locks
+                const SheetButton buttons[] = {{"Restart", 1}, {"Cancel", 3}};
+                OpenSheet("Restart now? The PIN is asked again after it.", buttons, 2);
+            }
+        } else if (xQueueSend(jobs, &job, 0) != pdTRUE) {
             Toast("busy typing");
+        }
+    }
+    if (sheet_choice != 0 &&
+        nav_state.settings_page() == static_cast<uint8_t>(settings::Page::kAbout)) {
+        const int choice = sheet_choice;
+        sheet_choice = 0;
+        CloseSheet();
+        if (choice == 1) {
+            Job job = MakeJob(JobKind::kAct);
+            job.action = settings::Action::kRestart;
+            Toast("restarting...");
+            SendJob(job);
         }
     }
     if (light_save) {
@@ -3178,7 +3246,7 @@ void Poll(lv_timer_t *) {
         settings_page != settings::Page::kTimeSync && settings_page != settings::Page::kTimeRegion &&
         settings_page != settings::Page::kTimeZone && settings_page != settings::Page::kTimeSet &&
         settings_page != settings::Page::kSecurityLock &&
-        settings_page != settings::Page::kSecurityPin &&
+        settings_page != settings::Page::kSecurityPin && settings_page != settings::Page::kAbout &&
         lv_tick_elaps(settings_looked_at) >= kSettingsMs) {
         settings_looked_at = lv_tick_get();
         if (settings_page == settings::Page::kWifi && wifi_hooks != nullptr) {

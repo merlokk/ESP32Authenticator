@@ -15,6 +15,12 @@
 #include "console.h"
 #include "crypto.h"
 #include "esp_app_desc.h"
+#include "esp_chip_info.h"
+#include "esp_flash.h"
+#include "esp_idf_version.h"
+#include "esp_mac.h"
+#include "esp_psram.h"
+#include "esp_system.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_ota_ops.h"
@@ -455,15 +461,42 @@ void DescribeAbout(bool summary, char *out, size_t size) {
         snprintf(out, size, "%s", app->version);
         return;
     }
+    // The first two: the name and the model (About shows them big).
+    Put(out, size, "Name", "%s", ble::Name());
+    Put(out, size, "Model", "%s", boards::kBoard.name);
     Put(out, size, "Firmware", "%s", app->version);
-    Put(out, size, "Built", "%s", app->date);
+    Put(out, size, "Built", "%s %s", app->date, app->time);
+    Put(out, size, "ESP-IDF", "%s", esp_get_idf_version());
     Put(out, size, "LVGL", "%s", ui::LvglVersion());
-    Put(out, size, "Board", "%s", boards::kBoard.name);
-    Put(out, size, "SD card", "%s", sd_card::Mounted() ? "in" : "none");
-    Put(out, size, "Free memory", "%u KB",
-        static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024));
-    Put(out, size, "Free PSRAM", "%u KB",
+    esp_chip_info_t chip = {};
+    esp_chip_info(&chip);
+    Put(out, size, "Chip", "ESP32-S3 v%u.%u, %u cores", static_cast<unsigned>(chip.revision / 100),
+        static_cast<unsigned>(chip.revision % 100), static_cast<unsigned>(chip.cores));
+    uint32_t flash = 0;
+    esp_flash_get_size(nullptr, &flash);
+    Put(out, size, "Flash, PSRAM", "%u MB, %u MB", static_cast<unsigned>(flash >> 20),
+        static_cast<unsigned>(esp_psram_get_size() >> 20));
+    uint8_t mac[6] = {};
+    if (esp_read_mac(mac, ESP_MAC_WIFI_STA) == ESP_OK) {
+        Put(out, size, "Wi-Fi MAC", "%02x:%02x:%02x:%02x:%02x:%02x", mac[0], mac[1], mac[2], mac[3],
+            mac[4], mac[5]);
+    }
+    if (esp_read_mac(mac, ESP_MAC_BT) == ESP_OK) {
+        Put(out, size, "Bluetooth MAC", "%02x:%02x:%02x:%02x:%02x:%02x", mac[0], mac[1], mac[2],
+            mac[3], mac[4], mac[5]);
+    }
+    const wifimgr::Snapshot w = wifimgr::Get();
+    if (w.state == wifimgr::State::kOnline) {
+        char ip[16];
+        Ip(w.radio.ip, ip, sizeof ip);
+        Put(out, size, "Web site", "http://%s", ip);
+    }
+    const unsigned minutes = static_cast<unsigned>(esp_timer_get_time() / 60000000);
+    Put(out, size, "Up", "%u h %u min", minutes / 60, minutes % 60);
+    Put(out, size, "Free memory", "%u KB, PSRAM %u KB",
+        static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024),
         static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024));
+    Put(out, size, "SD card", "%s", sd_card::Mounted() ? "in" : "none");
 }
 
 void SettingsDescribe(ui::settings::Page page, bool summary, char *out, size_t size) {
@@ -510,6 +543,9 @@ const char *SettingsAct(ui::settings::Action action) {
             timesync::SyncNow();
             return config::Get().time.server[0] != '\0' ? "syncing the time"
                                                         : "no time server set";
+        case Action::kRestart:
+            esp_restart();
+            break;
         case Action::kNone: break;
     }
     return "";

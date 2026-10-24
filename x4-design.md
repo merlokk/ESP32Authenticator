@@ -74,7 +74,10 @@ Portrait, 480x800. The panel scans landscape (hardware.md): `ui_logic.h` turns t
   PIN (on a pad of its own: the current PIN, a new one twice; vault.bin and
   fido.bin re-keyed), 10 wrong PINs: lock (1 min .. a day), PIN complexity
   (the vault at once, FIDO2 from the next start), Wipe PIN (set twice /
-  change / off), Lock now. About is read-only.
+  change / off), Lock now. About: the name and the model big, then
+  firmware, build, ESP-IDF, LVGL, chip, flash and PSRAM, the MACs, the web
+  site, uptime, free memory, SD card (a snapshot), Restart (asked first: the
+  PIN after it).
 - **U2F / FIDO2 list**: a swipe up from the bottom quarter; the keys by site
   (A to Z), 6 a page: site, user, "made <date>, <alg>, resident / U2F";
   Left / Right or the bar under it (‹, "1 / 2", ›) flip the pages, the title says the count; its

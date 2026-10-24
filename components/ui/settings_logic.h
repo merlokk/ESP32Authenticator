@@ -80,12 +80,14 @@ enum class Action : uint8_t {
     kPowerOff,  // Display & power
     kLockNow,   // Security
     kSyncTime,  // Date & time
+    kRestart,   // About (asked first: the vault locks)
 };
 
 constexpr Action PageAction(Page p) {
     return p == Page::kDisplay    ? Action::kPowerOff
            : p == Page::kSecurity ? Action::kLockNow
            : p == Page::kTime     ? Action::kSyncTime
+           : p == Page::kAbout    ? Action::kRestart
                                   : Action::kNone;
 }
 
@@ -93,6 +95,7 @@ constexpr const char *ActionText(Action a) {
     return a == Action::kPowerOff  ? "Power off"
            : a == Action::kLockNow ? "Lock now"
            : a == Action::kSyncTime ? "Sync the time now"
+           : a == Action::kRestart  ? "Restart"
                                     : "";
 }
 
