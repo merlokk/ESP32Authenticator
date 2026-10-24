@@ -28,6 +28,8 @@ enum class Page : uint8_t {
     kTimeRegion,    // Date & time: the zone's region
     kTimeZone,      // Date & time: the region's cities
     kTimeSet,       // Date & time: the time by hand
+    kSecurityLock,  // Security: the lock after wrong PINs
+    kSecurityPin,   // Security: a PIN typed (change it, the wipe PIN)
 };
 
 // Where a page's back arrow goes.
@@ -38,6 +40,7 @@ constexpr Page Parent(Page p) {
            : p == Page::kDisplayChoice ? Page::kDisplay
            : p == Page::kTimeSync || p == Page::kTimeRegion || p == Page::kTimeSet ? Page::kTime
            : p == Page::kTimeZone ? Page::kTimeRegion
+           : p == Page::kSecurityLock || p == Page::kSecurityPin ? Page::kSecurity
                                       : Page::kMain;
 }
 
@@ -65,6 +68,8 @@ constexpr const char *Title(Page p) {
         case Page::kTimeRegion: return "Time zone";
         case Page::kTimeZone: return "Time zone";
         case Page::kTimeSet: return "Set the time";
+        case Page::kSecurityLock: return "Lock after wrong PINs";
+        case Page::kSecurityPin: return "PIN";
     }
     return "";
 }

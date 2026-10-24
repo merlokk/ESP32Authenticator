@@ -492,7 +492,9 @@ void SettingsDescribe(ui::settings::Page page, bool summary, char *out, size_t s
         case Page::kTimeSync:
         case Page::kTimeRegion:
         case Page::kTimeZone:
-        case Page::kTimeSet: break;
+        case Page::kTimeSet:
+        case Page::kSecurityLock:
+        case Page::kSecurityPin: break;
     }
 }
 
@@ -803,6 +805,86 @@ const char *TimeSetClock(const ui::time_view::Manual &m) {
 const ui::TimeHooks kTimeHooks = {TimeView,    ZoneCount,   ZoneName,
                                   TimeSetZone, TimeSetSync, TimeSetClock};
 
+// --- The Security window (ui::SecurityHooks) -----------------------------------------
+
+void SecurityView(ui::security_view::View *out) {
+    *out = {};
+    const vault::Info v = vault::GetInfo();
+    out->open = v.state == vault::State::kOpen;
+    out->records = static_cast<uint16_t>(v.count);
+    out->wrong = v.pin_failures;
+    out->max_wrong = vault::kMaxPinTries;
+    fido_ctap_info_t f = {};
+    // Not while a request waits for the button (the store's lock is taken).
+    if (!fido_waiting && fido_ctap_info(&f) == ESP_OK) {
+        out->fido_known = true;
+        out->fido_keys = static_cast<uint16_t>(f.credentials);
+        out->fido_max = static_cast<uint16_t>(f.max_credentials);
+        out->fido_pin = f.pin_set;
+    }
+    const config::Pin &pin = config::Get().pin;
+    out->lock_minutes = pin.lock_minutes;
+    out->wipe = pin.wipe[0] != '\0';
+    out->complexity = pin.complexity;
+}
+
+// The vault takes the policy at once (as the console's `pin wipe`).
+const char *SecuritySave(const char *done) {
+    const config::Pin &cfg = config::Get().pin;
+    vault::SetPolicy({static_cast<uint32_t>(cfg.lock_minutes) * 60, cfg.wipe, cfg.complexity});
+    return config::Save() == ESP_OK ? done : "in use, but config.json is not saved";
+}
+
+// As the console's `pin change`: vault.bin and fido.bin re-keyed.
+const char *SecurityChangePin(const char *old_pin, const char *new_pin) {
+    static char text[48];
+    const vault::Error e = vault::ChangePin(old_pin, new_pin);
+    switch (e) {
+        case vault::Error::kOk: return "PIN changed";
+        case vault::Error::kWeakPin: return "too simple: choose another PIN";
+        case vault::Error::kWrongPin: {
+            const vault::Info info = vault::GetInfo();
+            snprintf(text, sizeof text, "wrong PIN, %u tries left",
+                     static_cast<unsigned>(info.pin_failures < vault::kMaxPinTries
+                                               ? vault::kMaxPinTries - info.pin_failures
+                                               : 0));
+            return text;
+        }
+        default: return vault::Describe(e);
+    }
+}
+
+const char *SecuritySetWipe(const char *pin) {
+    config::Pin &cfg = config::Get().pin;
+    if (pin == nullptr) {
+        cfg.wipe[0] = '\0';
+        return SecuritySave("wipe PIN off");
+    }
+    static char wipe[vault::kWipeTextSize];  // off the task's stack
+    const vault::Error e = vault::MakeWipe(pin, wipe);
+    if (e != vault::Error::kOk) {
+        vault::Wipe(wipe, sizeof wipe);
+        return e == vault::Error::kPinInUse ? "that is the PIN: choose another" : vault::Describe(e);
+    }
+    snprintf(cfg.wipe, sizeof cfg.wipe, "%s", wipe);
+    vault::Wipe(wipe, sizeof wipe);
+    return SecuritySave("wipe PIN set");
+}
+
+const char *SecuritySetLock(uint16_t minutes) {
+    config::Get().pin.lock_minutes = minutes;
+    return SecuritySave("saved");
+}
+
+// The vault at once; FIDO2 reads it at its start (fido_ctap_set_pin_complexity).
+const char *SecuritySetComplexity(bool on) {
+    config::Get().pin.complexity = on;
+    return SecuritySave(on ? "complexity on" : "complexity off");
+}
+
+const ui::SecurityHooks kSecurityHooks = {SecurityView, SecurityChangePin, SecuritySetWipe,
+                                          SecuritySetLock, SecuritySetComplexity};
+
 // Settings > Touchscreen keeps a new calibration (the ui's own task).
 esp_err_t SaveTouch(const ui::touch_cal::Calibration &c) {
     config::Get().display.touch = {c.x_scale, c.x_offset, c.y_scale, c.y_offset};
@@ -852,6 +934,7 @@ extern "C" void app_main() {
     ui::SetBleHooks(&kBleHooks);
     ui::SetDisplayHooks(&kDisplayHooks);
     ui::SetTimeHooks(&kTimeHooks);
+    ui::SetSecurityHooks(&kSecurityHooks);
     {
         const config::TouchCalibration &t = config::Get().display.touch;
         ui::SetTouchCalibration({t.x_scale, t.x_offset, t.y_scale, t.y_offset}, SaveTouch);

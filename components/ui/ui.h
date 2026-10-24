@@ -14,6 +14,7 @@
 #include "ble_view_logic.h"
 #include "display_view_logic.h"
 #include "time_view_logic.h"
+#include "security_view_logic.h"
 #include "touch_cal_logic.h"
 
 namespace ui {
@@ -119,6 +120,19 @@ struct TimeHooks {
     const char *(*set_time)(const time_view::Manual &local);
 };
 void SetTimeHooks(const TimeHooks *hooks);
+
+// The Security window (security_view_logic.h), filled by the device.
+struct SecurityHooks {
+    // What it shows. ui task, every 2 s while shown: keep it quick.
+    void (*view)(security_view::View *out);
+    // The rest in the ui's own task (a PIN change takes seconds), saying what
+    // happened. The PINs are wiped by the caller after the call.
+    const char *(*change_pin)(const char *old_pin, const char *new_pin);
+    const char *(*set_wipe)(const char *pin);  // nullptr: no wipe PIN
+    const char *(*set_lock)(uint16_t minutes);
+    const char *(*set_complexity)(bool on);
+};
+void SetSecurityHooks(const SecurityHooks *hooks);
 
 // The touch's calibration (touch_cal_logic.h), applied to every real touch;
 // saved by `save` (the ui's own task) when Settings > Touchscreen keeps a new one.

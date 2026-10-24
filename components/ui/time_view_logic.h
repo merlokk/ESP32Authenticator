@@ -50,6 +50,25 @@ constexpr void City(const char *name, char *out, size_t size) {
     out[n] = '\0';
 }
 
+// A zone's city before another's, A to Z (the region's list).
+constexpr bool CityLess(const char *a, const char *b) {
+    const char *x = a;
+    const char *y = b;
+    for (const char *p = a; *p != '\0'; ++p) {
+        if (*p == '/') {
+            x = p + 1;
+        }
+    }
+    for (const char *p = b; *p != '\0'; ++p) {
+        if (*p == '/') {
+            y = p + 1;
+        }
+    }
+    for (; *x != '\0' && *x == *y; ++x, ++y) {
+    }
+    return static_cast<unsigned char>(*x) < static_cast<unsigned char>(*y);
+}
+
 // --- how often to sync (time.syncHours)
 
 struct Option {

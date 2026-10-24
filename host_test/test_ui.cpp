@@ -13,6 +13,7 @@
 #include "ble_view_logic.h"
 #include "display_view_logic.h"
 #include "time_view_logic.h"
+#include "security_view_logic.h"
 #include "list_logic.h"
 #include "nav_logic.h"
 #include "pin_pad_logic.h"
@@ -781,6 +782,64 @@ void test_time_view(void) {
     TEST_ASSERT_FALSE(tv::Equal(a, b));
 }
 
+void test_security_view(void) {
+    namespace sv = ui::security_view;
+    namespace st = ui::settings;
+    using ui::pinpad::Key;
+    TEST_ASSERT_TRUE(st::Parent(st::Page::kSecurityPin) == st::Page::kSecurity);
+    TEST_ASSERT_EQUAL_INT(2, sv::LockIndex(10));
+    TEST_ASSERT_EQUAL_INT(-1, sv::LockIndex(7));
+    for (const sv::Option &o : sv::kLock) {
+        TEST_ASSERT_TRUE(o.value >= 1 && o.value <= 1440);  // config.json's range
+    }
+
+    auto type = [](sv::PinFlow &f, const char *digits) {
+        sv::Result r = sv::Result::kNone;
+        for (const char *d = digits; *d != 0; ++d) {
+            r = f.Apply({Key::kDigit, *d});
+        }
+        return r;
+    };
+    sv::PinFlow f;
+    f.Start(sv::Flow::kChangePin);
+    TEST_ASSERT_EQUAL_STRING("The current PIN", f.Title());
+    TEST_ASSERT_TRUE(type(f, "12345") == sv::Result::kTyped);
+    TEST_ASSERT_TRUE(f.Apply({Key::kDigit, '6'}) == sv::Result::kNext);
+    TEST_ASSERT_EQUAL_STRING("A new PIN", f.Title());
+    TEST_ASSERT_EQUAL_UINT8(0, f.count());
+    TEST_ASSERT_TRUE(type(f, "246813") == sv::Result::kNext);
+    TEST_ASSERT_EQUAL_STRING("Repeat the new PIN", f.Title());
+    TEST_ASSERT_TRUE(type(f, "246810") == sv::Result::kMismatch);
+    TEST_ASSERT_EQUAL_STRING("A new PIN", f.Title());  // the current one is kept
+    type(f, "246813");
+    TEST_ASSERT_TRUE(type(f, "246813") == sv::Result::kSubmit);
+    TEST_ASSERT_EQUAL_STRING("123456", f.old());
+    TEST_ASSERT_EQUAL_STRING("246813", f.fresh());
+    f.Wipe();
+    TEST_ASSERT_EQUAL_STRING("", f.old());
+    TEST_ASSERT_EQUAL_STRING("", f.fresh());
+
+    f.Start(sv::Flow::kSetWipe);
+    TEST_ASSERT_EQUAL_STRING("The wipe PIN", f.Title());
+    TEST_ASSERT_TRUE(type(f, "975310") == sv::Result::kNext);
+    TEST_ASSERT_EQUAL_STRING("Repeat the wipe PIN", f.Title());
+    TEST_ASSERT_TRUE(f.Apply({Key::kBack, 0}) == sv::Result::kNone);  // nothing to take back
+    TEST_ASSERT_TRUE(type(f, "975310") == sv::Result::kSubmit);
+    TEST_ASSERT_EQUAL_STRING("975310", f.fresh());
+
+    sv::View a = {};
+    sv::View b = a;
+    TEST_ASSERT_TRUE(sv::Equal(a, b));
+    b.wipe = true;
+    TEST_ASSERT_FALSE(sv::Equal(a, b));
+
+    namespace tv = ui::time_view;
+    TEST_ASSERT_TRUE(tv::CityLess("Europe/Amsterdam", "Europe/Berlin"));
+    TEST_ASSERT_FALSE(tv::CityLess("Europe/London", "Europe/Dublin"));
+    TEST_ASSERT_TRUE(tv::CityLess("America/Argentina/Buenos_Aires", "America/Chicago"));
+    TEST_ASSERT_FALSE(tv::CityLess("Asia/Baku", "Asia/Baku"));
+}
+
 void test_list_rows(void) {
     using ui::list::Zone;
     TEST_ASSERT_TRUE(ui::list::ZoneAt(0, 472) == Zone::kTypeUser);
@@ -847,6 +906,7 @@ void RegisterUiTests(void) {
     RUN_TEST(test_ble_view);
     RUN_TEST(test_display_view);
     RUN_TEST(test_time_view);
+    RUN_TEST(test_security_view);
     RUN_TEST(test_list_rows);
     RUN_TEST(test_status_fido_prompt);
 }

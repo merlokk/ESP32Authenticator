@@ -136,6 +136,10 @@ enum class JobKind : uint8_t {
     kTimeZone,    // the zone named in `password`
     kTimeSync,    // sync every `id` hours
     kTimeSet,     // the clock to `manual` (local)
+    kPinChange,   // the PIN `ssid` to `password` (wiped after)
+    kPinWipe,     // the wipe PIN `password` (`flag`), or none
+    kPinLock,     // the lock after wrong PINs: `id` minutes
+    kPinComplexity,  // `flag`
 };
 
 struct Job {
@@ -1173,7 +1177,8 @@ void StartScan() {
     }
 }
 
-void SendWifiJob(Job &job) {
+// A job that may carry a password or PINs: sent, then this copy wiped.
+void SendAndWipe(Job &job) {
     if (xQueueSend(jobs, &job, 0) != pdTRUE) {
         Toast("busy typing");
     }
@@ -1511,7 +1516,7 @@ bool PollWifi() {
         wifi_switch_tapped = false;
         Job job = MakeJob(JobKind::kWifiActive);
         job.flag = !wifi_shown.active;
-        SendWifiJob(job);
+        SendAndWipe(job);
     }
     if (saved_tapped != wifi_view::kNone) {
         if (sheet == nullptr && saved_tapped < wifi_shown.saved_count) {
@@ -1526,7 +1531,7 @@ bool PollWifi() {
             Job job = MakeJob(choice == 1 ? JobKind::kWifiJoin : JobKind::kWifiForget);
             job.flag = true;  // the kept password
             snprintf(job.ssid, sizeof job.ssid, "%s", wifi_shown.saved[sheet_index].ssid);
-            SendWifiJob(job);
+            SendAndWipe(job);
         }
         CloseSheet();
     }
@@ -1556,7 +1561,7 @@ bool PollWifi() {
                 Job job = MakeJob(JobKind::kWifiJoin);
                 job.flag = how == wifi_view::Join::kSaved;
                 snprintf(job.ssid, sizeof job.ssid, "%s", n.ssid);
-                SendWifiJob(job);
+                SendAndWipe(job);
                 changed |= nav_state.OpenSettings(static_cast<uint8_t>(settings::Page::kWifi));
             }
         }
@@ -1575,7 +1580,7 @@ bool PollWifi() {
                 Job job = MakeJob(JobKind::kWifiJoin);
                 snprintf(job.ssid, sizeof job.ssid, "%s", join_ssid);
                 snprintf(job.password, sizeof job.password, "%s", typed);
-                SendWifiJob(job);
+                SendAndWipe(job);
                 changed |= nav_state.OpenSettings(static_cast<uint8_t>(settings::Page::kWifi));
             }
         }
@@ -2034,7 +2039,7 @@ void InfoRow(int32_t y, const char *name, const char *value) {
     lv_obj_align(v, LV_ALIGN_RIGHT_MID, -12, 0);
 }
 
-// The region's zones into zone_list.
+// The region's zones into zone_list, A to Z by city.
 void ListZones(uint8_t region) {
     zone_count = 0;
     const size_t n = time_hooks->zone_count();
@@ -2042,6 +2047,14 @@ void ListZones(uint8_t region) {
         if (time_view::RegionOf(time_hooks->zone_name(i)) == region) {
             zone_list[zone_count++] = static_cast<uint8_t>(i);
         }
+    }
+    for (uint8_t i = 1; i < zone_count; ++i) {  // A to Z by city
+        const uint8_t v = zone_list[i];
+        uint8_t j = i;
+        for (; j > 0 && time_view::CityLess(time_hooks->zone_name(v), time_hooks->zone_name(zone_list[j - 1])); --j) {
+            zone_list[j] = zone_list[j - 1];
+        }
+        zone_list[j] = v;
     }
 }
 
@@ -2261,6 +2274,264 @@ bool PollTime() {
     return changed;
 }
 
+// --- Settings: Security ------------------------------------------------------------
+
+const SecurityHooks *security_hooks = nullptr;
+security_view::View security_shown;
+security_view::View security_now;
+security_view::PinFlow pin_flow;  // the PIN page's digits (wiped when done)
+lv_obj_t *flow_title = nullptr;
+lv_obj_t *flow_dots[pinpad::kDigits] = {};
+lv_obj_t *flow_message = nullptr;
+int security_row_tapped = -1;  // 0 change the PIN, 1 lock, 2 wipe PIN
+bool complexity_tapped = false;
+int lock_tapped = -1;
+bool flow_key = false;
+uint32_t flow_key_id = 0;
+
+// The pad's keys (pin_pad_logic.h KeyAt).
+const char *const kPinMap[] = {"1", "2", "3", "\n", "4", "5", "6", "\n", "7", "8", "9", "\n",
+                               LV_SYMBOL_CLOSE, "0", LV_SYMBOL_BACKSPACE, ""};
+
+void OnSecurityRow(lv_event_t *event) {
+    if (LastWasTap()) {
+        security_row_tapped =
+            static_cast<int>(reinterpret_cast<intptr_t>(lv_event_get_user_data(event)));
+    }
+}
+
+void OnComplexity(lv_event_t *) { complexity_tapped = true; }
+
+void OnLockOption(lv_event_t *event) {
+    if (LastWasTap()) {
+        lock_tapped = static_cast<int>(reinterpret_cast<intptr_t>(lv_event_get_user_data(event)));
+    }
+}
+
+// A key: handled in Poll (the dots and the title change, a PIN may go out).
+void OnFlowKey(lv_event_t *event) {
+    flow_key_id = lv_buttonmatrix_get_selected_button(static_cast<lv_obj_t *>(lv_event_get_target(event)));
+    flow_key = true;
+}
+
+// The vault and FIDO2, Change the PIN, the lock, complexity, the wipe PIN, Lock now.
+void ShowSecurity() {
+    TitleBar("Security");
+    security_hooks->view(&security_shown);
+    const security_view::View &v = security_shown;
+    char text[64];
+    int32_t y = kTitleHeight;
+    snprintf(text, sizeof text, "%s, %u records", v.open ? "open" : "locked",
+             static_cast<unsigned>(v.records));
+    InfoRow(y, "Vault", text);
+    y += kNetRow;
+    if (v.fido_known) {
+        snprintf(text, sizeof text, "%u of %u keys, PIN %s", static_cast<unsigned>(v.fido_keys),
+                 static_cast<unsigned>(v.fido_max), v.fido_pin ? "set" : "not set");
+    } else {
+        snprintf(text, sizeof text, "busy");
+    }
+    InfoRow(y, "FIDO2", text);
+    y += kNetRow + 16;
+    ChoiceRow(y, "Change the PIN", "", false, OnSecurityRow, 0);
+    y += kNetRow;
+    const int lock = security_view::LockIndex(v.lock_minutes);
+    if (lock >= 0) {
+        snprintf(text, sizeof text, "%s", security_view::kLock[lock].label);
+    } else {
+        snprintf(text, sizeof text, "%u min", static_cast<unsigned>(v.lock_minutes));
+    }
+    char name[40];
+    snprintf(name, sizeof name, "%u wrong PINs: lock", static_cast<unsigned>(v.max_wrong));
+    ChoiceRow(y, name, text, false, OnSecurityRow, 1);
+    y += kNetRow;
+    lv_obj_t *row = Panel(content, y, kNetRow);
+    lv_obj_set_style_border_width(row, 1, 0);
+    lv_obj_t *l = Label(row, &lv_font_montserrat_24);
+    lv_label_set_text(l, "PIN complexity");
+    lv_obj_set_pos(l, 12, (kNetRow - 30) / 2);
+    lv_obj_t *sw = Switch(row, v.complexity);
+    lv_obj_align(sw, LV_ALIGN_RIGHT_MID, -12, 0);
+    lv_obj_add_event_cb(sw, OnComplexity, LV_EVENT_VALUE_CHANGED, nullptr);
+    y += kNetRow;
+    ChoiceRow(y, "Wipe PIN", v.wipe ? "set" : "off", false, OnSecurityRow, 2);
+    y += kNetRow;
+    lv_obj_t *note = Label(content, &lv_font_montserrat_20);
+    lv_label_set_long_mode(note, LV_LABEL_LONG_MODE_WRAP);
+    lv_obj_set_width(note, kRowWidth - 24);
+    snprintf(text, sizeof text, "%u wrong PINs in a row now.", static_cast<unsigned>(v.wrong));
+    lv_label_set_text(note, v.wrong > 0 ? text
+                                        : "Complexity: no repeats, runs or common PINs (FIDO2 "
+                                          "from the next start). The wipe PIN, typed on the "
+                                          "lock screen, erases the passwords and the FIDO2 keys.");
+    lv_obj_set_pos(note, 12, y + 12);
+    lv_obj_t *b = AskButton(content, kRowWidth - 48, "Lock now");
+    lv_obj_align(b, LV_ALIGN_BOTTOM_MID, 0, -16);
+    lv_obj_add_event_cb(b, OnAction, LV_EVENT_CLICKED, nullptr);
+}
+
+void ShowSecurityLock() {
+    TitleBar("Lock after wrong PINs");
+    const int in_use = security_view::LockIndex(security_shown.lock_minutes);
+    int32_t y = kTitleHeight;
+    for (uint8_t i = 0; i < security_view::kLockCount; ++i, y += kNetRow) {
+        ChoiceRow(y, security_view::kLock[i].label, nullptr, i == in_use, OnLockOption, i);
+    }
+    lv_obj_t *note = Label(content, &lv_font_montserrat_20);
+    lv_label_set_long_mode(note, LV_LABEL_LONG_MODE_WRAP);
+    lv_obj_set_width(note, kRowWidth - 24);
+    lv_label_set_text(note, "How long the PIN is not taken after 10 wrong ones in a row.");
+    lv_obj_set_pos(note, 12, y + 16);
+}
+
+void ShowFlowDots() {
+    for (uint8_t i = 0; i < pinpad::kDigits; ++i) {
+        if (flow_dots[i] != nullptr) {
+            lv_obj_set_style_bg_opa(flow_dots[i], i < pin_flow.count() ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
+        }
+    }
+}
+
+// A PIN on a pad of its own: the title says which, six dots, the keys.
+void ShowSecurityPin() {
+    TitleBar(pin_flow.flow() == security_view::Flow::kChangePin ? "Change the PIN" : "Wipe PIN");
+    flow_title = Label(content, &lv_font_montserrat_28);
+    lv_label_set_text(flow_title, pin_flow.Title());
+    lv_obj_align(flow_title, LV_ALIGN_TOP_MID, 0, kTitleHeight + 20);
+    constexpr int32_t kDot = 26;
+    constexpr int32_t kGap = 20;
+    constexpr int32_t kRowW = pinpad::kDigits * kDot + (pinpad::kDigits - 1) * kGap;
+    for (uint8_t i = 0; i < pinpad::kDigits; ++i) {
+        lv_obj_t *d = lv_obj_create(content);
+        lv_obj_remove_style_all(d);
+        lv_obj_remove_flag(d, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_set_size(d, kDot, kDot);
+        lv_obj_set_pos(d, (kRowWidth - kRowW) / 2 + i * (kDot + kGap), kTitleHeight + 80);
+        lv_obj_set_style_radius(d, LV_RADIUS_CIRCLE, 0);
+        lv_obj_set_style_border_width(d, 3, 0);
+        lv_obj_set_style_border_color(d, lv_color_black(), 0);
+        lv_obj_set_style_bg_color(d, lv_color_black(), 0);
+        flow_dots[i] = d;
+    }
+    ShowFlowDots();
+    flow_message = Label(content, &lv_font_montserrat_20);
+    lv_obj_set_width(flow_message, kRowWidth - 24);
+    lv_obj_set_style_text_align(flow_message, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_text(flow_message, "");
+    lv_obj_align(flow_message, LV_ALIGN_TOP_MID, 0, kTitleHeight + 126);
+
+    lv_obj_t *keys = lv_buttonmatrix_create(content);
+    lv_buttonmatrix_set_map(keys, kPinMap);
+    lv_obj_set_size(keys, kRowWidth - 40, 440);
+    lv_obj_align(keys, LV_ALIGN_BOTTOM_MID, 0, -20);
+    lv_obj_set_style_bg_opa(keys, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_set_style_border_width(keys, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(keys, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_gap(keys, 16, LV_PART_MAIN);
+    const lv_style_selector_t kStates[] = {LV_STATE_DEFAULT, LV_STATE_PRESSED, LV_STATE_FOCUSED,
+                                           LV_STATE_FOCUS_KEY, LV_STATE_CHECKED};
+    for (const lv_style_selector_t state : kStates) {
+        const lv_style_selector_t part = static_cast<lv_style_selector_t>(LV_PART_ITEMS) | state;
+        lv_obj_set_style_bg_color(keys, lv_color_white(), part);
+        lv_obj_set_style_bg_opa(keys, LV_OPA_COVER, part);
+        lv_obj_set_style_border_color(keys, lv_color_black(), part);
+        lv_obj_set_style_border_width(keys, 2, part);
+        lv_obj_set_style_outline_width(keys, 0, part);
+        lv_obj_set_style_shadow_width(keys, 0, part);
+        lv_obj_set_style_radius(keys, 12, part);
+        lv_obj_set_style_text_color(keys, lv_color_black(), part);
+        lv_obj_set_style_text_font(keys, &lv_font_montserrat_32, part);
+    }
+    lv_obj_set_style_outline_width(keys, 0, LV_STATE_FOCUSED);
+    lv_obj_add_event_cb(keys, OnFlowKey, LV_EVENT_VALUE_CHANGED, nullptr);
+}
+
+void StartFlow(security_view::Flow f) {
+    pin_flow.Start(f);
+    flow_key = false;
+}
+
+// The Security pages' taps (Poll). True when the page is to be drawn again.
+bool PollSecurity() {
+    bool changed = false;
+    const auto page = static_cast<settings::Page>(nav_state.settings_page());
+    auto open = [&](settings::Page p) {
+        changed |= nav_state.OpenSettings(static_cast<uint8_t>(p));
+    };
+    if (security_row_tapped >= 0) {
+        const int row = security_row_tapped;
+        security_row_tapped = -1;
+        if (row == 0) {
+            StartFlow(security_view::Flow::kChangePin);
+            open(settings::Page::kSecurityPin);
+        } else if (row == 1) {
+            open(settings::Page::kSecurityLock);
+        } else if (sheet == nullptr) {
+            const SheetButton set[] = {{"Set a wipe PIN", 1}, {"Cancel", 3}};
+            const SheetButton change[] = {{"Change the wipe PIN", 1}, {"Turn it off", 2}, {"Cancel", 3}};
+            if (security_shown.wipe) {
+                OpenSheet("Wipe PIN", change, 3);
+            } else {
+                OpenSheet("Wipe PIN", set, 2);
+            }
+        }
+    }
+    if (sheet_choice != 0 && page == settings::Page::kSecurity) {
+        const int choice = sheet_choice;
+        sheet_choice = 0;
+        CloseSheet();
+        if (choice == 1) {
+            StartFlow(security_view::Flow::kSetWipe);
+            open(settings::Page::kSecurityPin);
+        } else if (choice == 2) {
+            Job job = MakeJob(JobKind::kPinWipe);
+            job.flag = false;  // off
+            SendJob(job);
+            security_shown.wipe = false;
+            changed = true;
+        }
+    }
+    if (complexity_tapped) {
+        complexity_tapped = false;
+        Job job = MakeJob(JobKind::kPinComplexity);
+        job.flag = !security_shown.complexity;
+        security_shown.complexity = job.flag;
+        SendJob(job);
+    }
+    if (lock_tapped >= 0) {
+        if (lock_tapped < security_view::kLockCount) {
+            Job job = MakeJob(JobKind::kPinLock);
+            job.id = security_view::kLock[lock_tapped].value;
+            security_shown.lock_minutes = security_view::kLock[lock_tapped].value;
+            SendJob(job);
+            changed |= nav_state.Back();
+        }
+        lock_tapped = -1;
+    }
+    if (flow_key && page == settings::Page::kSecurityPin) {
+        flow_key = false;
+        const security_view::Result r = pin_flow.Apply(pinpad::KeyAt(flow_key_id));
+        if (r == security_view::Result::kSubmit) {
+            Job job = MakeJob(pin_flow.flow() == security_view::Flow::kChangePin ? JobKind::kPinChange
+                                                                                 : JobKind::kPinWipe);
+            snprintf(job.ssid, sizeof job.ssid, "%s", pin_flow.old());
+            snprintf(job.password, sizeof job.password, "%s", pin_flow.fresh());
+            job.flag = true;  // kPinWipe: on
+            pin_flow.Wipe();
+            Toast(job.kind == JobKind::kPinChange ? "changing the PIN..." : "setting the wipe PIN...");
+            SendAndWipe(job);
+            changed |= nav_state.Back();
+        } else if (r != security_view::Result::kNone && flow_title != nullptr) {
+            lv_label_set_text(flow_title, pin_flow.Title());
+            lv_label_set_text(flow_message, r == security_view::Result::kMismatch
+                                                ? "the two differ: the new one again"
+                                                : "");
+            ShowFlowDots();
+        }
+    }
+    return changed;
+}
+
 // --- Settings: the touch's calibration ---------------------------------------------
 
 bool cal_active = false;  // the crosses are up: no calibration in use
@@ -2420,6 +2691,17 @@ void ShowSettings() {
         ShowBluetooth();
         return;
     }
+    if (page != settings::Page::kSecurityPin) {
+        pin_flow.Wipe();
+    }
+    if (security_hooks != nullptr) {
+        switch (page) {
+            case settings::Page::kSecurity: ShowSecurity(); return;
+            case settings::Page::kSecurityLock: ShowSecurityLock(); return;
+            case settings::Page::kSecurityPin: ShowSecurityPin(); return;
+            default: break;
+        }
+    }
     if (time_hooks != nullptr) {
         switch (page) {
             case settings::Page::kTime: ShowTime(); return;
@@ -2556,6 +2838,12 @@ void Show() {
     }
     light_switch = nullptr;  // deleted with the page
     memset(manual_value, 0, sizeof manual_value);
+    memset(flow_dots, 0, sizeof flow_dots);
+    flow_title = nullptr;
+    flow_message = nullptr;
+    if (nav_state.mode() != nav::Mode::kSettings) {
+        pin_flow.Wipe();
+    }
     WipePassword();
     CloseSheet();
     if (nav_state.mode() != nav::Mode::kSettings) {
@@ -2735,6 +3023,16 @@ void TypeTask(void *) {
                     said = time_hooks->set_sync(static_cast<uint8_t>(job.id));
                     break;
                 case JobKind::kTimeSet: said = time_hooks->set_time(job.manual); break;
+                case JobKind::kPinChange:
+                    said = security_hooks->change_pin(job.ssid, job.password);
+                    break;
+                case JobKind::kPinWipe:
+                    said = security_hooks->set_wipe(job.flag ? job.password : nullptr);
+                    break;
+                case JobKind::kPinLock:
+                    said = security_hooks->set_lock(static_cast<uint16_t>(job.id));
+                    break;
+                case JobKind::kPinComplexity: said = security_hooks->set_complexity(job.flag); break;
                 case JobKind::kDisplaySet:
                     said = display_hooks->set(job.setting, static_cast<uint16_t>(job.id));
                     break;
@@ -2867,6 +3165,9 @@ void Poll(lv_timer_t *) {
     if (nav_state.mode() == nav::Mode::kSettings && time_hooks != nullptr) {
         changed |= PollTime();
     }
+    if (nav_state.mode() == nav::Mode::kSettings && security_hooks != nullptr) {
+        changed |= PollSecurity();
+    }
     // Settings' texts (Wi-Fi joined, the clock); the switch follows Power x2.
     // Not under a sheet, nor over a password being typed or a scan.
     if (nav_state.mode() == nav::Mode::kSettings && settings_hooks != nullptr && HomeShown() &&
@@ -2876,6 +3177,8 @@ void Poll(lv_timer_t *) {
         settings_page != settings::Page::kDisplayChoice &&
         settings_page != settings::Page::kTimeSync && settings_page != settings::Page::kTimeRegion &&
         settings_page != settings::Page::kTimeZone && settings_page != settings::Page::kTimeSet &&
+        settings_page != settings::Page::kSecurityLock &&
+        settings_page != settings::Page::kSecurityPin &&
         lv_tick_elaps(settings_looked_at) >= kSettingsMs) {
         settings_looked_at = lv_tick_get();
         if (settings_page == settings::Page::kWifi && wifi_hooks != nullptr) {
@@ -2884,6 +3187,9 @@ void Poll(lv_timer_t *) {
         } else if (settings_page == settings::Page::kBluetooth && ble_hooks != nullptr) {
             ble_hooks->view(&ble_now);
             changed |= !ble_view::Equal(ble_now, ble_shown);
+        } else if (settings_page == settings::Page::kSecurity && security_hooks != nullptr) {
+            security_hooks->view(&security_now);
+            changed |= !security_view::Equal(security_now, security_shown);
         } else if (settings_page == settings::Page::kTime && time_hooks != nullptr) {
             time_hooks->view(&time_now);
             changed |= !time_view::Equal(time_now, time_shown);
@@ -2986,6 +3292,8 @@ void SetBleHooks(const BleHooks *hooks) { ble_hooks = hooks; }
 void SetDisplayHooks(const DisplayHooks *hooks) { display_hooks = hooks; }
 
 void SetTimeHooks(const TimeHooks *hooks) { time_hooks = hooks; }
+
+void SetSecurityHooks(const SecurityHooks *hooks) { security_hooks = hooks; }
 
 void Navigate(nav::Input input) {
     if (inputs != nullptr) {

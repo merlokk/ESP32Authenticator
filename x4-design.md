@@ -67,10 +67,14 @@ Portrait, 480x800. The panel scans landscape (hardware.md): `ui_logic.h` turns t
   Wallpaper (grey / black & white): a tap lists the choices with a check at
   the one in use, a tap keeps one (config.json); what the Power button does;
   Power off. Date & time: the clock big with the date and the offset; Time
-  zone (a region, then its cities, 9 a page with < 1 / 3 >), Sync (never ..
+  zone (a region, then its cities A to Z, 9 a page with < 1 / 3 >), Sync (never ..
   every week), the server and the last sync, Set the time by hand (year ..
   minute with - / +, local time, Save sets the board's clock too), Sync the
-  time now. The other pages are read-only for now: editing on the site.
+  time now. Security: the vault and FIDO2 (records, keys, its PIN), Change the
+  PIN (on a pad of its own: the current PIN, a new one twice; vault.bin and
+  fido.bin re-keyed), 10 wrong PINs: lock (1 min .. a day), PIN complexity
+  (the vault at once, FIDO2 from the next start), Wipe PIN (set twice /
+  change / off), Lock now. About is read-only.
 - **U2F / FIDO2 list**: a swipe up from the bottom quarter; the keys by site
   (A to Z), 6 a page: site, user, "made <date>, <alg>, resident / U2F";
   Left / Right or the bar under it (‹, "1 / 2", ›) flip the pages, the title says the count; its
