@@ -130,6 +130,23 @@ The site has the passwords (below), the FIDO2 keys, Wi-Fi and the device
 settings. Settings changed there are kept until the device restarts unless
 saved.
 
+## Firmware update
+
+Open the site, then **Device** > **Firmware update**. The device must be
+unlocked (PIN) and *Changes from the site* on.
+
+- **From this computer**: choose the `.bin`, tap **Upload and install**
+  twice.
+- **From the SD card**: copy the file to the card's root as
+  `firmware.bin`; the page shows its version and check; tap **Install
+  firmware.bin** twice.
+
+While it writes, the device's screen shows a window with the version and a
+progress bar; nothing can be tapped until it ends. A file for another device or firmware, or a damaged one, is refused and
+nothing changes. The device restarts into the new firmware; if it does not
+come up and stay up for 30 s, the next restart brings the old one back. The
+page then shows *rolled back*.
+
 <br clear="right">
 
 ## Passwords on the web site

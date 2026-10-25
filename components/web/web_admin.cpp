@@ -190,24 +190,25 @@ const char *FieldValue(const AdminRequest &request, vault::Field field) {
     return "";
 }
 
-bool IsJsonType(const char *content_type) {
-    static constexpr char kJson[] = "application/json";
-    constexpr size_t kLength = sizeof kJson - 1;
-    if (content_type == nullptr) {
+bool IsType(const char *content_type, const char *type) {
+    if (content_type == nullptr || type == nullptr) {
         return false;
     }
-    for (size_t i = 0; i < kLength; ++i) {
+    size_t i = 0;
+    for (; type[i] != '\0'; ++i) {
         char c = content_type[i];
         if (c >= 'A' && c <= 'Z') {
             c = static_cast<char>(c - 'A' + 'a');
         }
-        if (c != kJson[i]) {
+        if (c != type[i]) {
             return false;
         }
     }
-    const char next = content_type[kLength];
+    const char next = content_type[i];
     return next == '\0' || next == ';' || next == ' ';
 }
+
+bool IsJsonType(const char *content_type) { return IsType(content_type, "application/json"); }
 
 bool IdFromQuery(const char *uri, uint32_t *id) {
     if (uri == nullptr || id == nullptr) {

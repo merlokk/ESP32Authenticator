@@ -18,8 +18,9 @@ constexpr const char *kIndexName = "index.html";
 constexpr const char *kNotFoundName = "404.html";
 constexpr const char *kUnauthorisedName = "401.html";
 
-// True only for a query carrying `confirm=reboot` as a whole parameter.
-bool ConfirmsReboot(const char *uri);
+// True only for a query carrying `confirm=<word>` as a whole parameter.
+bool Confirms(const char *uri, const char *word);
+bool ConfirmsReboot(const char *uri);  // confirm=reboot
 
 // The page name for `uri` into `out`; false when it is not one.
 bool UriToName(const char *uri, char *out, size_t capacity);

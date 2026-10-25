@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#0b0d0c">
-<title>Device status</title>
+<title>Device</title>
 <style>html,body{margin:0;background:#0b0d0c;color:#d6ded8;
 font:16px/1.5 system-ui,-apple-system,sans-serif}
 body{padding:0 16px 40px}</style>
@@ -12,7 +12,7 @@ body{padding:0 16px 40px}</style>
 <body data-page="devstatus">
 <div class="wrap">
 <header>
-  <h1>Device status</h1>
+  <h1>Device</h1>
   <span class="lamp" id="lamp">reading&hellip;</span>
 </header>
 
@@ -29,6 +29,11 @@ body{padding:0 16px 40px}</style>
   <a class="btn" href="/hwinfo.html">
     <span class="grow"><span class="name">Full hardware info</span>
       <span class="sub">the console's <code>hwinfo</code></span></span>
+    <span class="chev">&rsaquo;</span>
+  </a>
+  <a class="btn" href="/firmware.html">
+    <span class="grow"><span class="name">Firmware update</span>
+      <span class="sub">upload a .bin, or firmware.bin from the SD card</span></span>
     <span class="chev">&rsaquo;</span>
   </a>
   <button class="btn" type="button" id="again">

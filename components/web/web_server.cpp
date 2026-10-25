@@ -59,6 +59,7 @@ WWW_FILE(app_script, app_js)
 WWW_FILE(passwords_page, passwords_html)
 WWW_FILE(fido_page, fido_html)
 WWW_FILE(settings_page, settings_html)
+WWW_FILE(firmware_page, firmware_html)
 
 struct Page {
     const char *name;
@@ -78,6 +79,7 @@ const Page kPages[] = {
     {"passwords.html", passwords_page_start, passwords_page_end},
     {"fido.html", fido_page_start, fido_page_end},
     {"settings.html", settings_page_start, settings_page_end},
+    {"firmware.html", firmware_page_start, firmware_page_end},
 };
 
 const Page *FindPage(const char *name) {
@@ -252,8 +254,22 @@ esp_err_t File(httpd_req_t *request) {
         return NotFound(request);
     }
     Count(&g_status.files);
-    // Pages change only with the firmware.
-    httpd_resp_set_hdr(request, "Cache-Control", "max-age=3600");
+    // Pages change only with the firmware: its ELF hash is the tag, so a
+    // browser asks again after an update and gets a 304 otherwise.
+    static char etag[20] = "";
+    if (etag[0] == '\0') {
+        const uint8_t *sha = esp_app_get_description()->app_elf_sha256;
+        std::snprintf(etag, sizeof etag, "\"%02x%02x%02x%02x%02x%02x%02x%02x\"", sha[0], sha[1],
+                      sha[2], sha[3], sha[4], sha[5], sha[6], sha[7]);
+    }
+    httpd_resp_set_hdr(request, "Cache-Control", "no-cache");
+    httpd_resp_set_hdr(request, "ETag", etag);
+    char seen[sizeof etag] = "";
+    if (httpd_req_get_hdr_value_str(request, "If-None-Match", seen, sizeof seen) == ESP_OK &&
+        std::strcmp(seen, etag) == 0) {
+        httpd_resp_set_status(request, "304 Not Modified");
+        return httpd_resp_send(request, nullptr, 0);
+    }
     return SendPage(request, *page);
 }
 
@@ -685,7 +701,7 @@ esp_err_t StartLocked() {
     config.task_priority = 2;
     config.stack_size = 4096;
     config.max_open_sockets = 4;
-    config.max_uri_handlers = 16;
+    config.max_uri_handlers = 20;
     config.lru_purge_enable = true;  // a browser's idle socket must not block the next
     config.uri_match_fn = httpd_uri_match_wildcard;
     esp_err_t err = httpd_start(&g_server, &config);
@@ -715,8 +731,11 @@ esp_err_t StartLocked() {
             return err;
         }
     }
-    // Then the password and FIDO2 pages' API, then the files ("/*" last).
+    // Then the password, FIDO2 and firmware pages' API, then the files ("/*" last).
     err = RegisterAdminRoutes(g_server);
+    if (err == ESP_OK) {
+        err = RegisterFirmwareRoutes(g_server);
+    }
     if (err == ESP_OK) {
         const httpd_uri_t files = {
             .uri = "/*", .method = HTTP_GET, .handler = File, .user_ctx = nullptr};

@@ -23,7 +23,6 @@
 #include "esp_system.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
-#include "esp_ota_ops.h"
 #include "esp_timer.h"
 #include "epd.h"
 #include "fido_ctap.h"
@@ -31,6 +30,7 @@
 #include "host/ble_hs.h"
 #include "keypad.h"
 #include "nvs_flash.h"
+#include "ota_update.h"
 #include "power.h"
 #include "sd_card.h"
 #include "spiffs_fs.h"
@@ -46,18 +46,6 @@
 namespace {
 
 constexpr const char *TAG = "main";
-
-// The stock bootloader has rollback enabled: an app flashed by OTA boots as
-// PENDING_VERIFY and is rolled back on the next reset unless it confirms itself.
-void ConfirmRunningApp() {
-    const esp_partition_t *running = esp_ota_get_running_partition();
-    esp_ota_img_states_t state;
-    if (esp_ota_get_state_partition(running, &state) == ESP_OK &&
-        state == ESP_OTA_IMG_PENDING_VERIFY) {
-        esp_ota_mark_app_valid_cancel_rollback();
-        ESP_LOGI(TAG, "app marked valid, rollback cancelled");
-    }
-}
 
 void InitNvs() {
     esp_err_t err = nvs_flash_init();
@@ -1225,7 +1213,7 @@ extern "C" void app_main() {
     sd_card::Init();  // not fatal: `sd` says why it is not mounted
     keypad::AddListener(OnKey);  // bindings first: the task reads the list unlocked
     keypad::Start();  // the buttons: events, and Left for FIDO2 presence
-    ConfirmRunningApp();
+    ota::Boot();  // a trial boot after an OTA update is confirmed by BootDone's timer
     InitNvs();
     spiffs_fs::Init();  // not fatal: the console reports an unmounted fs
     // config.json from SPIFFS; built-in defaults if missing/invalid or unmounted.
@@ -1294,5 +1282,22 @@ extern "C" void app_main() {
         ble::On();
     }
     power::Start();  // the idle watch (power.idleMinutes)
+    ota::SetHooks({.activity = [] {
+                       boards::LedTyping();
+                       power::NoteActivity();
+                   },
+                   .before_restart = [] {
+                       vTaskDelay(pdMS_TO_TICKS(1500));  // "Installed" reaches the glass
+                       if (ble::IsOn()) {
+                           ble::Off();
+                       }
+                   },
+                   .progress = [](const char *version, const char *source, size_t written,
+                                  size_t total) {
+                       ui::ShowUpdate(version, source, static_cast<uint32_t>(written),
+                                      static_cast<uint32_t>(total));
+                   },
+                   .finished = ui::EndUpdate});
     boards::BootDone();  // LED: ready
+    ota::BootDone();     // everything is up: a trial boot is confirmed in 30 s
 }

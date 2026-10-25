@@ -59,7 +59,9 @@ const char *BodyResultText(BodyResult result);
 // The text of field `field` in `request` (site, user, password, otp).
 const char *FieldValue(const AdminRequest &request, vault::Field field);
 
-// "application/json", optionally with parameters (`; charset=utf-8`).
+// `type` (lower case), optionally with parameters (`; charset=utf-8`).
+bool IsType(const char *content_type, const char *type);
+// "application/json", the same way.
 bool IsJsonType(const char *content_type);
 
 // `id=<1..2^32-1>` in the query of `uri`, as a whole parameter.

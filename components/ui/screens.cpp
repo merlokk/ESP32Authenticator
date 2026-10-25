@@ -3763,6 +3763,82 @@ void TypeTask(void *) {
     }
 }
 
+// --- firmware update ----------------------------------------------------------------
+
+constexpr int32_t kUpdateBarHeight = 48;
+constexpr uint32_t kUpdateFailedMs = 8000;
+
+lv_obj_t *update_box = nullptr;  // under Lock
+lv_obj_t *update_title = nullptr;
+lv_obj_t *update_line = nullptr;
+lv_obj_t *update_fill = nullptr;
+lv_obj_t *update_percent = nullptr;
+lv_obj_t *update_note = nullptr;
+int update_shown = -1;  // the percent on the glass, -1 none
+
+lv_obj_t *UpdateLabel(const lv_font_t *font, int32_t y) {
+    lv_obj_t *l = Label(update_box, font);
+    lv_label_set_long_mode(l, LV_LABEL_LONG_MODE_WRAP);
+    lv_obj_set_width(l, kRowWidth - 40);
+    lv_obj_set_style_text_align(l, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_align(l, LV_ALIGN_TOP_MID, 0, y);
+    return l;
+}
+
+// Over everything (the top layer, under the status bar), as FIDO2's prompt.
+void OpenUpdate() {
+    update_box = lv_obj_create(lv_layer_top());
+    lv_obj_remove_style_all(update_box);
+    lv_obj_add_flag(update_box, LV_OBJ_FLAG_CLICKABLE);  // the page under it takes no taps
+    lv_obj_remove_flag(update_box, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_pos(update_box, kLeft, kContentTop);
+    lv_obj_set_size(update_box, kRowWidth, kScreenBottom - kContentTop);
+    lv_obj_set_style_bg_color(update_box, lv_color_white(), 0);
+    lv_obj_set_style_bg_opa(update_box, LV_OPA_COVER, 0);
+    lv_obj_move_to_index(update_box, 0);  // under the status bar
+
+    update_title = UpdateLabel(&lv_font_montserrat_32, 60);
+    lv_label_set_text(update_title, "Firmware update");
+    update_line = UpdateLabel(&lv_font_montserrat_24, 140);
+
+    lv_obj_t *frame = lv_obj_create(update_box);
+    lv_obj_remove_style_all(frame);
+    lv_obj_remove_flag(frame, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_size(frame, kRowWidth - 40, kUpdateBarHeight);
+    lv_obj_set_style_border_width(frame, 3, 0);
+    lv_obj_set_style_border_color(frame, lv_color_black(), 0);
+    lv_obj_set_style_radius(frame, 8, 0);
+    lv_obj_set_style_pad_all(frame, 6, 0);
+    lv_obj_align(frame, LV_ALIGN_TOP_MID, 0, 240);
+    update_fill = lv_obj_create(frame);
+    lv_obj_remove_style_all(update_fill);
+    lv_obj_set_style_bg_color(update_fill, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(update_fill, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(update_fill, 4, 0);
+    lv_obj_set_size(update_fill, 0, LV_PCT(100));
+
+    update_percent = UpdateLabel(&lv_font_montserrat_28, 240 + kUpdateBarHeight + 20);
+    update_note = UpdateLabel(&lv_font_montserrat_20, 420);
+    lv_label_set_text(update_note, "Do not turn the device off. If the new firmware does not "
+                                   "start, the next restart brings this one back.");
+    update_shown = -1;
+}
+
+void CloseUpdate(lv_timer_t *) {
+    if (update_box != nullptr) {
+        lv_obj_delete(update_box);
+        update_box = nullptr;
+    }
+    update_shown = -1;
+}
+
+void DrawUpdatePercent(uint8_t percent) {
+    const int32_t inner = kRowWidth - 40 - 2 * 3 - 2 * 6;
+    lv_obj_set_width(update_fill, inner * percent / 100);
+    lv_label_set_text_fmt(update_percent, "%u %%", static_cast<unsigned>(percent));
+    update_shown = percent;
+}
+
 // --- the ui task's timers ------------------------------------------------------------
 
 // Buttons, swipes, the vault's changes, the codes, the hidden passwords.
@@ -3771,6 +3847,9 @@ void Poll(lv_timer_t *) {
     bool changed = false;
     while (xQueueReceive(inputs, &in, 0) == pdTRUE) {
         const auto input = static_cast<nav::Input>(in);
+        if (update_box != nullptr) {  // a firmware update: nothing to choose
+            continue;
+        }
         if (!HomeShown()) {  // under the PIN pad the buttons do nothing here
             continue;
         }
@@ -4075,6 +4154,48 @@ void ShowFidoPromptDemo(bool on, uint8_t accounts) {
     }
     prompt_demo = on;
     HidePrompt();  // drawn again (or not) at the next status look
+    Unlock();
+}
+
+void ShowUpdate(const char *version, const char *source, uint32_t written, uint32_t total) {
+    if (!HasDisplay()) {
+        return;
+    }
+    const uint8_t percent = dialog::UpdatePercent(written, total);
+    Lock();
+    if (update_box == nullptr) {
+        OpenUpdate();
+    }
+    if (dialog::UpdateRedraw(update_shown, percent)) {
+        lv_label_set_text_fmt(update_line, "%s%s%s", version[0] != '\0' ? version : "checking",
+                              source[0] != '\0' ? " from the " : "",
+                              std::strcmp(source, "sd") == 0 ? "SD card" : source);
+        DrawUpdatePercent(percent);
+    }
+    Unlock();
+}
+
+void EndUpdate(const char *error) {
+    if (!HasDisplay()) {
+        return;
+    }
+    Lock();
+    if (update_box == nullptr) {
+        OpenUpdate();
+    }
+    if (error == nullptr) {
+        lv_label_set_text(update_title, "Installed");
+        lv_label_set_text(update_note, "Restarting into the new firmware.");
+        DrawUpdatePercent(100);
+    } else {
+        lv_label_set_text(update_title, "Not installed");
+        lv_label_set_text(update_line, error);
+        lv_label_set_text(update_percent, "");
+        lv_obj_add_flag(lv_obj_get_parent(update_fill), LV_OBJ_FLAG_HIDDEN);  // no bar to show
+        lv_label_set_text(update_note, "The running firmware stays.");
+        lv_timer_t *t = lv_timer_create(CloseUpdate, kUpdateFailedMs, nullptr);
+        lv_timer_set_repeat_count(t, 1);
+    }
     Unlock();
 }
 

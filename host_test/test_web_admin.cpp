@@ -137,6 +137,9 @@ void test_only_json_is_taken(void) {
     TEST_ASSERT_TRUE(web::IsJsonType("application/json"));
     TEST_ASSERT_TRUE(web::IsJsonType("Application/JSON; charset=utf-8"));
     TEST_ASSERT_FALSE(web::IsJsonType("text/plain"));
+    TEST_ASSERT_TRUE(web::IsType("Application/Octet-Stream", "application/octet-stream"));
+    TEST_ASSERT_FALSE(web::IsType("application/octet-streams", "application/octet-stream"));
+    TEST_ASSERT_FALSE(web::IsType("application/octet", "application/octet-stream"));
     TEST_ASSERT_FALSE(web::IsJsonType("application/x-www-form-urlencoded"));
     TEST_ASSERT_FALSE(web::IsJsonType("application/jsonp"));
     TEST_ASSERT_FALSE(web::IsJsonType(nullptr));

@@ -57,6 +57,7 @@ add_executable(host_test
     test_totp.cpp
     test_storefile.cpp
     test_vault.cpp
+    test_ota.cpp
     fakes/fake_platform.cpp
     fakes/fake_store.cpp
 
@@ -79,6 +80,7 @@ add_executable(host_test
     ../components/vault/records.cpp
     ../components/vault/pin_guard.cpp
     ../components/vault/vault.cpp
+    ../components/ota/image_check.cpp
 
     "${CJSON_DIR}/cJSON.c"
     "${UNITY_DIR}/unity.c"
@@ -108,6 +110,7 @@ target_include_directories(host_test PRIVATE
     ../components/totp
     ../components/storefile
     ../components/vault
+    ../components/ota
     "${CJSON_DIR}"
     "${UNITY_DIR}"
 )

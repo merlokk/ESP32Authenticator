@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0b0d0c">
+<title>Firmware update</title>
+<style>html,body{margin:0;background:#0b0d0c;color:#d6ded8;
+font:16px/1.5 system-ui,-apple-system,sans-serif}
+body{padding:0 16px 40px}</style>
+</head>
+<body data-page="firmware">
+<div class="wrap">
+<header>
+  <h1>Firmware update</h1>
+  <span class="lamp" id="lamp">reading&hellip;</span>
+</header>
+
+<p class="lead">
+  A new firmware goes into the other slot; the running one stays until the
+  new one has booted and held for 30 seconds.
+</p>
+
+<nav>
+  <a class="btn" href="/devstatus.html">
+    <span class="chev">&lsaquo;</span>
+    <span class="grow"><span class="name">Back</span></span>
+  </a>
+</nav>
+
+<div class="notice" id="said" hidden></div>
+
+<h2>Running</h2>
+<table>
+  <tr><th>version</th><td id="version">&hellip;</td></tr>
+  <tr><th>built</th><td id="built">&hellip;</td></tr>
+  <tr><th>slot</th><td id="slot">&hellip;</td></tr>
+  <tr><th>state</th><td id="state">&hellip;</td></tr>
+  <tr><th>next slot</th><td id="next">&hellip;</td></tr>
+  <tr id="rolled-row" hidden><th>rolled back</th><td id="rolled" class="warn"></td></tr>
+</table>
+
+<h2>From this computer</h2>
+<p class="hint">The app <code>.bin</code> of this project
+  (<code>build/esp32-authenticator.bin</code>).</p>
+<div class="field">
+  <input type="file" id="file" accept=".bin,application/octet-stream">
+</div>
+<nav>
+  <button class="btn warn" type="button" id="upload" disabled>
+    <span class="grow"><span class="name" id="upload-name">Upload and install</span>
+      <span class="sub" id="upload-sub">choose a file first</span></span>
+  </button>
+</nav>
+
+<h2>From the SD card</h2>
+<table>
+  <tr><th>firmware.bin</th><td id="sd">&hellip;</td></tr>
+  <tr><th>check</th><td id="sd-check">&hellip;</td></tr>
+</table>
+<nav>
+  <button class="btn warn" type="button" id="sd-go" disabled>
+    <span class="grow"><span class="name" id="sd-name">Install firmware.bin</span>
+      <span class="sub" id="sd-sub">&nbsp;</span></span>
+  </button>
+</nav>
+
+<h2>Progress</h2>
+<table>
+  <tr><th>job</th><td id="job">&hellip;</td></tr>
+</table>
+<div class="meter" id="meter"><i></i></div>
+
+<footer>
+  Refused before anything is switched: another chip or project, a chip or
+  eFuse revision out of range, larger than the slot, a broken image,
+  checksum or SHA-256. A new firmware that resets before it is confirmed
+  falls back to this one.
+</footer>
+</div>
+<script src="/app.js"></script>
+</body>
+</html>

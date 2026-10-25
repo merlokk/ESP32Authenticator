@@ -165,6 +165,10 @@ void test_the_word_is_found_wherever_in_the_query_it_sits(void) {
 
 void test_something_that_merely_contains_the_word_is_not_the_word(void) {
     TEST_ASSERT_FALSE(web::ConfirmsReboot("/api/reboot?xconfirm=reboot"));
+    TEST_ASSERT_TRUE(web::Confirms("/api/firmware/sd?confirm=update", "update"));
+    TEST_ASSERT_FALSE(web::Confirms("/api/firmware/sd?confirm=reboot", "update"));
+    TEST_ASSERT_FALSE(web::Confirms("/api/firmware/sd?confirm=updates", "update"));
+    TEST_ASSERT_FALSE(web::Confirms("/api/firmware/sd?confirm=", ""));
     TEST_ASSERT_FALSE(web::ConfirmsReboot("/api/reboot?confirm=reboots"));
     TEST_ASSERT_FALSE(web::ConfirmsReboot("/api/reboot?confirm=rebo"));
     TEST_ASSERT_FALSE(web::ConfirmsReboot("/api/reboot?confirmed=reboot"));

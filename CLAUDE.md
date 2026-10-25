@@ -49,7 +49,10 @@ the vault is locked, GT911 touch as the pointer, `ui`); power-off
   U2F over BLE, EdDSA, authenticatorConfig, minPinLength, PIN complexity,
   hmac-secret-mc, pcmr, attestation formats, encIdentifier, built-in UV
   plumbing (`uv: false`); see
-  lionkey-update-plan.md.
+  lionkey-update-plan.md. Firmware update (OTA): a `.bin` uploaded on the
+  site (Device > Firmware update) or `/sdcard/firmware.bin` (button, `ota
+  sd confirm`), checked while streaming (`image_check.h`), trial boot
+  confirmed after 30 s, else rolled back.
 - Not yet: e-ink UI screens, eFuse-bound key, sync over Wi-Fi.
 
 ## Architecture

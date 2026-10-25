@@ -185,6 +185,14 @@ esp_err_t Touch(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1, uint16_t hol
 // Console `ui show`: that screen, as its swipe would open it.
 void ShowScreen(nav::Mode mode);
 
+// A firmware update under way (ota_update.h), from any task: a window over
+// every screen, the PIN pad too (taps and buttons do nothing), with the
+// version, where it comes from and a bar (dialog_logic.h kUpdateStep steps).
+void ShowUpdate(const char *version, const char *source, uint32_t written, uint32_t total);
+// The end: `error` nullptr: installed, restarting (the window stays);
+// else the reason, and the window closes after a few seconds.
+void EndUpdate(const char *error);
+
 // Called from the ui task when a finger goes down (power::NoteActivity).
 void SetPressHook(void (*hook)());
 

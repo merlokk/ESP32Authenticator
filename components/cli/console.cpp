@@ -34,6 +34,7 @@
 #include "hardware.h"
 #include "sd_card.h"
 #include "touch.h"
+#include "ota_cmd.h"
 #include "sd_cmd.h"
 #include "epd_cmd.h"
 #include "epd.h"
@@ -475,6 +476,16 @@ const esp_console_cmd_t kCommands[] = {
         .context = nullptr,
     },
     {
+        .command = "ota",
+        .help = "Firmware update: [info] slots, version, trial state, last job, /sdcard/firmware.bin | "
+                "sd [confirm]: its check / write it into the next slot and restart",
+        .hint = "[info | sd [confirm]]",
+        .func = &CmdOta,
+        .argtable = nullptr,
+        .func_w_context = nullptr,
+        .context = nullptr,
+    },
+    {
         .command = "light",
         .help = "Frontlight: [info] | <1..100> [warmth 0..100] | warmth <0..100> (level, saved) | "
                 "on | off (now; off at boot, Power x2 toggles)",
@@ -569,7 +580,7 @@ const esp_console_cmd_t kCommands[] = {
         .command = "devstatus",
         .help = "Everything at once: version, info, board, date, battery, sd, led info, wifi info, web, ble info, fido2 info, "
                 "pass info "
-                "(also the site's Device status page)",
+                "(also the site's Device page)",
         .hint = nullptr,
         .func = &CmdDevStatus,
         .argtable = nullptr,

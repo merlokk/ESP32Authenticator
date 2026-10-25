@@ -1073,6 +1073,156 @@
     load();
   }
 
+  // --- firmware update ----------------------------------------------------------
+
+  function firmwarePage() {
+    var ARMED = 5000;
+    var last = null, polling = null, restarting = false;
+
+    // Tap, then tap again within five seconds: no stray click flashes the device.
+    function armable(button, nameId, subId, idleName, onGo) {
+      var armedUntil = 0, timer = null, idleSub = "";
+      function disarm() {
+        armedUntil = 0;
+        if (timer) { clearTimeout(timer); timer = null; }
+        by(nameId).textContent = idleName;
+        by(subId).textContent = idleSub;
+      }
+      button.addEventListener("click", function () {
+        if (armedUntil !== 0 && Date.now() < armedUntil) { disarm(); onGo(); return; }
+        armedUntil = Date.now() + ARMED;
+        idleSub = by(subId).textContent;
+        by(nameId).textContent = "Tap again to install";
+        by(subId).textContent = "or wait five seconds and nothing happens";
+        timer = setTimeout(disarm, ARMED);
+      });
+    }
+
+    function paint(d) {
+      last = d;
+      var r = d.running;
+      text(by("version"), r.version);
+      text(by("built"), r.date + ", IDF " + r.idf);
+      text(by("slot"), r.slot);
+      if (d.trial) text(by("state"), "on trial: confirmed in " + d.confirm_in + " s", "warn");
+      else text(by("state"), r.state, r.state === "valid" ? "ok" : "");
+      text(by("next"), d.next.slot + ", " + bytes(d.next.size));
+      by("rolled-row").hidden = !d.rolled_back;
+      text(by("rolled"), d.rolled_back ? d.rolled_back + " did not confirm itself" : "");
+
+      var sd = d.sd;
+      if (!sd.mounted) { text(by("sd"), "no card"); text(by("sd-check"), "-", ""); }
+      else if (!sd.present) { text(by("sd"), "not in the card's root"); text(by("sd-check"), "-", ""); }
+      else {
+        text(by("sd"), sd.version + " (" + sd.date + "), " + bytes(sd.size));
+        text(by("sd-check"), !sd.ok ? sd.check : sd.same ? "ok: the running firmware" :
+          "ok so far: the rest is checked while writing", sd.ok ? "ok" : "bad");
+      }
+
+      var j = d.job, busy = j.state === "writing";
+      if (j.state === "idle") text(by("job"), "none", "");
+      else if (busy) text(by("job"), "writing " + (j.version || "") + " from " + j.source + ": " +
+        bytes(j.written) + " of " + bytes(j.total), "warn");
+      else if (j.state === "done") text(by("job"), j.version + " written: restarting", "ok");
+      else text(by("job"), "failed: " + j.error, "bad");
+      fill(by("meter"), j.total ? 100 * j.written / j.total : 0, 101, 101);
+
+      var refusal = d.refusal;
+      by("sd-go").disabled = !!refusal || !sd.ok || restarting;
+      text(by("sd-sub"), refusal || (!sd.ok ? "nothing to install" :
+        sd.same ? "the same as the running one" : "tap, then confirm"));
+      var file = by("file").files[0];
+      by("upload").disabled = !!refusal || !file || restarting;
+      text(by("upload-sub"), refusal ||
+        (file ? file.name + ", " + bytes(file.size) + ": tap, then confirm" : "choose a file first"));
+      if (busy) lamp("warn", "writing");
+      else if (!restarting || d.trial) lamp(refusal ? "warn" : "ok", d.trial ? "on trial" : refusal ? "not now" : "ready");
+    }
+
+    function load(onFail) {
+      getJson("/api/firmware", paint, onFail || function (why) { lamp("bad", why); });
+    }
+
+    // The device restarts into the new slot: ask until it answers, then show the trial.
+    function waitForIt() {
+      restarting = true;
+      if (polling) { clearInterval(polling); polling = null; }
+      lamp("warn", "restarting");
+      var deadline = Date.now() + 120000;
+      (function poll() {
+        setTimeout(function () {
+          load(function () {
+            if (Date.now() < deadline) { poll(); return; }
+            lamp("bad", "no answer");
+            said("No answer in two minutes: it may be on another address, " +
+              "or the server is not up (web auto).", "bad");
+          });
+        }, 3000);
+      })();
+    }
+
+    // While an SD job runs: progress every second; a dropped link means it restarted.
+    function follow() {
+      if (polling) clearInterval(polling);
+      polling = setInterval(function () {
+        getJson("/api/firmware", function (d) {
+          paint(d);
+          if (d.job.state !== "failed") return;
+          clearInterval(polling);
+          polling = null;
+          said("Not installed: " + d.job.error, "bad");
+        }, function () { waitForIt(); });
+      }, 1000);
+    }
+
+    by("file").addEventListener("change", function () { if (last) paint(last); });
+
+    armable(by("upload"), "upload-name", "upload-sub", "Upload and install", function () {
+      var file = by("file").files[0];
+      if (!file) return;
+      by("upload").disabled = true;
+      lamp("warn", "uploading");
+      said("Uploading " + file.name + ": keep this page open.", "");
+      var r = new XMLHttpRequest();
+      r.open("POST", "/api/firmware/upload?confirm=update", true);
+      r.timeout = 600000;
+      r.setRequestHeader("Content-Type", "application/octet-stream");
+      r.upload.onprogress = function (e) {
+        if (!e.lengthComputable) return;
+        fill(by("meter"), 100 * e.loaded / e.total, 101, 101);
+        text(by("job"), "uploading: " + bytes(e.loaded) + " of " + bytes(e.total), "warn");
+      };
+      r.onload = function () {
+        var d = null;
+        try { d = JSON.parse(r.responseText); } catch (e) { d = null; }
+        if (r.status >= 200 && r.status < 300) {
+          said((d && d.version ? d.version : "The firmware") +
+            " installed: the device restarts and runs it on trial.", "ok");
+          waitForIt();
+          return;
+        }
+        said("Not installed: " + (d && d.error ? d.error : "the device answered " + r.status), "bad");
+        load();
+      };
+      r.onerror = function () { said("The upload broke off.", "bad"); load(); };
+      r.ontimeout = function () { said("No answer in ten minutes.", "bad"); load(); };
+      r.send(file);
+    });
+
+    armable(by("sd-go"), "sd-name", "sd-sub", "Install firmware.bin", function () {
+      by("sd-go").disabled = true;
+      lamp("warn", "starting");
+      post("/api/firmware/sd?confirm=update", null, function () {
+        said("Writing firmware.bin from the card: the device restarts when it is done.", "");
+        follow();
+      }, function (why) { said("Not started: " + why, "bad"); load(); });
+    });
+
+    load();
+    // The trial countdown.
+    setInterval(function () { if (!polling && last && last.trial) load(function () {}); }, 5000);
+  }
+
   var pages = {
     front: frontPage,
     devstatus: function () { dumpPage("/api/devstatus"); },
@@ -1081,7 +1231,8 @@
     wifi: wifiPage,
     passwords: passwordsPage,
     fido: fidoPage,
-    settings: settingsPage
+    settings: settingsPage,
+    firmware: firmwarePage
   };
   var which = document.body.getAttribute("data-page");
   if (pages[which]) pages[which]();

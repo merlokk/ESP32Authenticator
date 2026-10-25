@@ -89,12 +89,16 @@ bool UriToName(const char *uri, char *out, size_t capacity) {
     return true;
 }
 
-bool ConfirmsReboot(const char *uri) {
-    if (uri == nullptr) {
+bool ConfirmsReboot(const char *uri) { return Confirms(uri, "reboot"); }
+
+bool Confirms(const char *uri, const char *word) {
+    if (uri == nullptr || word == nullptr || word[0] == '\0') {
         return false;
     }
-    static constexpr char kWord[] = "confirm=reboot";
-    constexpr size_t kWordLength = sizeof kWord - 1;
+    static constexpr char kKey[] = "confirm=";
+    constexpr size_t kKeyLength = sizeof kKey - 1;
+    const size_t kWordLength = kKeyLength + Length(word);
+    const auto expected = [word](size_t i) { return i < kKeyLength ? kKey[i] : word[i - kKeyLength]; };
     const char *at = uri;
     while (*at != '\0' && *at != '?' && *at != '#') {
         ++at;
@@ -111,7 +115,7 @@ bool ConfirmsReboot(const char *uri) {
         }
         if (length == kWordLength) {
             size_t i = 0;
-            while (i < kWordLength && at[i] == kWord[i]) {
+            while (i < kWordLength && at[i] == expected(i)) {
                 ++i;
             }
             if (i == kWordLength) {

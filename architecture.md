@@ -38,8 +38,8 @@ Reference ESP-IDF + LVGL project: `../../ai-remote/approver-esp32` ([GitHub](htt
 
 | Path | Contents |
 |---|---|
-| `main/` | `app_main`: OTA self-confirm, NVS, SPIFFS, config, console, Wi-Fi manager + web server, BLE autostart |
-| `components/` | app components (`cli`: USB command line; `config`: config.json; `wifimgr`: Wi-Fi policy + manager; `web`: configuration site, see Wi-Fi and web; `fido_ctap`: CTAP 2.3 core, see FIDO2; `timesync`, `timezone`: see Time; `totp`: Base32 / Base64 secrets and the previous/current/next windows, codes from `crypto::Totp`; `ui`: LVGL and the power-off wallpaper, see UI; `power`: power-off, see UI; `storefile`: store file header, load/save with the rollback check; `vault`: passwords, see Passwords) |
+| `main/` | `app_main`: OTA trial boot, NVS, SPIFFS, config, console, Wi-Fi manager + web server, BLE autostart |
+| `components/` | app components (`cli`: USB command line; `config`: config.json; `wifimgr`: Wi-Fi policy + manager; `web`: configuration site, see Wi-Fi and web; `fido_ctap`: CTAP 2.3 core, see FIDO2; `timesync`, `timezone`: see Time; `totp`: Base32 / Base64 secrets and the previous/current/next windows, codes from `crypto::Totp`; `ui`: LVGL and the power-off wallpaper, see UI; `power`: power-off, see UI; `storefile`: store file header, load/save with the rollback check; `vault`: passwords, see Passwords; `ota`: firmware updates, see Flash layout) |
 | `lib/` | third-party git submodules (`lionkey`: our fork, see FIDO2) |
 | `host_test/` | host tests (Unity, MSVC), no board: see Tests |
 | `utils/` | host-side Python tools over the USB console (`device.py`: console session; `spiffs.py`: ls/info/rm/get/put; `wallpaper.py`: wallpapers on the card; `ble.py`: ble commands, `kb` text quoting) |
@@ -439,7 +439,7 @@ and never starts without lwIP (an assert).
 
 | Route | |
 |---|---|
-| `GET /`, `/*.html`, `/app.js` | pages: front (network, device), settings (BLE state and name, wallpaper, frontlight, idle off, `holdRail`; each control set and saved at once), passwords, FIDO2, Wi-Fi settings, device status, hardware info (from device status), restart. Whitelist of names/extensions; anything else, e.g. `/config.json`, is the 404 page |
+| `GET /`, `/*.html`, `/app.js` | pages: front (network, device), settings (BLE state and name, wallpaper, frontlight, idle off, `holdRail`; each control set and saved at once), passwords, FIDO2, Wi-Fi settings, device (the `devstatus` dump), hardware info and firmware update (from device), restart. Whitelist of names/extensions; anything else, e.g. `/config.json`, is the 404 page |
 | `GET /api/status` | firmware, heap, SPIFFS, Wi-Fi (IP, MAC, internet), AP, BLE, FIDO (readiness, requests, credentials stored of max, store bytes, PIN set and attempts, signature counter, file version and modification time; `fido_store` false while a request holds the store, `fido_off` why FIDO2 is off), wallpaper, frontlight (present, on, level), `idle_minutes`, `hold_rail`, microSD (`sd`: mount outcome or `none`, CID name, card and FAT bytes, free), vault (`vault` state, records, wrong PINs, PIN lock left). No secrets |
 | `GET /api/devstatus` | the console's `devstatus` dump (stdout swapped for the request) |
 | `GET /api/hwinfo` | the console's `hwinfo` dump, the same way (eFuse key purposes and flags only, no NVS values) |
@@ -447,6 +447,9 @@ and never starts without lwIP (an assert).
 | `GET /api/wifi/scan` | access points (hidden/duplicate names dropped) |
 | `POST /api/action?do=save\|reload\|retry\|light-on\|light-off` | save config.json / reload it / put Wi-Fi settings on the radio / the frontlight on or off (not saved) |
 | `POST /api/reboot?confirm=reboot` | restart |
+| `GET /api/firmware` | running slot / version / OTA state (`trial`, `confirm_in` s), next slot, the image refused at the last boot (`rolled_back`), the job (writing / done / failed, bytes, error), `/sdcard/firmware.bin` (version, size, check of its head, the same as running), `refusal`: why an update cannot start now |
+| `POST /api/firmware/upload?confirm=update` | the app `.bin` as `application/octet-stream`; checked while it streams, written to the next slot, restart. Needs `web.write`, the vault not locked, no trial boot |
+| `POST /api/firmware/sd?confirm=update` | the same with `/sdcard/firmware.bin`, in a task; the page polls `GET /api/firmware` |
 | `GET /api/vault` | store state, PIN tries / lock, records: id, site, user, whether a password / TOTP secret is set, modified. Never a password or secret |
 | `GET /api/vault/totp?id=N` | the record's code for the current window and the seconds left |
 | `POST /api/vault/add\|set\|delete` | `{site, user, password, otp}` / `{id, any of them}` (absent keeps, `otp: ""` removes; all checked before any is written) / `{id}`. `otp`: Base32, or `base64:<Base64>` (kept as Base32) |
@@ -642,6 +645,25 @@ own OTA path. Keep the stock X4 Pro partition table, 16 MB, dual OTA:
 - The stock bootloader has app rollback enabled. A new app must call
   `esp_ota_mark_app_valid_cancel_rollback()` after it boots, or the bootloader
   falls back to the old slot.
+- Our own updates (`components/ota`; web site Device > Firmware update,
+  console `ota`): the app `.bin` from the browser or `/sdcard/firmware.bin`
+  into the next slot. `image_check.h` (pure, host-tested) streams the image:
+  magic, chip ESP32-S3, chip and eFuse block revision within the image's
+  range, project name `esp32-authenticator` (not the reader's firmware),
+  segment table, size within the slot, XOR checksum, exact length. The slot
+  is erased only once the head (header + app descriptor) passed; then
+  `esp_ota_end` checks the SHA-256 and the image, and only then the boot slot
+  is switched. A failed update leaves the running slot untouched.
+- While it writes, a window over every screen (the PIN pad too; taps and
+  buttons do nothing): version, source, a bar in 5 % steps (`ui::ShowUpdate`,
+  `dialog_logic.h`), then *Installed* (restart) or *Not installed* with the
+  reason (closes after 8 s).
+- Trial boot: the new app boots `PENDING_VERIFY`; `ota::BootDone()` (end of
+  `app_main`) confirms it 30 s later (`ShouldConfirm`). A panic, watchdog or
+  reset before that rolls back; `rolled_back` / `ota` show the refused
+  version. No update starts while the running app is on trial.
+- Pages are served with `ETag` = the app's ELF hash and `no-cache`: a browser
+  gets 304 until the firmware changes.
 - Stock X4 Pro Wi-Fi OTA accepts only an encrypted `.xota` package
   (`encrypted_v1`): the image is AES-encrypted with a per-channel key and
   checked against `plain_sha256` after decryption. We do not build `.xota`

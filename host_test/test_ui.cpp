@@ -447,6 +447,21 @@ void test_fido_remove(void) {
     TEST_ASSERT_FALSE(r.Clear());  // nothing left
 }
 
+void test_update_progress(void) {
+    using ui::dialog::UpdatePercent;
+    using ui::dialog::UpdateRedraw;
+    TEST_ASSERT_EQUAL_UINT(0, UpdatePercent(10, 0));  // length unknown
+    TEST_ASSERT_EQUAL_UINT(0, UpdatePercent(0, 2236000));
+    TEST_ASSERT_EQUAL_UINT(50, UpdatePercent(1118000, 2236000));
+    TEST_ASSERT_EQUAL_UINT(100, UpdatePercent(2236000, 2236000));
+    TEST_ASSERT_EQUAL_UINT(100, UpdatePercent(4000000000u, 3000000000u));  // no overflow
+    TEST_ASSERT_TRUE(UpdateRedraw(-1, 0));   // the window opens
+    TEST_ASSERT_FALSE(UpdateRedraw(0, 4));   // the same 5 % step
+    TEST_ASSERT_TRUE(UpdateRedraw(0, 5));
+    TEST_ASSERT_FALSE(UpdateRedraw(95, 99));
+    TEST_ASSERT_TRUE(UpdateRedraw(95, 100));
+}
+
 void test_dialog_hold(void) {
     namespace dl = ui::dialog;
     dl::Hold h;
@@ -1167,6 +1182,7 @@ void RegisterUiTests(void) {
     RUN_TEST(test_nav_classify);
     RUN_TEST(test_fido_remove);
     RUN_TEST(test_dialog_hold);
+    RUN_TEST(test_update_progress);
     RUN_TEST(test_settings_pages);
     RUN_TEST(test_wifi_view);
     RUN_TEST(test_wifi_settings);

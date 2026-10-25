@@ -13,6 +13,12 @@
 //   POST /api/vault/unlock      {pin}; /api/vault/lock {}
 //   GET  /api/fido              store info and credentials
 //   POST /api/fido/delete       {credential: 64 hex digits}
+//
+// The Firmware page (web_firmware.cpp); the POSTs need web.write, the vault
+// not locked, no update running, no trial boot, and ?confirm=update:
+//   GET  /api/firmware          slots, the running image, the job, firmware.bin
+//   POST /api/firmware/upload   the .bin as application/octet-stream; restarts
+//   POST /api/firmware/sd       writes /sdcard/firmware.bin in a task; restarts
 
 #include <cstddef>
 
@@ -22,6 +28,7 @@
 namespace web {
 
 esp_err_t RegisterAdminRoutes(httpd_handle_t server);
+esp_err_t RegisterFirmwareRoutes(httpd_handle_t server);
 
 // web_server.cpp's helpers (one httpd task: the buffers are not re-entered).
 namespace detail {
