@@ -19,7 +19,10 @@
 
 namespace web {
 
-enum class VaultVerb : uint8_t { kNone, kAdd, kSet, kDelete, kUnlock, kLock, kMove, kSort };
+// kSeedNew: a random seed phrase (vault::SetSeed), its words in the answer.
+enum class VaultVerb : uint8_t {
+    kNone, kAdd, kSet, kDelete, kUnlock, kLock, kMove, kSort, kSeedNew
+};
 
 // "/api/vault/<verb>", query ignored.
 VaultVerb VaultVerbFromUri(const char *uri);

@@ -25,6 +25,12 @@ esp_err_t Sha256(const uint8_t *data, size_t len, uint8_t out[kSha256Size]);
 
 esp_err_t HmacSha1(const uint8_t *key, size_t key_len, const uint8_t *data, size_t len,
                    uint8_t out[kSha1Size]);
+esp_err_t HmacSha256(const uint8_t *key, size_t key_len, const uint8_t *data, size_t len,
+                     uint8_t out[kSha256Size]);
+
+// HKDF-SHA256 (RFC 5869): `out_len` bytes (up to 255 * 32) from `ikm`.
+esp_err_t HkdfSha256(const uint8_t *salt, size_t salt_len, const uint8_t *ikm, size_t ikm_len,
+                     const uint8_t *info, size_t info_len, uint8_t *out, size_t out_len);
 
 // HOTP (RFC 4226) and TOTP (RFC 6238), HMAC-SHA1; `digits` 6..8.
 esp_err_t Hotp(const uint8_t *key, size_t key_len, uint64_t counter, unsigned digits,

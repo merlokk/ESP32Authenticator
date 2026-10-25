@@ -10,13 +10,15 @@
 extern "C" {
 #endif
 
-#define STORE_HEADER_SIZE 64u
+#define STORE_HEADER_SIZE 80u
 #define STORE_KIND_FIDO 1u
 
 #define STORE_NONCE_SIZE 12u
 #define STORE_TAG_SIZE 16u
 #define STORE_SALT_SIZE 16u
 #define STORE_KEY_ID_SIZE 8u
+#define STORE_STORE_ID_SIZE 8u
+#define STORE_SEED_ID_SIZE 4u
 
 typedef struct {
     uint8_t cipher;  // 0 plain, 1 AES-256-GCM
@@ -27,6 +29,8 @@ typedef struct {
     uint32_t kdf_iterations;
     uint8_t salt[STORE_SALT_SIZE];
     uint8_t key_id[STORE_KEY_ID_SIZE];
+    uint8_t store_id[STORE_STORE_ID_SIZE];
+    uint8_t seed_id[STORE_SEED_ID_SIZE];
 } store_header_t;
 
 // Header of `kind`.

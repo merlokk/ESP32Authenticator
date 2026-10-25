@@ -128,13 +128,15 @@ typedef struct {
     bool pin_complexity;        // a new PIN must pass the complexity policy
 } fido_ctap_info_t;
 
-// The store key from the vault: PBKDF2(PIN, salt), and what goes into the
-// file header so another device with the PIN derives the same key.
+// The store key from the vault: HKDF(seed, PBKDF2(PIN, salt)), and what goes
+// into the file header so another device with the PIN and the seed phrase
+// derives the same key.
 typedef struct {
     uint8_t key[32];
     uint8_t salt[16];
     uint32_t iterations;
     uint8_t id[8];  // a hash of the key (store header)
+    uint8_t seed_id[4];  // the seed phrase's (store header)
 } fido_ctap_key_t;
 
 // Why the core is not running (the store file was refused: rollback, damaged,

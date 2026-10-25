@@ -398,7 +398,108 @@ int CmdPinWipe(int argc, char **argv) {
     return err == ESP_OK ? 0 : 1;
 }
 
+// --- seed
+
+void PrintId(const uint8_t *id, size_t size) {
+    for (size_t i = 0; i < size; ++i) {
+        printf("%02x", id[i]);
+    }
+}
+
+int CmdSeedInfo() {
+    const vault::Info info = vault::GetInfo();
+    if (info.seed_set) {
+        printf("seed       set, id ");
+        PrintId(info.seed_id, sizeof info.seed_id);
+        printf("\n");
+    } else {
+        printf("seed       none ('seed set <words>' from another device, or 'seed new'; the "
+               "first store makes one)\n");
+    }
+    static const uint8_t kNone[vault::seed::kIdSize] = {};
+    if (memcmp(info.file_seed_id, kNone, sizeof kNone) != 0) {
+        printf("vault.bin  seed id ");
+        PrintId(info.file_seed_id, sizeof info.file_seed_id);
+        printf("%s, store id ", memcmp(info.file_seed_id, info.seed_id, sizeof info.seed_id) == 0
+                                    ? " (this one)"
+                                    : " (ANOTHER phrase)");
+        PrintId(info.store_id, sizeof info.store_id);
+        printf("\n");
+    }
+    return 0;
+}
+
+// Static: the words do not belong on the console's stack; wiped after use.
+char g_words[2 * vault::seed::kTextSize];
+
+struct WordsCopy {
+    ~WordsCopy() { vault::Wipe(g_words, sizeof g_words); }
+};
+
+void PrintWords() {
+    printf("seed words (write them down; the same on every device of this store):\n  %s\n",
+           g_words);
+}
+
 }  // namespace
+
+int CmdSeed(int argc, char **argv) {
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "info") == 0)) {
+        return CmdSeedInfo();
+    }
+    WordsCopy wipe;
+    if (argc == 3 && strcmp(argv[1], "show") == 0) {
+        const vault::Error e = vault::CopySeed(argv[2], g_words);
+        if (e != vault::Error::kOk) {
+            return Failed(e);
+        }
+        PrintWords();
+        return 0;
+    }
+    if (argc >= 2 && (strcmp(argv[1], "new") == 0 || strcmp(argv[1], "set") == 0)) {
+        const bool fresh = argv[1][0] == 'n';
+        int at = 2;
+        const char *pin = nullptr;
+        if (at < argc && vault::ValidPin(argv[at])) {
+            pin = argv[at++];
+        }
+        // The words, as separate arguments or one quoted.
+        size_t n = 0;
+        for (; at < argc && !fresh; ++at) {
+            n += static_cast<size_t>(snprintf(g_words + n, sizeof g_words - n, "%s%s",
+                                              n != 0 ? " " : "", argv[at]));
+            if (n >= sizeof g_words) {
+                return Failed(vault::Error::kBadSeed);
+            }
+        }
+        if (at != argc || (!fresh && n == 0)) {
+            printf("usage: seed set [<pin>] <12 words> | seed new [<pin>]\n");
+            return 1;
+        }
+        const vault::Error e = vault::SetSeed(pin, fresh ? nullptr : g_words, g_words);
+        if (e != vault::Error::kOk) {
+            if (e == vault::Error::kBadPin && pin == nullptr) {
+                printf("the store is open: its PIN first (seed %s <pin> ...)\n", argv[1]);
+                return 1;
+            }
+            if (e == vault::Error::kLocked && fresh && !vault::GetInfo().has_key) {
+                printf("there is a store: 'seed set <its words>', or 'pin <pin>' and then "
+                       "'seed new <pin>'\n");
+                return 1;
+            }
+            return Failed(e);
+        }
+        const bool open = vault::GetInfo().state == vault::State::kOpen;
+        printf("seed phrase %s%s\n", fresh ? "made (hardware RNG)" : "set",
+               open ? ": a new key, vault.bin and fido.bin rewritten with it" : "");
+        if (fresh) {
+            PrintWords();
+        }
+        return CmdSeedInfo();
+    }
+    printf("usage: seed [info] | seed show <pin> | seed set [<pin>] <words> | seed new [<pin>]\n");
+    return 1;
+}
 
 int CmdPin(int argc, char **argv) {
     if (argc == 1 || (argc == 2 && strcmp(argv[1], "info") == 0)) {

@@ -2,8 +2,9 @@
 
 Status: done with key B below: the store header with version and rollback
 check, the RAM log in PSRAM, `vault.bin` and `fido.bin` in AES-256-GCM with
-a key derived from the PIN (salt and key id in the headers, so synced
-devices with the PIN share it; a PIN change re-keys both). Open: C (below).
+a key from the PIN and a seed phrase (salt, key id and seed id in the
+headers, so synced devices with both share it; a PIN or seed change re-keys
+both). Open: C (below).
 
 ## Why encrypt
 
@@ -37,7 +38,8 @@ B is done (PBKDF2-HMAC-SHA256 of the PIN, 6000 iterations, ~0.9 s through
 PSA). With a
 6-digit PIN it only holds against someone without the flash contents: from a
 dump, 10^6 PINs x 12k SHA-256 each is ~10^10 hashes, seconds on a GPU. More
-iterations do not fix that. C does: ESP-IDF has `esp_hmac_derive_pbkdf2_key`
+iterations do not fix that. The seed phrase (below) fixes it for the files
+alone; C does for the device: ESP-IDF has `esp_hmac_derive_pbkdf2_key`
 (PBKDF2 on the HMAC peripheral with an eFuse key that software cannot read),
 so guesses must run on this chip, and the PIN lockout (10 tries) caps them.
 It needs an eFuse key burn (irreversible) and, against a foreign app calling
@@ -46,6 +48,20 @@ FIDO2 is unavailable from a reboot until the first PIN entry; a locked screen
 keeps the key in RAM, so FIDO2 keeps working (x4-design.md). A alone
 only defeats a desoldered flash chip. NVS can be encrypted by ESP-IDF with an
 eFuse HMAC key (`CONFIG_NVS_SEC_KEY_PROTECT_USING_HMAC`): fits A or C.
+
+## Seed phrase
+
+Key = HKDF-SHA256(salt = seed, IKM = PBKDF2(PIN, salt)); the seed is a BIP39
+phrase (12 words, 128 bits) in `/spiffs/seed.txt`, the same on every device
+of one store, never on the card or a sync server.
+
+| Leaked | PIN only | PIN + seed |
+|---|---|---|
+| the store files (card, sync server, backup) | PIN brute-forced offline | useless (2^128) |
+| the whole device (flash + card) | PIN brute-forced | the same: SPIFFS is readable without flash encryption; needs C |
+
+The wipe PIN deletes the seed too: copies of the files elsewhere never open
+on this device again.
 
 ## Cipher and file format
 

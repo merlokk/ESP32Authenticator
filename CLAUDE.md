@@ -42,9 +42,12 @@ the vault is locked, GT911 touch as the pointer, `ui`); power-off
   password records (site/user/password/TOTP) in `vault.bin` with
   add/edit/delete on the console (`pass`) and the web site (with FIDO2
   credentials and TOTP codes); `vault.bin` and `fido.bin` are
-  AES-256-GCM with a key from the 6-digit PIN (the same on synced devices;
-  a PIN change re-keys both), locked until `pin` (`test.pin` in config.json
-  unlocks at boot).
+  AES-256-GCM with a key = HKDF(seed phrase, PBKDF2(6-digit PIN)) (the
+  same on synced devices; a PIN or seed change re-keys both; store header
+  format 3 with a store id and a seed id), the seed phrase 12 BIP39 words in
+  `/spiffs/seed.txt` (`seed`, the site's Passwords page: a new one from the
+  hardware RNG), locked until `pin` (`test.pin` in config.json unlocks at
+  boot).
   PIN lockout (10 tries, `pin.lockMinutes`) and a wipe PIN (`pin wipe set`).
   LionKey fork (`merlokk/lionkey`, branch `esp32auth`): CTAP 2.3 (FIDO_2_3),
   U2F over BLE, EdDSA, authenticatorConfig, minPinLength, PIN complexity,

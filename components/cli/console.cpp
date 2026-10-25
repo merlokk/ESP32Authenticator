@@ -525,6 +525,17 @@ const esp_console_cmd_t kCommands[] = {
         .context = nullptr,
     },
     {
+        .command = "seed",
+        .help = "Seed phrase (12 BIP39 words, in the store key with the PIN; the same on synced "
+                "devices): [info] | show <pin> | set [<pin>] <words> | new [<pin>] (the hardware "
+                "RNG; with the store open both stores get a new key)",
+        .hint = "[info | show <pin> | set [<pin>] <words> | new [<pin>]]",
+        .func = &CmdSeed,
+        .argtable = nullptr,
+        .func_w_context = nullptr,
+        .context = nullptr,
+    },
+    {
         .command = "nvs",
         .help = "NVS keys (development): ls [namespace] (names and types, never values) | "
                 "rm <namespace> <key>",

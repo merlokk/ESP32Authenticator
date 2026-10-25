@@ -29,6 +29,9 @@ constexpr const char *kNvsFailures = "pin_fail";   // u8: wrong PINs in a row
 constexpr const char *kNvsDeadline = "pin_until";  // i64: lock end, UTC (0 unknown)
 static_assert(kSaltSize == storefile::kSaltSize);
 static_assert(sizeof(Key::id) == storefile::kKeyIdSize);
+static_assert(seed::kIdSize == storefile::kSeedIdSize);
+static_assert(sizeof(Info::store_id) == storefile::kStoreIdSize);
+constexpr char kKeyInfo[] = "ESAF store key";  // HKDF info
 
 StaticSemaphore_t g_lock_storage;
 SemaphoreHandle_t g_lock = nullptr;
@@ -40,7 +43,17 @@ char g_marker[64];
 storefile::File g_file = {g_path, storefile::Kind::kRecords, kNvsNamespace};
 storefile::Header g_header;  // vault.bin as loaded / last written
 
-// The store key: PBKDF2(PIN, salt). Also fido.bin's (Hooks).
+// The seed phrase's entropy and id (seed_phrase.h), in every key.
+struct Seed {
+    uint8_t entropy[seed::kEntropySize];
+    uint8_t id[seed::kIdSize];
+};
+char g_seed_path[64];
+Seed g_seed;
+bool g_have_seed = false;
+uint8_t g_file_seed_id[seed::kIdSize];  // the one vault.bin names (last read)
+
+// The store key: HKDF(seed, PBKDF2(PIN, salt)). Also fido.bin's (Hooks).
 Key g_key;
 bool g_have_key = false;
 uint32_t g_unlock_ms = 0;
@@ -178,14 +191,137 @@ bool IsWipePin(const char *pin) {
     return same;
 }
 
+// --- the seed phrase
+
+// `from` over `to`: neither SPIFFS nor FAT renames over a file.
+bool Replace(const char *from, const char *to) {
+    remove(to);
+    return rename(from, to) == 0;
+}
+
+// The id from SHA-256(entropy); `checksum`: the one its words carry.
+void HashSeed(Seed *s, uint8_t *checksum) {
+    uint8_t hash[crypto::kSha256Size];
+    crypto::Sha256(s->entropy, sizeof s->entropy, hash);
+    memcpy(s->id, hash, sizeof s->id);
+    *checksum = seed::Checksum(hash[0]);
+    Wipe(hash, sizeof hash);
+}
+
+// 12 words with the right checksum.
+bool ParseSeed(const char *text, Seed *out) {
+    uint8_t carried = 0;
+    uint8_t want = 0;
+    if (!seed::Parse(text, out->entropy, &carried)) {
+        return false;
+    }
+    HashSeed(out, &want);
+    return carried == want;
+}
+
+void RandomSeed(Seed *out) {
+    uint8_t checksum;
+    crypto::Random(out->entropy, sizeof out->entropy);
+    HashSeed(out, &checksum);
+}
+
+void SeedWords(const Seed &s, char out[seed::kTextSize]) {
+    Seed copy = s;
+    uint8_t checksum;
+    HashSeed(&copy, &checksum);
+    seed::Encode(s.entropy, checksum, out);
+    Wipe(&copy, sizeof copy);
+}
+
+void SeedPath(const char *suffix, char *out, size_t size) {
+    snprintf(out, size, "%s%s", g_seed_path, suffix);
+}
+
+// The words into `path`, one line.
+esp_err_t WriteSeed(const char *path, const Seed &s) {
+    char text[seed::kTextSize];
+    SeedWords(s, text);
+    FILE *f = fopen(path, "wb");
+    bool ok = f != nullptr && fputs(text, f) >= 0 && fputc('\n', f) != EOF;
+    ok = f != nullptr && fclose(f) == 0 && ok;
+    Wipe(text, sizeof text);
+    if (!ok) {
+        ESP_LOGE(TAG, "cannot write %s", path);
+        remove(path);
+        return ESP_FAIL;
+    }
+    return ESP_OK;
+}
+
+// `s` becomes the seed file (through .tmp) and g_seed.
+esp_err_t UseSeed(const Seed &s) {
+    char tmp[sizeof g_seed_path + 4];
+    SeedPath(".tmp", tmp, sizeof tmp);
+    if (WriteSeed(tmp, s) != ESP_OK || !Replace(tmp, g_seed_path)) {
+        return ESP_FAIL;
+    }
+    g_seed = s;
+    g_have_seed = true;
+    return ESP_OK;
+}
+
+// The seed file -> g_seed (none or malformed: no seed).
+void ReadSeed() {
+    static char text[2 * seed::kTextSize];
+    FILE *f = fopen(g_seed_path, "rb");
+    if (f == nullptr) {
+        ESP_LOGW(TAG, "no seed phrase yet (%s)", g_seed_path);
+        return;
+    }
+    const size_t n = fread(text, 1, sizeof text - 1, f);
+    fclose(f);
+    text[n] = '\0';
+    Seed s;
+    g_have_seed = ParseSeed(text, &s);
+    Wipe(text, sizeof text);
+    if (!g_have_seed) {
+        ESP_LOGE(TAG, "%s is not a seed phrase: ignored", g_seed_path);
+        return;
+    }
+    g_seed = s;
+    Wipe(&s, sizeof s);
+    ESP_LOGI(TAG, "seed phrase %02x%02x%02x%02x", g_seed.id[0], g_seed.id[1], g_seed.id[2],
+             g_seed.id[3]);
+}
+
+// A seed for a new store: the one here, else a new random one (saved).
+esp_err_t EnsureSeed() {
+    if (g_have_seed) {
+        return ESP_OK;
+    }
+    Seed s;
+    RandomSeed(&s);
+    const esp_err_t err = UseSeed(s);
+    if (err == ESP_OK) {
+        ESP_LOGW(TAG, "a new seed phrase %02x%02x%02x%02x ('seed show <pin>' to write it down)",
+                 s.id[0], s.id[1], s.id[2], s.id[3]);
+    }
+    Wipe(&s, sizeof s);
+    return err;
+}
+
 // --- the key
 
-// `out` = PBKDF2(pin, salt, iterations) and its id.
-esp_err_t Derive(const char *pin, const uint8_t salt[kSaltSize], uint32_t iterations, Key *out) {
+// `out` = HKDF(salt = seed, PBKDF2(pin, salt, iterations)) and its id.
+esp_err_t Derive(const char *pin, const uint8_t salt[kSaltSize], uint32_t iterations,
+                 const Seed &seed, Key *out) {
     const int64_t start = esp_timer_get_time();
+    uint8_t stretched[sizeof out->key];
     esp_err_t err =
         crypto::Pbkdf2Sha256(reinterpret_cast<const uint8_t *>(pin), strlen(pin), salt,
-                             kSaltSize, iterations, out->key, sizeof out->key);
+                             kSaltSize, iterations, stretched, sizeof stretched);
+    if (err == ESP_OK) {
+        err = crypto::HkdfSha256(seed.entropy, sizeof seed.entropy, stretched, sizeof stretched,
+                                 reinterpret_cast<const uint8_t *>(kKeyInfo),
+                                 sizeof kKeyInfo - 1, out->key, sizeof out->key);
+    }
+    Wipe(stretched, sizeof stretched);
+    memcpy(out->seed_id, seed.id, sizeof out->seed_id);
     g_unlock_ms = static_cast<uint32_t>((esp_timer_get_time() - start) / 1000);
     ESP_LOGI(TAG, "key derived: %u iterations, %u ms", static_cast<unsigned>(iterations),
              static_cast<unsigned>(g_unlock_ms));
@@ -205,10 +341,10 @@ esp_err_t Derive(const char *pin, const uint8_t salt[kSaltSize], uint32_t iterat
 }
 
 // A new random salt.
-esp_err_t DeriveNew(const char *pin, Key *out) {
+esp_err_t DeriveNew(const char *pin, const Seed &seed, Key *out) {
     uint8_t salt[kSaltSize];
     crypto::Random(salt, sizeof salt);
-    return Derive(pin, salt, kKdfIterations, out);
+    return Derive(pin, salt, kKdfIterations, seed, out);
 }
 
 bool SameKey(const Key &a, const Key &b) {
@@ -222,7 +358,8 @@ bool SameKey(const Key &a, const Key &b) {
 // Does `pin` give the key in memory? (One derivation.)
 bool PinMatches(const char *pin) {
     Key k;
-    const bool same = Derive(pin, g_key.salt, g_key.iterations, &k) == ESP_OK && SameKey(k, g_key);
+    const bool same =
+        Derive(pin, g_key.salt, g_key.iterations, g_seed, &k) == ESP_OK && SameKey(k, g_key);
     Wipe(&k, sizeof k);
     return same;
 }
@@ -265,6 +402,13 @@ size_t Seal(const Key &key, storefile::Header *h) {
     h->kdf_iterations = key.iterations;
     memcpy(h->salt, key.salt, sizeof h->salt);
     memcpy(h->key_id, key.id, sizeof h->key_id);
+    memcpy(h->seed_id, key.seed_id, sizeof h->seed_id);
+    // The store's id: made with the store, kept by every write after.
+    static const uint8_t kNone[storefile::kStoreIdSize] = {};
+    if (memcmp(g_header.store_id, kNone, sizeof kNone) == 0) {
+        crypto::Random(g_header.store_id, sizeof g_header.store_id);
+    }
+    memcpy(h->store_id, g_header.store_id, sizeof h->store_id);
     uint8_t aad[storefile::kHeaderSize];
     storefile::Encode(*h, aad);
     const esp_err_t err = crypto::Aes256GcmSeal(key.key, h->nonce, aad, sizeof aad, g_plain, n,
@@ -280,11 +424,12 @@ esp_err_t Save() {
     esp_err_t err = size == 0 ? ESP_FAIL : storefile::Save(g_file, h, g_body, size);
     if (err == ESP_OK) {
         g_header = h;
+        memcpy(g_file_seed_id, h.seed_id, sizeof g_file_seed_id);
     }
     return err;
 }
 
-enum class Read { kOk, kNew, kWrongPin, kRefused };
+enum class Read { kOk, kNew, kWrongPin, kNoSeed, kWrongSeed, kRefused };
 
 // vault.bin into the records. With `pin`: the key from it and the file's
 // salt (g_key on success); without: g_key. kRefused: Refuse() done.
@@ -308,9 +453,17 @@ Read ReadFile(const char *pin) {
         Refuse("the store file is not encrypted with a PIN key");
         return Read::kRefused;
     }
+    memcpy(g_file_seed_id, h.seed_id, sizeof g_file_seed_id);
     if (pin != nullptr) {
+        // The seed first: a wrong one is no wrong PIN.
+        if (!g_have_seed) {
+            return Read::kNoSeed;
+        }
+        if (memcmp(h.seed_id, g_seed.id, sizeof g_seed.id) != 0) {
+            return Read::kWrongSeed;
+        }
         Key k;
-        const esp_err_t err = Derive(pin, h.salt, h.kdf_iterations, &k);
+        const esp_err_t err = Derive(pin, h.salt, h.kdf_iterations, g_seed, &k);
         if (err != ESP_OK || memcmp(k.id, h.key_id, sizeof k.id) != 0) {
             Wipe(&k, sizeof k);
             return err == ESP_OK ? Read::kWrongPin : Read::kRefused;
@@ -356,11 +509,19 @@ Error Changed(Error e) {
     return Error::kStorage;
 }
 
-// The wipe PIN: vault.bin, its version, the key and the records gone; the
-// next PIN starts afresh. Nothing logged: the log is on the console.
+// The wipe PIN: vault.bin, its version, the key, the records and the seed
+// phrase gone (copies of the files elsewhere never open here again); the next
+// PIN starts afresh. Nothing logged: the log is on the console.
 void WipeStore() {
     g_records->Clear();
     ForgetKey();
+    char path[sizeof g_seed_path + 4];
+    SeedPath(".new", path, sizeof path);
+    remove(path);
+    remove(g_seed_path);
+    Wipe(&g_seed, sizeof g_seed);
+    g_have_seed = false;
+    memset(g_file_seed_id, 0, sizeof g_file_seed_id);
     storefile::Unstage(g_file);
     storefile::Forget(g_file);
     storefile::EndCommit(g_marker);
@@ -406,7 +567,7 @@ Error UnlockLocked(const char *pin, bool *wiped, KeyEvent *event) {
             return Error::kPinLocked;
         }
         Key k;
-        DeriveNew(pin, &k);
+        DeriveNew(pin, g_seed, &k);
         Wipe(&k, sizeof k);
         ESP_LOGW(TAG, "unlock: wrong PIN");
         return PinWrong();
@@ -430,7 +591,7 @@ Error UnlockLocked(const char *pin, bool *wiped, KeyEvent *event) {
             if (!StrongEnough(pin)) {
                 return Error::kWeakPin;
             }
-            if (DeriveNew(pin, &g_key) != ESP_OK) {
+            if (EnsureSeed() != ESP_OK || DeriveNew(pin, g_seed, &g_key) != ESP_OK) {
                 ForgetKey();
                 return Error::kStorage;
             }
@@ -444,6 +605,12 @@ Error UnlockLocked(const char *pin, bool *wiped, KeyEvent *event) {
         case Read::kWrongPin:
             ESP_LOGW(TAG, "unlock: wrong PIN");
             return PinWrong();
+        case Read::kNoSeed:
+            ESP_LOGW(TAG, "unlock: no seed phrase");
+            return Error::kNoSeed;
+        case Read::kWrongSeed:
+            ESP_LOGW(TAG, "unlock: the store has another seed phrase");
+            return Error::kWrongSeed;
         case Read::kRefused:
             // The PIN was right when the key is in (a damaged file).
             if (g_have_key) {
@@ -455,6 +622,57 @@ Error UnlockLocked(const char *pin, bool *wiped, KeyEvent *event) {
     PinRight();
     Opened();
     *event = KeyEvent::kIn;
+    return Error::kOk;
+}
+
+// Under the lock, the PIN checked: a new key (new salt) from `pin` and
+// `seed`. Both stores are in memory: each is written to .new with it (and the
+// seed file when it changes), then the marker, then the renames (store_io.h).
+Error Rekey(const char *pin, const Seed &seed, bool new_seed) {
+    Key fresh;
+    storefile::Header h;
+    size_t size = 0;
+    char seed_new[sizeof g_seed_path + 4];
+    SeedPath(".new", seed_new, sizeof seed_new);
+    esp_err_t err = DeriveNew(pin, seed, &fresh);
+    if (err == ESP_OK) {
+        size = Seal(fresh, &h);
+        err = size == 0 ? ESP_FAIL : storefile::Stage(g_file, h, g_body, size);
+    }
+    if (err == ESP_OK && g_hooks.stage != nullptr) {
+        err = g_hooks.stage(fresh);
+    }
+    if (err == ESP_OK && new_seed) {
+        err = WriteSeed(seed_new, seed);
+    }
+    if (err == ESP_OK) {
+        err = storefile::BeginCommit(g_marker);
+    }
+    if (err != ESP_OK) {
+        storefile::Unstage(g_file);
+        if (g_hooks.unstage != nullptr) {
+            g_hooks.unstage();
+        }
+        remove(seed_new);
+        Wipe(&fresh, sizeof fresh);
+        ESP_LOGE(TAG, "new key failed (%s): nothing changed", esp_err_to_name(err));
+        return err == ESP_ERR_INVALID_STATE ? Error::kFidoNotLoaded : Error::kStorage;
+    }
+    // Committed: from here a power loss is finished at the next boot.
+    storefile::Promote(g_file, h.version);
+    if (g_hooks.commit != nullptr) {
+        g_hooks.commit();
+    }
+    if (new_seed) {
+        Replace(seed_new, g_seed_path);
+        g_seed = seed;
+    }
+    storefile::EndCommit(g_marker);
+    g_key = fresh;
+    g_header = h;
+    memcpy(g_file_seed_id, h.seed_id, sizeof g_file_seed_id);
+    Wipe(&fresh, sizeof fresh);
+    ESP_LOGW(TAG, "%s changed: a new key for every store", new_seed ? "seed phrase" : "PIN");
     return Error::kOk;
 }
 
@@ -474,7 +692,7 @@ const char *StateName(State state) {
     return "?";
 }
 
-esp_err_t Init(const char *dir, size_t capacity) {
+esp_err_t Init(const char *dir, size_t capacity, const char *seed_path) {
     if (g_lock != nullptr || capacity == 0) {
         return ESP_ERR_INVALID_STATE;
     }
@@ -485,6 +703,8 @@ esp_err_t Init(const char *dir, size_t capacity) {
     }
     snprintf(g_path, sizeof g_path, "%s/%s", dir, kFileName);
     snprintf(g_marker, sizeof g_marker, "%s/%s", dir, kPinChangeMarker);
+    snprintf(g_seed_path, sizeof g_seed_path, "%s", seed_path);
+    ReadSeed();
     g_capacity = capacity;
     g_plain_capacity = MaxSerialized(capacity);
     g_slots = static_cast<Record *>(PsramCalloc(capacity * sizeof(Record)));
@@ -620,41 +840,79 @@ Error ChangePin(const char *old_pin, const char *new_pin) {
     if (!StrongEnough(new_pin)) {
         return Error::kWeakPin;
     }
-    // A new key (new salt). Both stores are in memory: each is written to
-    // .new with it, then the marker, then the renames (store_io.h).
-    Key fresh;
-    storefile::Header h;
-    size_t size = 0;
-    esp_err_t err = DeriveNew(new_pin, &fresh);
-    if (err == ESP_OK) {
-        size = Seal(fresh, &h);
-        err = size == 0 ? ESP_FAIL : storefile::Stage(g_file, h, g_body, size);
+    return Rekey(new_pin, g_seed, false);
+}
+
+Error SetSeed(const char *pin, const char *words, char *out) {
+    if (g_state == State::kOff) {
+        return Error::kLocked;
     }
-    if (err == ESP_OK && g_hooks.stage != nullptr) {
-        err = g_hooks.stage(fresh);
+    if (pin != nullptr && !ValidPin(pin)) {
+        return Error::kBadPin;
     }
-    if (err == ESP_OK) {
-        err = storefile::BeginCommit(g_marker);
-    }
-    if (err != ESP_OK) {
-        storefile::Unstage(g_file);
-        if (g_hooks.unstage != nullptr) {
-            g_hooks.unstage();
-        }
+    Seed fresh;
+    if (words == nullptr) {
+        RandomSeed(&fresh);
+    } else if (!ParseSeed(words, &fresh)) {
         Wipe(&fresh, sizeof fresh);
-        ESP_LOGE(TAG, "PIN change failed (%s): nothing changed", esp_err_to_name(err));
-        return err == ESP_ERR_INVALID_STATE ? Error::kFidoNotLoaded : Error::kStorage;
+        return Error::kBadSeed;
     }
-    // Committed: from here a power loss is finished at the next boot.
-    storefile::Promote(g_file, h.version);
-    if (g_hooks.commit != nullptr) {
-        g_hooks.commit();
+    Error e = Error::kOk;
+    {
+        Guard guard;
+        if (!g_have_key) {
+            // The phrase to open the files with. A random one only while
+            // there are none: it could not open them.
+            if (words == nullptr &&
+                (storefile::FileSize(g_file) != 0 || storefile::KeptVersion(g_file) != 0)) {
+                e = Error::kLocked;
+            } else if (UseSeed(fresh) != ESP_OK) {
+                e = Error::kStorage;
+            } else {
+                ESP_LOGW(TAG, "seed phrase %02x%02x%02x%02x set", fresh.id[0], fresh.id[1],
+                         fresh.id[2], fresh.id[3]);
+            }
+        } else if (g_state != State::kOpen) {
+            e = Error::kLocked;
+        } else if (pin == nullptr) {
+            e = Error::kBadPin;
+        } else if (!PinEntryAllowed()) {
+            e = Error::kPinLocked;
+        } else if (!PinMatches(pin)) {
+            e = PinWrong();
+        } else {
+            PinRight();
+            e = Rekey(pin, fresh, true);
+        }
     }
-    storefile::EndCommit(g_marker);
-    g_key = fresh;
-    g_header = h;
+    if (out != nullptr) {
+        if (e == Error::kOk) {
+            SeedWords(fresh, out);
+        } else {
+            out[0] = '\0';
+        }
+    }
     Wipe(&fresh, sizeof fresh);
-    ESP_LOGW(TAG, "PIN changed: a new key for every store");
+    return e;
+}
+
+Error CopySeed(const char *pin, char out[seed::kTextSize]) {
+    out[0] = '\0';
+    if (!ValidPin(pin)) {
+        return Error::kBadPin;
+    }
+    if (g_state != State::kOpen) {
+        return Error::kLocked;
+    }
+    Guard guard;
+    if (!PinEntryAllowed()) {
+        return Error::kPinLocked;
+    }
+    if (!PinMatches(pin)) {
+        return PinWrong();
+    }
+    PinRight();
+    SeedWords(g_seed, out);  // an open store has one
     return Error::kOk;
 }
 
@@ -703,6 +961,10 @@ Info GetInfo() {
     info.pin_failures = g_failures;
     info.lock_left_s = LockLeft();
     info.wipe_set = g_has_wipe;
+    info.seed_set = g_have_seed;
+    memcpy(info.seed_id, g_seed.id, sizeof info.seed_id);
+    memcpy(info.file_seed_id, g_file_seed_id, sizeof info.file_seed_id);
+    memcpy(info.store_id, g_header.store_id, sizeof info.store_id);
     return info;
 }
 
@@ -791,7 +1053,7 @@ Error Reset(const char *pin) {
             if (!StrongEnough(pin)) {
                 return Error::kWeakPin;
             }
-            if (DeriveNew(pin, &g_key) != ESP_OK) {
+            if (EnsureSeed() != ESP_OK || DeriveNew(pin, g_seed, &g_key) != ESP_OK) {
                 ForgetKey();
                 return Error::kStorage;
             }

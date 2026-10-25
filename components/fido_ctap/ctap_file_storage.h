@@ -14,6 +14,7 @@ typedef struct {
     // what is loaded / last written; 0 before the first write.
     uint32_t version;
     int64_t modified_utc;
+    uint8_t store_id[8];  // made with the store (first write), kept after; zero before
     const char *refused;  // why the file was not loaded (init failed), else NULL
     // The store key (vault); the file is AES-256-GCM with it. Init (the load)
     // needs it when there is a file. `staged`: the next key, in <file>.new.

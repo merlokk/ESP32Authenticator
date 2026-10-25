@@ -179,13 +179,17 @@ void InitFido(const char *dir) {
 fido_ctap_key_t Convert(const vault::Key &k) {
     fido_ctap_key_t out;
     static_assert(sizeof out.key == sizeof k.key && sizeof out.salt == sizeof k.salt &&
-                  sizeof out.id == sizeof k.id);
+                  sizeof out.id == sizeof k.id && sizeof out.seed_id == sizeof k.seed_id);
     memcpy(out.key, k.key, sizeof out.key);
     memcpy(out.salt, k.salt, sizeof out.salt);
     out.iterations = k.iterations;
     memcpy(out.id, k.id, sizeof out.id);
+    memcpy(out.seed_id, k.seed_id, sizeof out.seed_id);
     return out;
 }
+
+// The seed phrase (vault.h): on SPIFFS, never on the card with the stores.
+constexpr const char *kSeedPath = "/spiffs/seed.txt";
 
 // Passwords: locked until the PIN (console `pin`), unless config.json has a
 // test PIN (test.pin, development only).
@@ -219,7 +223,7 @@ void InitVault(const char *dir) {
         }
         vault::Wipe(&k, sizeof k);
     });
-    if (vault::Init(dir, boards::kBoard.max_records) != ESP_OK || dir == nullptr) {
+    if (vault::Init(dir, boards::kBoard.max_records, kSeedPath) != ESP_OK || dir == nullptr) {
         return;
     }
     vault::Key kept;
@@ -1309,15 +1313,16 @@ extern "C" void app_main() {
     ble_fido::Register();
     const char *dir = StorageDir();
     if (dir != nullptr) {
-        // A PIN change cut short: finished or dropped before anything loads.
+        // A PIN or seed change cut short: finished or dropped before anything
+        // loads (the seed file with the stores).
         static char marker[64];
         static char vault_path[64];
         static char fido_path[64];
         snprintf(marker, sizeof marker, "%s/%s", dir, vault::kPinChangeMarker);
         snprintf(vault_path, sizeof vault_path, "%s/vault.bin", dir);
         snprintf(fido_path, sizeof fido_path, "%s/fido.bin", dir);
-        const char *const paths[] = {vault_path, fido_path};
-        storefile::FinishCommit(marker, paths, 2);
+        const char *const paths[] = {vault_path, fido_path, kSeedPath};
+        storefile::FinishCommit(marker, paths, 3);
     }
     InitFido(dir);
     InitVault(dir);

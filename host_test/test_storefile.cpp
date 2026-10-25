@@ -24,7 +24,7 @@ Header Sample() {
 void test_storefile_layout_is_fixed_little_endian(void) {
     uint8_t out[kHeaderSize];
     storefile::Encode(Sample(), out);
-    const uint8_t want[24] = {'E', 'S', 'A', 'F', 2, 1, 0, 0,  0x04, 0x03, 0x02, 0x01,
+    const uint8_t want[24] = {'E', 'S', 'A', 'F', 3, 1, 0, 0,  0x04, 0x03, 0x02, 0x01,
                               100, 0,   0,   0,   0xC3, 0xB2, 0xA1, 0x67, 1, 0, 0, 0};
     TEST_ASSERT_EQUAL_UINT8_ARRAY(want, out, sizeof want);
     for (size_t i = 24; i < kHeaderSize; ++i) {
@@ -69,7 +69,10 @@ void test_storefile_refuses_a_wrong_size_kind_format_or_cipher(void) {
     out[4] = 1;  // the 40-byte format of the first firmware with a header
     TEST_ASSERT_FALSE(storefile::Decode(out, sizeof out, kHeaderSize + 100,
                                                      Kind::kFido, &h));
-    out[4] = 2;
+    out[4] = 2;  // before the store and seed ids
+    TEST_ASSERT_FALSE(storefile::Decode(out, sizeof out, kHeaderSize + 100,
+                                                     Kind::kFido, &h));
+    out[4] = 3;
     out[6] = 2;
     TEST_ASSERT_FALSE(storefile::Decode(out, sizeof out, kHeaderSize + 100,
                                                      Kind::kFido, &h));
@@ -113,6 +116,29 @@ void test_storefile_kdf_and_key_id_round_trip(void) {
     TEST_ASSERT_EQUAL_UINT8_ARRAY(in.key_id, back.key_id, storefile::kKeyIdSize);
 }
 
+void test_storefile_store_and_seed_ids_round_trip(void) {
+    Header in = Sample();
+    for (size_t i = 0; i < storefile::kStoreIdSize; ++i) {
+        in.store_id[i] = static_cast<uint8_t>(0xA0 + i);
+    }
+    for (size_t i = 0; i < storefile::kSeedIdSize; ++i) {
+        in.seed_id[i] = static_cast<uint8_t>(0xC0 + i);
+    }
+    uint8_t out[kHeaderSize];
+    storefile::Encode(in, out);
+    TEST_ASSERT_EQUAL_UINT8(0xA0, out[64]);
+    TEST_ASSERT_EQUAL_UINT8(0xA7, out[71]);
+    TEST_ASSERT_EQUAL_UINT8(0xC0, out[72]);
+    TEST_ASSERT_EQUAL_UINT8(0xC3, out[75]);
+    for (size_t i = 76; i < kHeaderSize; ++i) {
+        TEST_ASSERT_EQUAL_UINT8(0, out[i]);  // reserved
+    }
+    Header back;
+    TEST_ASSERT_TRUE(storefile::Decode(out, sizeof out, kHeaderSize + 100, Kind::kFido, &back));
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(in.store_id, back.store_id, storefile::kStoreIdSize);
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(in.seed_id, back.seed_id, storefile::kSeedIdSize);
+}
+
 void test_storefile_an_older_version_is_a_rollback(void) {
     TEST_ASSERT_TRUE(storefile::Rollback(4, true, 5));
     TEST_ASSERT_FALSE(storefile::Rollback(5, true, 5));
@@ -154,6 +180,7 @@ void RegisterStorefileTests(void) {
     RUN_TEST(test_storefile_refuses_a_wrong_size_kind_format_or_cipher);
     RUN_TEST(test_storefile_an_encrypted_file_counts_its_tag);
     RUN_TEST(test_storefile_kdf_and_key_id_round_trip);
+    RUN_TEST(test_storefile_store_and_seed_ids_round_trip);
     RUN_TEST(test_storefile_an_older_version_is_a_rollback);
     RUN_TEST(test_storefile_next_version_is_above_both);
     RUN_TEST(test_storefile_sync_later_time_wins_then_higher_version);

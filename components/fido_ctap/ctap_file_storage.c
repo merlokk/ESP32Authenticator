@@ -37,6 +37,8 @@
 #include "store_header_c.h"
 
 static const char *TAG = "ctap_store";
+_Static_assert(sizeof(((ctap_file_storage_context_t *)0)->store_id) == STORE_STORE_ID_SIZE,
+               "the store id of store_header_c.h");
 
 static const char *kNvsNamespace = "fido";
 static const char *kNvsCounter = "sign_count";
@@ -121,6 +123,12 @@ static ctap_storage_status_t write_file(ctap_file_storage_context_t *ctx,
     };
     memcpy(header->salt, key->salt, sizeof header->salt);
     memcpy(header->key_id, key->id, sizeof header->key_id);
+    memcpy(header->seed_id, key->seed_id, sizeof header->seed_id);
+    static const uint8_t kNoId[STORE_STORE_ID_SIZE] = {0};
+    if (memcmp(ctx->store_id, kNoId, sizeof kNoId) == 0) {
+        fido_store_random(ctx->store_id, sizeof ctx->store_id);
+    }
+    memcpy(header->store_id, ctx->store_id, sizeof header->store_id);
     if (changed) {
         const time_t now = time(NULL);
         header->modified_utc = now >= kBelievableTime ? (int64_t)now : 0;
@@ -327,6 +335,8 @@ static bool load(ctap_file_storage_context_t *ctx, bool *rewrite) {
         ctx->refused = "the store file is larger than the store (credential limit lowered)";
     } else if (!ctx->has_key) {
         ctx->refused = "locked: enter the PIN";
+    } else if (memcmp(header.seed_id, ctx->key.seed_id, sizeof header.seed_id) != 0) {
+        ctx->refused = "the store file has another seed phrase";
     } else if (memcmp(header.key_id, ctx->key.id, sizeof header.key_id) != 0) {
         ctx->refused = "the store file has another key (another PIN, or not yet re-keyed)";
     } else {
@@ -353,6 +363,7 @@ static bool load(ctap_file_storage_context_t *ctx, bool *rewrite) {
     ctx->mem.write_index = header.length;  // find_item only looks at [0, write_index)
     ctx->version = header.version;
     ctx->modified_utc = header.modified_utc;
+    memcpy(ctx->store_id, header.store_id, sizeof ctx->store_id);
     keep_version(header.version);  // above NVS: written before a power loss, or synced
     return true;
 }
@@ -363,6 +374,7 @@ ctap_storage_status_t ctap_file_storage_init(const ctap_storage_t *storage) {
     ctx->mem.write_index = 0;
     ctx->version = 0;
     ctx->modified_utc = 0;
+    memset(ctx->store_id, 0, sizeof ctx->store_id);
     ctx->refused = NULL;
     bool rewrite = false;
     if (ctx->path == NULL) {
@@ -602,6 +614,7 @@ void ctap_file_storage_forget(const ctap_storage_t *storage) {
     }
     ctx->version = 0;
     ctx->modified_utc = 0;
+    memset(ctx->store_id, 0, sizeof ctx->store_id);
 }
 
 // authenticatorReset. The signature counter is kept: it only has to grow.

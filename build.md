@@ -191,6 +191,8 @@ after `usb mode jtag`, or hold BOOT).
 | `pin [info]` | vault locked / open / refused, key derivation (iterations, ms) |
 | `pin <6 digits>` | unlock the vault (nothing is decrypted before); no store yet: makes one with this PIN. `test.pin` in config.json does it at boot |
 | `pin change <old> <new>` / `pin lock` | new PIN: a new key, `vault.bin` and `fido.bin` rewritten from memory together (`.new` + marker) / wipe the key, records and FIDO2 store from memory (FIDO2 off until the PIN) |
+| `seed [info]` / `seed show <pin>` | the seed phrase (12 BIP39 words in the key with the PIN; `/spiffs/seed.txt`): set or not, its id, the one `vault.bin` names / the words (store open) |
+| `seed set [<pin>] <words>` / `seed new [<pin>]` | locked: another device's phrase (words whole or 4+ letters, any case) / a random one (hardware RNG; only while there is no store); store open: with the PIN, a new key for both stores (as a PIN change). `new` prints the words once |
 | `pin wipe set <pin>` / `pin wipe off` | the wipe PIN (needs the open store; must differ from the PIN), saved to config.json as a salted hash. Entering it with `pin` erases the password store and the FIDO2 credentials and answers "wrong PIN" |
 
 `pin` also shows wrong PINs in a row and the lock: 10 wrong PINs lock PIN

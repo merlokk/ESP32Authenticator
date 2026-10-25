@@ -126,6 +126,8 @@ void test_the_verb_is_the_last_path_part(void) {
     TEST_ASSERT_EQUAL(web::VaultVerb::kLock, web::VaultVerbFromUri("/api/vault/lock#"));
     TEST_ASSERT_EQUAL(web::VaultVerb::kMove, web::VaultVerbFromUri("/api/vault/move"));
     TEST_ASSERT_EQUAL(web::VaultVerb::kSort, web::VaultVerbFromUri("/api/vault/sort"));
+    TEST_ASSERT_EQUAL(web::VaultVerb::kSeedNew, web::VaultVerbFromUri("/api/vault/seed-new"));
+    TEST_ASSERT_EQUAL(web::VaultVerb::kNone, web::VaultVerbFromUri("/api/vault/seed"));
     TEST_ASSERT_EQUAL(web::VaultVerb::kNone, web::VaultVerbFromUri("/api/vault/locked"));
     TEST_ASSERT_EQUAL(web::VaultVerb::kNone, web::VaultVerbFromUri("/api/vault/"));
     TEST_ASSERT_EQUAL(web::VaultVerb::kNone, web::VaultVerbFromUri("/api/fido/delete"));

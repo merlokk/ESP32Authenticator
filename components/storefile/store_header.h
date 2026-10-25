@@ -5,10 +5,10 @@
 // (an encrypted payload uses it as AES-GCM associated data). Pure,
 // host-tested; the C side uses store_header_c.h.
 //
-// Layout, little-endian, 64 bytes, then `length` payload bytes (+ a 16-byte
+// Layout, little-endian, 80 bytes, then `length` payload bytes (+ a 16-byte
 // tag when encrypted):
 //   0  magic "ESAF" (4)
-//   4  format (1) = 2
+//   4  format (1) = 3
 //   5  kind (1): which store (a file of one kind is never loaded as another)
 //   6  cipher (1): 0 plain, 1 AES-256-GCM
 //   7  reserved (1) = 0
@@ -20,18 +20,24 @@
 //  40  KDF salt (16)
 //  56  key id (8): which key encrypted the payload (a hash of it); zero
 //      when plain. Every PIN change makes a new key (new salt).
+//  64  store id (8): random when the store is made, kept by every write
+//      (a PIN change too): copies of one store on synced devices share it
+//  72  seed id (4): which seed phrase is in the key (vault.h); zero when plain
+//  76  reserved (4) = 0
 
 #include <cstddef>
 #include <cstdint>
 
 namespace storefile {
 
-inline constexpr size_t kHeaderSize = 64;
+inline constexpr size_t kHeaderSize = 80;
 inline constexpr size_t kTagSize = 16;
 inline constexpr size_t kNonceSize = 12;
 inline constexpr size_t kSaltSize = 16;
 inline constexpr size_t kKeyIdSize = 8;
-inline constexpr uint8_t kFormat = 2;
+inline constexpr size_t kStoreIdSize = 8;
+inline constexpr size_t kSeedIdSize = 4;
+inline constexpr uint8_t kFormat = 3;
 
 enum class Kind : uint8_t { kFido = 1, kRecords = 2 };
 enum class Cipher : uint8_t { kPlain = 0, kAesGcm = 1 };
@@ -46,6 +52,8 @@ struct Header {
     uint32_t kdf_iterations = 0;
     uint8_t salt[kSaltSize] = {};
     uint8_t key_id[kKeyIdSize] = {};
+    uint8_t store_id[kStoreIdSize] = {};
+    uint8_t seed_id[kSeedIdSize] = {};
 };
 
 void Encode(const Header &header, uint8_t out[kHeaderSize]);

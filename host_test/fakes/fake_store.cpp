@@ -137,6 +137,14 @@ esp_err_t Pbkdf2Sha256(const uint8_t *password, size_t password_len, const uint8
     return ESP_OK;
 }
 
+esp_err_t HkdfSha256(const uint8_t *salt, size_t salt_len, const uint8_t *ikm, size_t ikm_len,
+                     const uint8_t *info, size_t info_len, uint8_t *out, size_t out_len) {
+    uint64_t h = fake::Mix(fake::kBasis, salt, salt_len);
+    h = fake::Mix(h, ikm, ikm_len);
+    fake::Expand(fake::Mix(h, info, info_len), out, out_len);
+    return ESP_OK;
+}
+
 esp_err_t Aes256GcmSeal(const uint8_t key[kAes256KeySize], const uint8_t nonce[kGcmNonceSize],
                         const uint8_t *aad, size_t aad_len, const uint8_t *in, size_t len,
                         uint8_t *out) {

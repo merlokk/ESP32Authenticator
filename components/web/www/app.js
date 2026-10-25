@@ -966,8 +966,50 @@
             ? "The store file is refused: " + d.why + ". The console's 'pass reset' replaces it."
             : "No storage.";
         }
+        seedState(d, open);
         if (!state.writable) said("read-only: web.write is false in config.json", "bad");
       }, function (why) { lamp("bad", why); });
+    }
+
+    // Open: a new phrase re-keys both stores (the PIN); locked: only while
+    // there is no store (another device's phrase goes in on the console).
+    function seedState(d, open) {
+      var can = open || (d.state === "locked" && !d.has_file);
+      by("seed").hidden = d.state !== "open" && d.state !== "locked";
+      by("seed-pin-row").hidden = !open;
+      by("seed-new").disabled = !state.writable || !can;
+      var line = d.seed_id ? "This device's phrase: id " + d.seed_id + "." : "No phrase yet.";
+      if (d.file_seed_id && d.file_seed_id !== d.seed_id) {
+        line += " vault.bin needs another one (id " + d.file_seed_id +
+                "): 'seed set <words>' on the console.";
+      } else if (!can) {
+        line += " Unlock to make a new one.";
+      }
+      by("seed-state").textContent = line;
+    }
+
+    function newSeed() {
+      var body = {};
+      if (!by("seed-pin-row").hidden) {
+        var pin = by("seed-pin").value;
+        if (!/^[0-9]{6}$/.test(pin)) { said("the PIN is 6 digits", "warn"); return; }
+        body.pin = pin;
+      }
+      said("making a new phrase and a new key… a few seconds");
+      by("seed-new").disabled = true;
+      post("/api/vault/seed-new", body, function (d) {
+        by("seed-pin").value = "";
+        var box = by("seed-words");
+        box.hidden = false;
+        box.textContent = "Write these down now (shown once; every device of this store " +
+                          "needs them): " + d.seed;
+        said("new seed phrase: vault.bin and fido.bin have a new key", "ok");
+        load();
+      }, function (why) {
+        by("seed-pin").value = "";
+        said(why, "bad");
+        load();
+      });
     }
 
     function unlock() {
@@ -999,6 +1041,7 @@
       post("/api/vault/lock", {}, function () { said("locked", "ok"); load(); },
            function (why) { said(why, "bad"); });
     });
+    twoTap(by("seed-new"), "Tap again: replace the phrase", newSeed);
     load();
   }
 

@@ -24,6 +24,15 @@ int CmdPass(int argc, char **argv);
 //   pin wipe set <pin> | off   the wipe PIN (config.json pin.wipe: salted hash)
 int CmdPin(int argc, char **argv);
 
+// `seed` command: the seed phrase (vault.h, seed_phrase.h). The words are
+// printed only by `show` and `new`, asked for (to write them down).
+//   seed [info]                  set or not, its id and the one vault.bin names
+//   seed show <pin>              the words (the store open)
+//   seed set [<pin>] <words>     locked: the phrase to open the stores with;
+//                                open: a new key with it (the PIN needed)
+//   seed new [<pin>]             a random phrase (hardware RNG), as set
+int CmdSeed(int argc, char **argv);
+
 // The `pass info` readout (used by `devstatus`).
 void PrintPassInfo();
 

@@ -153,8 +153,10 @@ esp_err_t Sha256(const uint8_t *data, size_t len, uint8_t out[kSha256Size]) {
     return Check(psa_hash_compute(PSA_ALG_SHA_256, data, len, out, kSha256Size, &n), "sha256");
 }
 
-esp_err_t HmacSha1(const uint8_t *key, size_t key_len, const uint8_t *data, size_t len,
-                   uint8_t out[kSha1Size]) {
+namespace {
+
+esp_err_t Hmac(psa_algorithm_t hash, size_t mac_size, const char *what, const uint8_t *key,
+               size_t key_len, const uint8_t *data, size_t len, uint8_t *out) {
     if (key == nullptr || key_len == 0) {
         return ESP_ERR_INVALID_ARG;
     }
@@ -162,17 +164,62 @@ esp_err_t HmacSha1(const uint8_t *key, size_t key_len, const uint8_t *data, size
     psa_set_key_type(&attr, PSA_KEY_TYPE_HMAC);
     psa_set_key_bits(&attr, key_len * 8);
     psa_set_key_usage_flags(&attr, PSA_KEY_USAGE_SIGN_MESSAGE);
-    psa_set_key_algorithm(&attr, PSA_ALG_HMAC(PSA_ALG_SHA_1));
+    psa_set_key_algorithm(&attr, PSA_ALG_HMAC(hash));
     psa_key_id_t id = 0;
     esp_err_t err = Check(psa_import_key(&attr, key, key_len, &id), "hmac key");
     if (err != ESP_OK) {
         return err;
     }
     size_t n = 0;
-    err = Check(psa_mac_compute(id, PSA_ALG_HMAC(PSA_ALG_SHA_1), data, len, out, kSha1Size, &n),
-                "hmac-sha1");
+    err = Check(psa_mac_compute(id, PSA_ALG_HMAC(hash), data, len, out, mac_size, &n), what);
     psa_destroy_key(id);
-    return err == ESP_OK && n != kSha1Size ? ESP_FAIL : err;
+    return err == ESP_OK && n != mac_size ? ESP_FAIL : err;
+}
+
+}  // namespace
+
+esp_err_t HmacSha1(const uint8_t *key, size_t key_len, const uint8_t *data, size_t len,
+                   uint8_t out[kSha1Size]) {
+    return Hmac(PSA_ALG_SHA_1, kSha1Size, "hmac-sha1", key, key_len, data, len, out);
+}
+
+esp_err_t HmacSha256(const uint8_t *key, size_t key_len, const uint8_t *data, size_t len,
+                     uint8_t out[kSha256Size]) {
+    return Hmac(PSA_ALG_SHA_256, kSha256Size, "hmac-sha256", key, key_len, data, len, out);
+}
+
+esp_err_t HkdfSha256(const uint8_t *salt, size_t salt_len, const uint8_t *ikm, size_t ikm_len,
+                     const uint8_t *info, size_t info_len, uint8_t *out, size_t out_len) {
+    constexpr size_t kInfoMax = 64;
+    if (out_len > 255 * kSha256Size || info_len > kInfoMax) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    // Extract: PRK = HMAC(salt, IKM); no salt is HashLen zeros.
+    const uint8_t zeros[kSha256Size] = {};
+    uint8_t prk[kSha256Size];
+    esp_err_t err = salt_len != 0 ? HmacSha256(salt, salt_len, ikm, ikm_len, prk)
+                                  : HmacSha256(zeros, sizeof zeros, ikm, ikm_len, prk);
+    // Expand: T(i) = HMAC(PRK, T(i-1) || info || i).
+    uint8_t block[kSha256Size + kInfoMax + 1];
+    uint8_t t[kSha256Size];
+    size_t t_len = 0;
+    for (size_t done = 0, i = 1; err == ESP_OK && done < out_len; ++i) {
+        memcpy(block, t, t_len);
+        memcpy(block + t_len, info, info_len);
+        block[t_len + info_len] = static_cast<uint8_t>(i);
+        err = HmacSha256(prk, sizeof prk, block, t_len + info_len + 1, t);
+        t_len = sizeof t;
+        const size_t n = out_len - done < sizeof t ? out_len - done : sizeof t;
+        memcpy(out + done, t, n);
+        done += n;
+    }
+    memset(prk, 0, sizeof prk);
+    memset(block, 0, sizeof block);
+    memset(t, 0, sizeof t);
+    if (err != ESP_OK) {
+        memset(out, 0, out_len);
+    }
+    return err;
 }
 
 esp_err_t Hotp(const uint8_t *key, size_t key_len, uint64_t counter, unsigned digits,

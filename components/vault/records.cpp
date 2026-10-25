@@ -158,7 +158,12 @@ const char *Describe(Error error) {
             return "fido.bin is not loaded, so it cannot get the new key: nothing changed";
         case Error::kWeakPin:
             return "the PIN is too simple (a repeat, a run like 123456, or a common PIN)";
-
+        case Error::kNoSeed:
+            return "no seed phrase here: seed set <12 words>";
+        case Error::kWrongSeed:
+            return "the store has another seed phrase";
+        case Error::kBadSeed:
+            return "not 12 seed words, or a typo in them";
     }
     return "?";
 }

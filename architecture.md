@@ -13,7 +13,7 @@ Target and status. Screen design and the open questions: [x4-design.md](x4-desig
 | PIN lock (6 digits, lockout after 10 tries, wipe PIN); the PIN also derives the storage key | PIN key for `vault.bin`, lockout, wipe PIN, console `pin` done; screen not yet |
 | Password records (site, user, password, TOTP): add / edit / delete | done on the console (`pass`); screen and typing not yet |
 | Store file header (version, modification time) and rollback check (highest version in NVS) | done (`storefile`) |
-| Encrypted stores: `vault.bin` and `fido.bin`, AES-256-GCM with a key from the PIN (the same on every device with the PIN and the files), loaded whole into PSRAM | done |
+| Encrypted stores: `vault.bin` and `fido.bin`, AES-256-GCM with a key from the PIN and the seed phrase (the same on every device with both and the files), loaded whole into PSRAM | done |
 | Sync over the internet, the later modification time wins | not yet; service not chosen |
 | X4 Pro screen: status bar, credential list, pages, settings | status bar, the password list (pages, typing, TOTP), swipes, PIN pad, the U2F / FIDO2 list, Settings done |
 | Settings: frontlight, Wi-Fi | on the screen: frontlight, Wi-Fi, Bluetooth, touch calibration, display & power, date & time, security, about; also the console and the site |
@@ -49,7 +49,7 @@ Reference ESP-IDF + LVGL project: `../../ai-remote/approver-esp32` ([GitHub](htt
 
 `components/config`: `config.json` parsed into one fixed struct (cJSON).
 
-- Search: `/spiffs/config.json` (TODO: microSD first). Missing, too big (> 4 KB)
+- Always `/spiffs/config.json` (never on the card). Missing, too big (> 4 KB)
   or invalid: built-in default config (`kDefaultJson`), reason in `config info`.
   Nothing is written at boot.
 - Missing fields take defaults, unknown fields are ignored (lost on save), an
@@ -514,6 +514,7 @@ and never starts without lwIP (an assert).
 | `POST /api/vault/add\|set\|delete` | `{site, user, password, otp}` / `{id, any of them}` (absent keeps, `otp: ""` removes; all checked before any is written) / `{id}`. `otp`: Base32, or `base64:<Base64>` (kept as Base32) |
 | `POST /api/vault/move\|sort` | `{id, position}` (0-based list place; past the end: last) / `{}` (by site, then user): the device's list order; the page shows it with up / down and to the top / bottom per record and "Sort A to Z" |
 | `POST /api/vault/unlock\|lock` | `{pin}` (the wipe PIN answers as a wrong one) / `{}` |
+| `POST /api/vault/seed-new` | `{pin}` with the store open (both stores re-keyed), `{}` while there is no store: a new seed phrase from the hardware RNG; its words are in the answer (`seed`), once. `GET /api/vault` has `seed_id`, `file_seed_id`, `has_file` |
 | `GET /api/fido`, `POST /api/fido/delete` | store info and credentials (site, user, resident, U2F, made when / by; the page marks U2F ones with a badge) / `{credential: 64 hex}` |
 
 - Basic auth over every route when `web.user` and `web.password` are both set
@@ -557,13 +558,17 @@ our fork [merlokk/lionkey](https://github.com/merlokk/lionkey), branch
   with the vault's key (Passwords), rewritten whole through a temp file on
   every change, compacted at load. FIDO2 is off from boot until the PIN
   (`fido_ctap_set_key` through `vault::Hooks`) and again after `pin lock`;
-  a plain file, or one with another key id, is refused. A PIN change
-  re-keys it (`fido_ctap_stage_key` / `commit_key`).
+  a plain file, or one with another seed or key id, is refused. A PIN or
+  seed change re-keys it (`fido_ctap_stage_key` / `commit_key`).
 - Store header (`components/storefile/store_header.h`, pure, host-tested):
-  64 bytes, plain, in front of every store file: magic `ESAF`, format, kind,
+  80 bytes, plain, in front of every store file: magic `ESAF`, format 3, kind,
   cipher (0 plain, 1 AES-256-GCM: the header is its associated data),
   **version**, payload length, **modification time** (UTC, 0 unknown), nonce,
-  PBKDF2 iterations and salt, **key id**. Every write: version = max(file,
+  PBKDF2 iterations and salt, **key id**, **store id** (8 random bytes made
+  with the store, kept by every write and re-key: copies of one store on
+  synced devices share it), **seed id** (SHA-256(seed entropy), 4 bytes).
+  Other formats are refused (no migration: format 2 files were re-keyed once
+  on a PC). Every write: version = max(file,
   NVS) + 1; NVS `fido/store_ver` keeps the highest version accepted (written
   after the file, only when it grows). At boot a file below it is a
   rollback: refused and left as is, FIDO2 off (`fido_ctap_stopped_reason`,
@@ -647,14 +652,25 @@ SPIFFS).
   makes an empty store and the key. A wrong PIN (the derived key id differs
   from the header's) leaves it locked; on an open store it changes nothing.
   `pin lock` wipes the key, records and the FIDO2 store from memory.
-- Key: PBKDF2-HMAC-SHA256(PIN, salt), 6000 iterations (~0.9 s on the S3 via
-  PSA); salt, count and the key id (SHA-256("ESAF key id" || key), 8 bytes)
-  in every store header. Another device with the PIN and the files (a sync
-  server) derives the same key; checked by building the files on a PC.
-  Against a flash dump a 6-digit PIN falls in minutes: see
-  storage-encryption.md.
-- PIN change (needs the store open, and fido.bin loaded if it exists): a new
-  key (new salt); both stores are written from memory to `<file>.new`, then
+- Key: HKDF-SHA256(salt = seed entropy, IKM = PBKDF2-HMAC-SHA256(PIN, salt),
+  6000 iterations, ~0.9 s on the S3 via PSA; info `ESAF store key`); salt,
+  count, the key id (SHA-256("ESAF key id" || key), 8 bytes) and the seed id
+  in every store header. Another device with the PIN, the seed phrase and the
+  files (a sync server, which needs neither) derives the same key; checked by
+  re-keying the files on a PC (Python `cryptography`). The files alone do not
+  open; a flash dump has the seed too, and then a 6-digit PIN falls in
+  minutes: see storage-encryption.md.
+- Seed phrase (`seed_phrase.h`, pure, host-tested): BIP39, 12 English words =
+  128 random bits (hardware RNG) + a 4-bit checksum; entry takes any case and
+  4+ letter starts. Kept as words in `/spiffs/seed.txt` (never on the card).
+  The first store makes one; `seed set <words>` (locked) takes another
+  device's; `seed new` / `set` with the store open (and the PIN) re-key both
+  stores as a PIN change, `seed.txt.new` renamed with them (`FinishCommit`
+  at boot). A file naming another seed: `kWrongSeed`, no PIN counted. Shown
+  only on request with the PIN (`seed show <pin>`) or once by `seed new`
+  (console, site).
+- PIN or seed change (needs the store open, and fido.bin loaded if it
+  exists): a new key (new salt); both stores are written from memory to `<file>.new`, then
   the marker `pinchange`, then each `.new` renamed over its file, then the
   marker removed (`storefile::Stage` / `BeginCommit` / `Promote` /
   `EndCommit`). At boot, before any load, `storefile::FinishCommit`: with
@@ -669,7 +685,8 @@ SPIFFS).
 - Wipe PIN (`pin.wipe`): checked first, before any key derivation and also
   while locked out. It removes `vault.bin`, `fido.bin` (and any `.new`,
   `.tmp`, marker) and their kept versions (the next PIN starts afresh),
-  wipes the key and records from memory and stops FIDO2 (`fido_ctap_wipe`
+  wipes the key and records from memory, deletes the seed phrase (a new one
+  with the next store) and stops FIDO2 (`fido_ctap_wipe`
   through `vault::Hooks`). Then it
   answers as a wrong PIN: same result and count (it can start the lock),
   one key derivation, the same log line; the erase adds ~0.4 s. It must

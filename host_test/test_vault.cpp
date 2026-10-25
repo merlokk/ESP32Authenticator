@@ -10,6 +10,7 @@
 #include "nvs.h"
 #include "pin_guard.h"
 #include "records.h"
+#include "seed_phrase.h"
 #include "unity.h"
 #include "vault.h"
 
@@ -280,6 +281,7 @@ void test_vault_clear_wipes_secrets(void) {
 // --- vault.cpp: a weak new PIN (pin_policy.h) under config `pin.complexity`
 
 constexpr const char *kStoreDir = "build/vaultfs";
+constexpr const char *kSeedPath = "build/vaultfs/seed.txt";
 constexpr const char *kStrongPin = "583920";
 constexpr const char *kWeakPin = "123456";  // a run
 
@@ -292,7 +294,7 @@ void FreshVault(bool complexity) {
     std::filesystem::create_directories(kStoreDir, ec);
     fake::NvsClear();
     if (!inited) {
-        TEST_ASSERT_EQUAL(ESP_OK, vault::Init(kStoreDir, 8));
+        TEST_ASSERT_EQUAL(ESP_OK, vault::Init(kStoreDir, 8, kSeedPath));
         inited = true;
     }
     vault::SetPolicy({600, "", complexity});
@@ -362,6 +364,133 @@ void test_vault_a_kept_key_opens_the_store_without_a_pin(void) {
     TEST_ASSERT_EQUAL(Error::kOk, vault::Unlock(kStrongPin));
 }
 
+// --- seed_phrase.h: the BIP39 vectors (trezor/python-mnemonic, 128 bits)
+
+struct SeedVector {
+    uint8_t byte;  // the entropy: 16 times this (0x9e...: see below)
+    uint8_t checksum;
+    const char *words;
+};
+
+void test_seed_bip39_vectors(void) {
+    const SeedVector vectors[] = {
+        {0x00, 3, "abandon abandon abandon abandon abandon abandon abandon abandon abandon "
+                  "abandon abandon about"},
+        {0x7f, 8, "legal winner thank year wave sausage worth useful legal winner thank yellow"},
+        {0x80, 4, "letter advice cage absurd amount doctor acoustic avoid letter advice cage "
+                  "above"},
+        {0xff, 5, "zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo wrong"},
+    };
+    for (const SeedVector &v : vectors) {
+        uint8_t entropy[vault::seed::kEntropySize];
+        std::memset(entropy, v.byte, sizeof entropy);
+        char text[vault::seed::kTextSize];
+        vault::seed::Encode(entropy, v.checksum, text);
+        TEST_ASSERT_EQUAL_STRING(v.words, text);
+        uint8_t back[vault::seed::kEntropySize];
+        uint8_t checksum = 0xFF;
+        TEST_ASSERT_TRUE(vault::seed::Parse(v.words, back, &checksum));
+        TEST_ASSERT_EQUAL_UINT8_ARRAY(entropy, back, sizeof entropy);
+        TEST_ASSERT_EQUAL_UINT8(v.checksum, checksum);
+    }
+    const uint8_t mixed[vault::seed::kEntropySize] = {0x9e, 0x88, 0x5d, 0x95, 0x2a, 0xd3,
+                                                      0x62, 0xca, 0xeb, 0x4e, 0xfe, 0x34,
+                                                      0xa8, 0xe9, 0x1b, 0xd2};
+    char text[vault::seed::kTextSize];
+    vault::seed::Encode(mixed, 1, text);
+    TEST_ASSERT_EQUAL_STRING(
+        "ozone drill grab fiber curtain grace pudding thank cruise elder eight picnic", text);
+}
+
+void test_seed_entry_is_forgiving_but_exact(void) {
+    uint8_t entropy[vault::seed::kEntropySize];
+    uint8_t checksum = 0;
+    // Any case, extra spaces, 4+ letter starts.
+    TEST_ASSERT_TRUE(vault::seed::Parse("  OZON drill\tGRAB fibe curt grace pudd thank cruise "
+                                        "elder eigh picnic\n",
+                                        entropy, &checksum));
+    TEST_ASSERT_EQUAL_UINT8(0x9e, entropy[0]);
+    TEST_ASSERT_EQUAL_UINT8(1, checksum);
+    TEST_ASSERT_EQUAL(0, vault::seed::Find("abandon", 7));
+    TEST_ASSERT_EQUAL(0, vault::seed::Find("aban", 4));
+    TEST_ASSERT_EQUAL(2047, vault::seed::Find("zoo", 3));
+    TEST_ASSERT_EQUAL(-1, vault::seed::Find("aba", 3));      // 3 letters: a whole word only
+    TEST_ASSERT_EQUAL(-1, vault::seed::Find("abandox", 7));  // the rest must match too
+    TEST_ASSERT_EQUAL(-1, vault::seed::Find("zoos", 4));
+    TEST_ASSERT_EQUAL(-1, vault::seed::Find("", 0));
+    // 11 and 13 words, an unknown word: refused.
+    TEST_ASSERT_FALSE(vault::seed::Parse("zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo wrong", entropy,
+                                         &checksum));
+    TEST_ASSERT_FALSE(vault::seed::Parse("zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo wrong",
+                                         entropy, &checksum));
+    TEST_ASSERT_FALSE(vault::seed::Parse("zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo bitcoin",
+                                         entropy, &checksum));
+    TEST_ASSERT_FALSE(vault::seed::Parse("", entropy, &checksum));
+}
+
+// --- vault.cpp with the seed phrase
+
+void test_vault_a_new_store_makes_a_seed_phrase(void) {
+    FreshVault(true);
+    TEST_ASSERT_EQUAL(Error::kOk, vault::Unlock(kStrongPin));
+    const vault::Info info = vault::GetInfo();
+    TEST_ASSERT_TRUE(info.seed_set);  // made with the first store (kept in memory since)
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(info.seed_id, info.file_seed_id, sizeof info.seed_id);
+    static const uint8_t kNone[8] = {};
+    TEST_ASSERT_FALSE(std::memcmp(info.store_id, kNone, sizeof kNone) == 0);
+    // The store id stays through writes and a PIN change.
+    uint8_t store_id[8];
+    std::memcpy(store_id, info.store_id, sizeof store_id);
+    TEST_ASSERT_EQUAL(Error::kOk, vault::Add("site", "u", "pw", "", nullptr));
+    TEST_ASSERT_EQUAL(Error::kOk, vault::ChangePin(kStrongPin, "583921"));
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(store_id, vault::GetInfo().store_id, sizeof store_id);
+    TEST_ASSERT_EQUAL(Error::kOk, vault::ChangePin("583921", kStrongPin));
+}
+
+void test_vault_another_seed_phrase_does_not_open_the_store_nor_counts(void) {
+    FreshVault(true);
+    char mine[vault::seed::kTextSize];
+    char other[vault::seed::kTextSize];
+    // No store yet: a random phrase is allowed while locked.
+    TEST_ASSERT_EQUAL(Error::kOk, vault::SetSeed(nullptr, nullptr, other));
+    TEST_ASSERT_EQUAL(Error::kOk, vault::Unlock(kStrongPin));  // makes the store with `other`
+    TEST_ASSERT_EQUAL(Error::kOk, vault::Add("site", "u", "pw", "", nullptr));
+    TEST_ASSERT_EQUAL(Error::kWrongPin, vault::CopySeed("111111", mine));
+    TEST_ASSERT_EQUAL(1, vault::GetInfo().pin_failures);
+    TEST_ASSERT_EQUAL(Error::kOk, vault::CopySeed(kStrongPin, mine));
+    TEST_ASSERT_EQUAL_STRING(other, mine);
+    // Open: a new phrase needs the PIN, then re-keys the store.
+    TEST_ASSERT_EQUAL(Error::kBadPin, vault::SetSeed(nullptr, nullptr, other));
+    TEST_ASSERT_EQUAL(Error::kOk, vault::SetSeed(kStrongPin, nullptr, other));
+    TEST_ASSERT_FALSE(std::strcmp(mine, other) == 0);
+    vault::Lock();
+    // Locked with a store: a random phrase is refused, a given one taken.
+    TEST_ASSERT_EQUAL(Error::kLocked, vault::SetSeed(nullptr, nullptr, nullptr));
+    TEST_ASSERT_EQUAL(Error::kBadSeed, vault::SetSeed(nullptr, "zoo zoo", nullptr));
+    TEST_ASSERT_EQUAL(Error::kOk, vault::SetSeed(nullptr, mine, nullptr));  // the old one
+    TEST_ASSERT_EQUAL(Error::kWrongSeed, vault::Unlock(kStrongPin));
+    TEST_ASSERT_EQUAL(0, vault::GetInfo().pin_failures);  // nothing counted
+    TEST_ASSERT_EQUAL(Error::kOk, vault::SetSeed(nullptr, other, nullptr));
+    TEST_ASSERT_EQUAL(Error::kOk, vault::Unlock(kStrongPin));
+    TEST_ASSERT_EQUAL_size_t(1, vault::GetInfo().count);
+}
+
+void test_vault_the_wipe_pin_erases_the_seed_phrase(void) {
+    FreshVault(true);
+    TEST_ASSERT_EQUAL(Error::kOk, vault::Unlock(kStrongPin));
+    char wipe[vault::kWipeTextSize];
+    TEST_ASSERT_EQUAL(Error::kOk, vault::MakeWipe("902614", wipe));
+    vault::SetPolicy({600, wipe, true});
+    vault::Lock();
+    TEST_ASSERT_EQUAL(Error::kWrongPin, vault::Unlock("902614"));
+    TEST_ASSERT_FALSE(vault::GetInfo().seed_set);
+    TEST_ASSERT_FALSE(std::filesystem::exists(kSeedPath));
+    vault::SetPolicy({600, "", true});
+    TEST_ASSERT_EQUAL(Error::kOk, vault::Unlock(kStrongPin));  // a new store, a new phrase
+    TEST_ASSERT_TRUE(vault::GetInfo().seed_set);
+    TEST_ASSERT_TRUE(std::filesystem::exists(kSeedPath));
+}
+
 }  // namespace
 
 void RegisterVaultTests(void) {
@@ -387,4 +516,9 @@ void RegisterVaultTests(void) {
     RUN_TEST(test_vault_change_pin_refuses_a_weak_pin);
     RUN_TEST(test_vault_reset_with_a_new_key_refuses_a_weak_pin);
     RUN_TEST(test_vault_a_kept_key_opens_the_store_without_a_pin);
+    RUN_TEST(test_seed_bip39_vectors);
+    RUN_TEST(test_seed_entry_is_forgiving_but_exact);
+    RUN_TEST(test_vault_a_new_store_makes_a_seed_phrase);
+    RUN_TEST(test_vault_another_seed_phrase_does_not_open_the_store_nor_counts);
+    RUN_TEST(test_vault_the_wipe_pin_erases_the_seed_phrase);
 }

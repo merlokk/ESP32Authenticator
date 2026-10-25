@@ -58,6 +58,9 @@ enum class Error : uint8_t {
     kPinInUse,   // the PIN and the wipe PIN must differ
     kFidoNotLoaded,  // a PIN change needs fido.bin loaded (or no fido.bin)
     kWeakPin,        // a new PIN fails the complexity policy (pin_policy.h)
+    kNoSeed,         // a store file, but no seed phrase on this device
+    kWrongSeed,      // the store file names another seed phrase
+    kBadSeed,        // not 12 BIP39 words, or a typo (the checksum)
 };
 
 inline constexpr size_t kPinLength = 6;

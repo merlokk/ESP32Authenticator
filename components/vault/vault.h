@@ -3,12 +3,17 @@
 // The password store: `<dir>/vault.bin`, AES-256-GCM (the store header is the
 // associated data, a random nonce per write).
 //
-// The key: PBKDF2-HMAC-SHA256(PIN, salt). Salt, count and the key's id are in
-// every store header, so another device with the same PIN (and these files,
-// e.g. from a sync server) derives the same key. fido.bin uses it too
-// (Hooks). A PIN change makes a new key (new salt) and rewrites both stores
-// from memory: each to .new, then a marker, then the renames (store_io.h);
-// at boot storefile::FinishCommit(kPinChangeMarker) completes or drops it.
+// The key: HKDF-SHA256(salt = seed, IKM = PBKDF2-HMAC-SHA256(PIN, salt),
+// info "ESAF store key"); the seed is the seed phrase's 16 bytes
+// (seed_phrase.h), kept in its own file on SPIFFS (never next to the stores),
+// the same on every device that shares the store files. Salt, count, the
+// key's id and the seed's id are in every store header, so another device
+// with the PIN and the phrase (and these files, e.g. from a sync server)
+// derives the same key; the files alone do not open whatever the PIN.
+// fido.bin uses the key too (Hooks). A PIN or seed change makes a new key
+// (new salt) and rewrites both stores from memory: each to .new (the seed
+// file too), then a marker, then the renames (store_io.h); at boot
+// storefile::FinishCommit(kPinChangeMarker) completes or drops it.
 //
 // Nothing is decrypted until Unlock(pin); then vault.bin is loaded whole into
 // PSRAM and rewritten whole on every change. Records: records.h.
@@ -22,6 +27,7 @@
 #include "esp_err.h"
 #include "pin_guard.h"
 #include "records.h"
+#include "seed_phrase.h"
 
 namespace vault {
 
@@ -33,6 +39,7 @@ struct Key {
     uint8_t salt[kSaltSize];
     uint32_t iterations;
     uint8_t id[8];  // SHA-256("ESAF key id" || key), first 8 bytes
+    uint8_t seed_id[seed::kIdSize];  // of the seed phrase in it
 };
 
 enum class State : uint8_t {
@@ -61,6 +68,10 @@ struct Info {
     uint32_t lock_left_s;     // PIN entry locked for this long, 0: free
     bool wipe_set;            // a wipe PIN is configured
     bool has_key;             // the key is in memory
+    bool seed_set;            // a seed phrase on this device
+    uint8_t seed_id[seed::kIdSize];       // of it
+    uint8_t file_seed_id[seed::kIdSize];  // the one vault.bin names, zero if unread
+    uint8_t store_id[8];                  // vault.bin's, zero if unread
 };
 
 // From config.json `pin`; set before Unlock and again on a change.
@@ -85,15 +96,19 @@ struct Hooks {
 };
 void SetHooks(const Hooks &hooks);
 
-// PSRAM for `capacity` records; the file is in `dir` (nullptr: kOff).
-esp_err_t Init(const char *dir, size_t capacity);
+// PSRAM for `capacity` records; the file is in `dir` (nullptr: kOff); the
+// seed phrase in `seed_path` (read now; none: the first new store makes one).
+esp_err_t Init(const char *dir, size_t capacity, const char *seed_path);
 
 // Derives the key from `pin` and the salt in vault.bin and opens the store
 // (a wrong key id: kWrongPin, stays locked). No vault.bin yet: a new store and
 // key (new salt). kLocked: refused (Info::why; the key may be in, see
 // Info::has_key).
+// No seed phrase, or another one than the file names: kNoSeed / kWrongSeed,
+// nothing counted.
 // The wipe PIN (checked first, in any state, also while locked out) erases
-// the store file, the key and the records, and calls on_wipe; it answers as a
+// the store file, the key, the records and the seed phrase, and calls
+// on_wipe; it answers as a
 // wrong PIN (kWrongPin / kPinLocked, counted, same time, nothing logged).
 // kMaxPinTries wrong PINs in a row: kPinLocked for lock_seconds.
 Error Unlock(const char *pin);
@@ -111,6 +126,17 @@ Error Open(const Key &key);
 // wrong PIN. kFidoNotLoaded: fido.bin exists but is not loaded (it could not
 // be re-keyed): nothing changed.
 Error ChangePin(const char *old_pin, const char *new_pin);
+
+// The seed phrase. Without the key in: `words` become this device's phrase
+// (e.g. the one of another device whose files this one gets); nullptr, a
+// random one, only while there is no store yet (else kLocked). With the store
+// open: `pin` (counted as ever) and a new key with `words` (nullptr: random)
+// for vault.bin and fido.bin, as ChangePin. kBadSeed: not 12 words or a typo.
+// , if given, gets the new phrase's words (wipe it after use).
+Error SetSeed(const char *pin, const char *words, char *out = nullptr);
+// The words of the seed phrase (to write down, or for another device); needs
+// the store open and the PIN (counted). Wipe `out` after use.
+Error CopySeed(const char *pin, char out[seed::kTextSize]);
 
 // The pin_guard.h text of a wipe PIN (random salt). Needs the open store:
 // kPinInUse if it is the PIN.

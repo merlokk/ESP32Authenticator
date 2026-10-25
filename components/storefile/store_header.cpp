@@ -47,6 +47,12 @@ void Encode(const Header &header, uint8_t out[kHeaderSize]) {
     for (size_t i = 0; i < kKeyIdSize; ++i) {
         out[56 + i] = header.key_id[i];
     }
+    for (size_t i = 0; i < kStoreIdSize; ++i) {
+        out[64 + i] = header.store_id[i];
+    }
+    for (size_t i = 0; i < kSeedIdSize; ++i) {
+        out[72 + i] = header.seed_id[i];
+    }
 }
 
 bool Decode(const uint8_t *data, size_t size, size_t file_size, Kind kind, Header *out) {
@@ -72,6 +78,12 @@ bool Decode(const uint8_t *data, size_t size, size_t file_size, Kind kind, Heade
     }
     for (size_t i = 0; i < kKeyIdSize; ++i) {
         h.key_id[i] = data[56 + i];
+    }
+    for (size_t i = 0; i < kStoreIdSize; ++i) {
+        h.store_id[i] = data[64 + i];
+    }
+    for (size_t i = 0; i < kSeedIdSize; ++i) {
+        h.seed_id[i] = data[72 + i];
     }
     const size_t tag = h.cipher == Cipher::kPlain ? 0 : kTagSize;
     // A truncated or padded file: refused, not guessed at.

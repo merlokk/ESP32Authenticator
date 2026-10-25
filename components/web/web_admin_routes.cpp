@@ -29,13 +29,23 @@ vault::Record g_record;
 AdminRequest g_request;
 // Escaped text for one record or credential.
 char g_text[3][2 * vault::kSiteMax + 8];
+// A new seed phrase's words (seed-new answers them, once).
+char g_words[vault::seed::kTextSize];
 
 struct Wiped {
     ~Wiped() {
         vault::Wipe(&g_record, sizeof g_record);
         vault::Wipe(&g_request, sizeof g_request);
+        vault::Wipe(g_words, sizeof g_words);
     }
 };
+
+// 8 hex digits of a seed id.
+void SeedIdText(const uint8_t id[vault::seed::kIdSize], char out[2 * vault::seed::kIdSize + 1]) {
+    for (size_t i = 0; i < vault::seed::kIdSize; ++i) {
+        std::snprintf(out + 2 * i, 3, "%02x", id[i]);
+    }
+}
 
 bool TimeKnown(time_t now) { return rtc::Believable(static_cast<int64_t>(now)); }
 
@@ -91,6 +101,8 @@ esp_err_t VaultFailed(httpd_req_t *request, vault::Error e) {
             break;
         case vault::Error::kDuplicate:
         case vault::Error::kFull:
+        case vault::Error::kNoSeed:
+        case vault::Error::kWrongSeed:
             status = "409 Conflict";
             break;
         default:
@@ -150,16 +162,29 @@ esp_err_t VaultGet(httpd_req_t *request) {
     size_t size = 0;
     char *json = Scratch(&size);
     Escape(info.why != nullptr ? info.why : "", g_text[0], sizeof g_text[0]);
+    // The seed phrase: its id here and the one vault.bin names ("" if none).
+    char seed_id[2 * vault::seed::kIdSize + 1] = "";
+    char file_seed_id[sizeof seed_id] = "";
+    static const uint8_t kNone[vault::seed::kIdSize] = {};
+    if (info.seed_set) {
+        SeedIdText(info.seed_id, seed_id);
+    }
+    if (std::memcmp(info.file_seed_id, kNone, sizeof kNone) != 0) {
+        SeedIdText(info.file_seed_id, file_seed_id);
+    }
     std::snprintf(
         json, size,
         "{\"state\":\"%s\",\"why\":\"%s\",\"writable\":%s,\"count\":%u,\"capacity\":%u"
         ",\"version\":%" PRIu32 ",\"modified\":%lld,\"pin_failures\":%u,\"pin_tries\":%u"
-        ",\"lock_left_s\":%" PRIu32 ",\"time_utc\":%lld,\"time_offset\":%d,\"records\":[",
+        ",\"lock_left_s\":%" PRIu32 ",\"time_utc\":%lld,\"time_offset\":%d"
+        ",\"seed_id\":\"%s\",\"file_seed_id\":\"%s\",\"has_file\":%s,\"records\":[",
         vault::StateName(info.state), g_text[0], WritingAllowed() ? "true" : "false",
         static_cast<unsigned>(info.count), static_cast<unsigned>(info.capacity), info.version,
         static_cast<long long>(info.modified_utc), static_cast<unsigned>(info.pin_failures),
         static_cast<unsigned>(vault::kMaxPinTries), info.lock_left_s,
-        time_known ? static_cast<long long>(now) : 0LL, time_known ? tz::OffsetSeconds(now) : 0);
+        time_known ? static_cast<long long>(now) : 0LL, time_known ? tz::OffsetSeconds(now) : 0,
+        seed_id, file_seed_id,
+        info.file_size != 0 || info.kept_version != 0 ? "true" : "false");
     StartJson(request);
     esp_err_t err = Chunk(request, json);
     for (size_t i = 0; err == ESP_OK && vault::Get(i, &g_record) == vault::Error::kOk; ++i) {
@@ -322,6 +347,10 @@ esp_err_t VaultPost(httpd_req_t *request) {
         case VaultVerb::kSort:
             e = vault::SortByName();
             break;
+        case VaultVerb::kSeedNew:
+            // The hardware RNG; with the store open the PIN, and a new key.
+            e = vault::SetSeed(g_request.has_pin ? g_request.pin : nullptr, nullptr, g_words);
+            break;
         case VaultVerb::kNone:
             break;
     }
@@ -338,6 +367,14 @@ esp_err_t VaultPost(httpd_req_t *request) {
     }
     size_t size = 0;
     char *json = Scratch(&size);
+    if (verb == VaultVerb::kSeedNew) {
+        // The words once, to write down (lower-case letters and spaces only).
+        std::snprintf(json, size, "{\"ok\":true,\"did\":\"%s\",\"seed\":\"%s\"}",
+                      VaultVerbName(verb), g_words);
+        const esp_err_t sent = SendJson(request, nullptr, json);
+        vault::Wipe(json, size);
+        return sent;
+    }
     std::snprintf(json, size, "{\"ok\":true,\"did\":\"%s\",\"id\":%" PRIu32 "}",
                   VaultVerbName(verb), id);
     return SendJson(request, nullptr, json);

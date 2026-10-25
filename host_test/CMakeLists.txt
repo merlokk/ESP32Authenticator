@@ -80,6 +80,8 @@ add_executable(host_test
     ../components/storefile/store_io.cpp
     ../components/vault/records.cpp
     ../components/vault/pin_guard.cpp
+    ../components/vault/seed_phrase.cpp
+    ../components/vault/seed_words.cpp
     ../components/vault/vault.cpp
     ../components/ota/image_check.cpp
 

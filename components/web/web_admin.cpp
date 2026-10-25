@@ -119,7 +119,7 @@ VaultVerb VaultVerbFromUri(const char *uri) {
         {"add", VaultVerb::kAdd},       {"set", VaultVerb::kSet},
         {"delete", VaultVerb::kDelete}, {"unlock", VaultVerb::kUnlock},
         {"lock", VaultVerb::kLock},     {"move", VaultVerb::kMove},
-        {"sort", VaultVerb::kSort},
+        {"sort", VaultVerb::kSort},     {"seed-new", VaultVerb::kSeedNew},
     };
     for (const Verb &v : kVerbs) {
         if (std::strlen(v.word) == length && std::strncmp(word, v.word, length) == 0) {
@@ -138,6 +138,7 @@ const char *VaultVerbName(VaultVerb verb) {
         case VaultVerb::kLock: return "lock";
         case VaultVerb::kMove: return "move";
         case VaultVerb::kSort: return "sort";
+        case VaultVerb::kSeedNew: return "seed-new";
         case VaultVerb::kNone: break;
     }
     return "none";
