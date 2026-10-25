@@ -37,6 +37,13 @@ esp_err_t SetMode(Mode mode);
 // whatever keeps files on the card in memory lets go of them (the vault).
 void SetReaderHook(void (*hook)(bool on));
 
+// The reader over: the mode before it back (not the reader: nothing). It
+// also ends by itself when the host ejects the drive or is gone for 3 s.
+esp_err_t EndReader();
+
+// The host ejected the drive or went (TinyUSB's task): the reader ends.
+void NoteEject();
+
 // The port in use.
 Mode GetMode();
 

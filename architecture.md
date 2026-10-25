@@ -422,10 +422,15 @@ product IDs, line endings.
   passed, 21 skipped (destructive, fill, reset, BLE).
 - `power`: a USB host = Serial/JTAG SOF or TinyUSB configured, not suspended.
 - Card reader: the vault locks first (the PC may change the files; the PIN
-  loads them again), a window covers the screens (Finish: the saved mode, in
-  a task of its own). `sd_card::Lend`: FAT unmounted, the card initialised
-  alone at the mount's clock; esp_tinyusb's MSC on it (`auto_mount_off`,
-  `do_not_format`: never mounted here, never formatted; 8 KB a transfer:
+  loads them again), a window covers the screens (Finish, in a task of its
+  own). It ends (the mode before it back) at Finish, `usb reader off`, an
+  eject on the host, or the host gone 3 s (unplugged, asleep: TinyUSB
+  unmounted or suspended; a watch task, 0.5 s). The eject: esp_tinyusb's
+  auto-mount is on only to tell it (SCSI START STOP UNIT or unmount: its
+  mount to the app at `/usbdrive` starts, never formatted, undone with the
+  drive); TinyUSB's own weak `tud_msc_start_stop_cb` sits in the object that
+  calls it, so a `--wrap` never sees the call. `sd_card::Lend`: FAT unmounted, the card initialised
+  alone at the mount's clock; esp_tinyusb's MSC on it (`do_not_format`; 8 KB a transfer:
   ~0.8 MB/s read, ~0.9 MB/s write on the X4 Pro). Back: the drive deleted
   (queued writes first), `sd_card::TakeBack` mounts FAT as at boot (seconds).
   Inquiry strings stay esp_tinyusb's ("TinyUSB TEST MSC Storage").

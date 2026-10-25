@@ -3877,8 +3877,8 @@ void OpenReader() {
         {&lv_font_montserrat_32, 60, "SD card reader"},
         {&lv_font_montserrat_24, 140, "The microSD card is a drive on the computer."},
         {&lv_font_montserrat_20, 260,
-         "Eject it there, then Finish: the card comes back here. The vault is locked "
-         "meanwhile: the PIN after."},
+         "Eject it there (or unplug the cable) and the card comes back here; Finish: at "
+         "once. The vault is locked meanwhile: the PIN after."},
     };
     for (const auto &line : lines) {
         lv_obj_t *l = Label(reader_box, line.font);

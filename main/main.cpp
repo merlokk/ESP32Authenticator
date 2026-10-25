@@ -1268,8 +1268,8 @@ extern "C" void app_main() {
         if (on) {
             vault::Lock();
         }
-        // Finish on the screen: the saved mode back.
-        ui::ShowCardReader(on, [] { usb::SetMode(static_cast<usb::Mode>(config::Get().usb.mode)); });
+        // Finish on the screen: the mode before it back.
+        ui::ShowCardReader(on, [] { usb::EndReader(); });
     });
     tz::ApplyZone(config::Get().time.zone);
     // No name in config.json: the board's, put into the config so a save keeps it.

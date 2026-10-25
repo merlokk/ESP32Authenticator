@@ -390,16 +390,16 @@ int CmdUsb(int argc, char **argv) {
             printf("usage: usb reader [on|off]\n");
             return 1;
         }
-        // Off: back to the saved mode. On: not saved, a restart ends it too.
-        const usb::Mode next =
-            off ? static_cast<usb::Mode>(config::Get().usb.mode) : usb::Mode::kReader;
-        if (!off && usb::GetMode() != next) {
-            printf("the card goes to the PC as a drive, the vault locks; 'usb reader off' "
-                   "ends it\n");
+        // Off: the mode before it back. On: not saved; an eject on the PC, the PC
+        // gone or a restart ends it too.
+        if (!off && usb::GetMode() != usb::Mode::kReader) {
+            printf("the card goes to the PC as a drive, the vault locks; an eject there or "
+                   "'usb reader off' ends it\n");
         }
-        const esp_err_t err = usb::SetMode(next);
+        const esp_err_t err = off ? usb::EndReader() : usb::SetMode(usb::Mode::kReader);
         if (err != ESP_OK) {
-            printf("%s\n", err == ESP_ERR_NOT_FOUND ? "no microSD card mounted" : esp_err_to_name(err));
+            printf("%s\n",
+                   err == ESP_ERR_NOT_FOUND ? "no microSD card mounted" : esp_err_to_name(err));
             return 1;
         }
         printf("usb %s\n", usb::Name(usb::GetMode()));

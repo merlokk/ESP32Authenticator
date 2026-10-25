@@ -150,24 +150,69 @@ void (*reader_hook)(bool on) = nullptr;
 tinyusb_msc_storage_handle_t drive = nullptr;
 // A drive deleted with writes still queued is refused: retried this long.
 constexpr int kDriveDeleteTries = 100;  // 10 ms each
+constexpr const char *kDriveAppPath = "/usbdrive";  // esp_tinyusb's, nobody else's
 
-void OnDriveEvent(tinyusb_msc_storage_handle_t, tinyusb_msc_event_t *, void *) {}
+// esp_tinyusb hands the drive back to the app when the host ejects it (SCSI
+// START STOP UNIT) or goes (unmounted): a mount from USB's side starting, or
+// failing, is that. Its mount (at kDriveAppPath, never formatted) is undone
+// when the drive is deleted.
+void OnDriveEvent(tinyusb_msc_storage_handle_t, tinyusb_msc_event_t *event, void *) {
+    const bool to_app = (event->id == TINYUSB_MSC_EVENT_MOUNT_START &&
+                         event->mount_point == TINYUSB_MSC_STORAGE_MOUNT_USB) ||
+                        event->id == TINYUSB_MSC_EVENT_MOUNT_FAILED ||
+                        event->id == TINYUSB_MSC_EVENT_FORMAT_REQUIRED;
+    if (to_app) {
+        NoteEject();
+    }
+}
+
+// The reader ends by itself: the host ejected the drive, or the host has been
+// gone (unplugged, asleep: no SOF, TinyUSB suspended) this long.
+constexpr int kHostGoneMs = 3000;
+constexpr int kWatchMs = 500;
+Mode reader_back = Mode::kJtag;  // the mode before the reader
+std::atomic<bool> ejected{false};
+TaskHandle_t watch = nullptr;
+
+void WatchReader(void *) {
+    int gone_ms = 0;
+    for (;;) {
+        ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(kWatchMs));
+        if (mode != Mode::kReader || switching || port != Port::kCdc) {
+            gone_ms = 0;
+            continue;
+        }
+        gone_ms = tud_mounted() && !tud_suspended() ? 0 : gone_ms + kWatchMs;
+        if (ejected || gone_ms >= kHostGoneMs) {
+            ESP_LOGI(TAG, "reader: %s", ejected ? "ejected" : "no host");
+            gone_ms = 0;
+            EndReader();
+        }
+    }
+}
 
 esp_err_t StartDrive(Mode m) {
+    ejected = false;
+    if (watch == nullptr) {
+        xTaskCreate(WatchReader, "usb_reader", 4096, nullptr, 3, &watch);
+    }
     sdmmc_card_t *card = nullptr;
     esp_err_t err = Note(m, "the card", sd_card::Lend(&card));
     if (err != ESP_OK) {
         return err;
     }
-    // Never mounted for the app here, never formatted: the host has it all.
+    // The host has it all; esp_tinyusb's own mount, after an eject, only tells
+    // us (OnDriveEvent). Never formatted.
     tinyusb_msc_driver_config_t driver = {};
-    driver.user_flags.auto_mount_off = 1;
+    driver.user_flags.auto_mount_off = 0;
     driver.callback = OnDriveEvent;
     err = Note(m, "MSC", tinyusb_msc_install_driver(&driver));
     if (err == ESP_OK) {
         tinyusb_msc_storage_config_t storage = {};
         storage.medium.card = card;
         storage.fat_fs.do_not_format = true;
+        storage.fat_fs.base_path = const_cast<char *>(kDriveAppPath);
+        storage.fat_fs.config.max_files = 1;
         storage.mount_point = TINYUSB_MSC_STORAGE_MOUNT_USB;
         err = Note(m, "the drive", tinyusb_msc_new_storage_sdmmc(&storage, &drive));
         if (err != ESP_OK) {
@@ -592,6 +637,9 @@ esp_err_t SetMode(Mode next) {
         err = ESP_ERR_NOT_FOUND;  // no card to lend: the port stays as it is
     } else if (next != mode) {
         const Mode was = mode;
+        if (HasCard(next)) {
+            reader_back = was;
+        }
         if (reader_hook != nullptr && HasCard(next)) {
             reader_hook(true);  // before the card goes
         }
@@ -619,6 +667,15 @@ esp_err_t SetMode(Mode next) {
 Mode GetMode() { return mode; }
 
 void SetReaderHook(void (*hook)(bool on)) { reader_hook = hook; }
+
+esp_err_t EndReader() { return HasCard(mode) ? SetMode(reader_back) : ESP_OK; }
+
+void NoteEject() {
+    ejected = true;
+    if (watch != nullptr) {
+        xTaskNotifyGive(watch);
+    }
+}
 
 bool HostConnected() {
     switch (port) {
@@ -669,6 +726,9 @@ void PrintInfo() {
     if (HasCard(mode)) {
         printf("card       %s\n",
                sd_card::Lent() ? "a USB drive (FAT unmounted here)" : "not lent");
+        printf("ends       ejected on the host, the host gone %d s, or 'usb reader off' (back "
+               "to %s)\n",
+               kHostGoneMs / 1000, Name(reader_back));
     }
     if (failure.err != ESP_OK) {
         printf("failed     %s, %s: %s (%lld s ago)\n", Name(failure.to), failure.step,
