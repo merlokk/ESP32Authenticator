@@ -1136,7 +1136,19 @@
       text(by("upload-sub"), refusal ||
         (file ? file.name + ", " + bytes(file.size) + ": tap, then confirm" : "choose a file first"));
       if (busy) lamp("warn", "writing");
-      else if (!restarting || d.trial) lamp(refusal ? "warn" : "ok", d.trial ? "on trial" : refusal ? "not now" : "ready");
+      else if (!restarting || d.trial) lamp(refusal ? "warn" : "ok", d.trial ? "on trial" : refusal ? shortWhy(refusal) : "ready");
+      var why = by("why");
+      why.hidden = !refusal;
+      why.textContent = refusal ? "No update now: " + refusal + "." : "";
+    }
+
+    // The lamp's word for the server's refusal (the notice has it whole).
+    function shortWhy(refusal) {
+      if (refusal.indexOf("locked") === 0) return "locked";
+      if (refusal.indexOf("read-only") === 0) return "read-only";
+      if (refusal.indexOf("on trial") >= 0) return "on trial";
+      if (refusal.indexOf("already running") >= 0) return "busy";
+      return "not now";
     }
 
     function load(onFail) {
