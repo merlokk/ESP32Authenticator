@@ -441,7 +441,7 @@ void OnPasskeyAction(const ble_gap_event *event) {
     if (io.action == BLE_SM_IOACT_DISP) {
         io.passkey = esp_random() % 1000000;
         pairing_in_progress = true;
-        // TODO: show the passkey on the e-ink screen.
+        // The screen's pairing page shows it (PostPairing), `ble pair` prints it.
         ESP_LOGI(TAG, "pairing passkey: %06" PRIu32, io.passkey);
         PostPairing(PairingEvent::kPasskey, io.passkey, nullptr, nullptr);
     } else {

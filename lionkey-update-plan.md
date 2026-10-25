@@ -57,11 +57,12 @@ Our `devices/buttons` is a raw level read. Port from
   config subcommand 4, is a no-op in step 3). Hold Left 5 s; LED yellow fast
   blink while waiting, solid while held; released early = start over; 30 s
   timeout / CANCEL as for presence.
-- `transportsForReset` (0x1A) not sent: absent = every transport (BLE only).
-- Kept the spec's "within 10 s of power-up" rule (no display); it counts from
-  the core start (boot, or the PIN unlock with an encrypted store). Over BLE
-  the host rarely makes it; `fido2 reset` on the console stays the practical
-  way. Revisit with the e-ink UI (a display lifts the rule).
+- `transportsForReset` (0x1A) not sent: absent = every transport (BLE, USB).
+- The spec's "within 10 s of power-up" rule (no display) is kept on the dev
+  board; it counts from the core start (boot, or the PIN unlock with an
+  encrypted store). Over BLE the host rarely makes it; `fido2 reset` on the
+  console stays the practical way there. The X4 Pro has none
+  (`fido_reset_window_s` 0): its screen shows the reset request.
 - Not checked on the board: a reset would wipe the real credentials; getInfo
   over BLE needs `tests/fido2` from an administrator terminal.
 - Reset still wipes only the FIDO2 store (not the vault); the vault keeps its
@@ -98,7 +99,7 @@ Our `devices/buttons` is a raw level read. Port from
   `authenticatorConfigCommands` (0x1F) = [2, 3, 4].
 - Reset window: `ctap_state_t.reset_window_ms` (0 = 10 s default,
   `CTAP_RESET_WINDOW_NONE`); ours from the board class `fido_reset_window_s`
-  (10 on both boards, 0 = any time) via `fido_ctap_set_reset_window()`.
+  (dev board 10, X4 Pro 0 = any time) via `fido_ctap_set_reset_window()`.
 - Fixed in passing: `ctap_parse_config()` checks a missing request before
   entering the map (credentialManagement's parser dereferences it first).
 - Tests: `ctap_config_test.cpp` (27), forcePINChange in

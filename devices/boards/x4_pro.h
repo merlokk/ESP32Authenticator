@@ -20,7 +20,7 @@ public:
         has_sd_card = true;
         has_frontlight = true;
         fido_max_credentials = 125;  // SD card; RAM log 127 KB of PSRAM, fido.bin up to ~127 KB
-        fido_reset_window_s = 10;   // 0 once the e-ink UI confirms a reset
+        fido_reset_window_s = 0;    // any time: the screen asks, Left held 5 s
         max_records = 500;          // SD card
 
         buttons[static_cast<size_t>(ButtonId::kLeft)] = {0, true};  // also the ROM strap

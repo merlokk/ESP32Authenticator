@@ -161,9 +161,10 @@ python -m pytest [-k name] [--transport ble] [--device YubiKey|<address>] [--con
   (`--console`) on a PIN-locked store also `config test pin <PIN>` (and `off`).
 - `--reset` (asks to type RESET): authenticatorReset tests, run last. Make
   credentials, power cycle, reset at once with a touch (within 10 s of
-  power-up: YubiKey, our firmware), check PIN and credentials are gone; then
-  a reset 12 s after the first one must be refused (cancelled if the key asks
-  for a touch instead). LionKey restarts its 10 s window after a reset.
+  power-up: YubiKey, our dev board), check PIN and credentials are gone; then
+  a reset 12 s after the first one must be refused (skipped if the key asks
+  for a touch instead, as the X4 Pro does: no window). LionKey restarts its
+  10 s window after a reset.
 - Elevated from a normal shell (the elevated window cannot run a script
   from Claude's temp folder): `Start-Process pwsh -Verb RunAs -ArgumentList
   '-NoProfile','-Command','& <script in the repo>'`.

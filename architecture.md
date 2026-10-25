@@ -56,7 +56,9 @@ Reference ESP-IDF + LVGL project: `../../ai-remote/approver-esp32` ([GitHub](htt
   invalid value rejects the whole file.
 - Save is atomic: `config.json.new`, remove, rename; boot finishes an
   interrupted write.
-- Plain text, Wi-Fi passwords included, until the encrypted storage exists.
+- Plain text, Wi-Fi passwords included: not in the encrypted stores
+  (readable before the PIN); encrypting it is open
+  ([storage-encryption.md](storage-encryption.md#plan), step 4).
 - `pin`: `lockMinutes` (1..1440, default 10) after 10 wrong PINs; `wipe`:
   the wipe PIN as `<salt hex>:<SHA-256(salt || PIN) hex>` (set by
   `pin wipe set`, masked by `config show`), never the PIN itself.
@@ -620,9 +622,10 @@ our fork [merlokk/lionkey](https://github.com/merlokk/lionkey), branch
 - User presence: a fresh press of Left (GPIO0, BOOT on the dev board) or
   Home (debounced by the keypad task) within 30 s; a fresh Right press
   refuses (OPERATION_DENIED); KEEPALIVE every 300 ms; CANCEL aborts the wait.
-- Reset (authenticatorReset): only within 10 s after the core starts (boot or
-  PIN unlock; lionkey; the window restarts after a successful reset), then a
-  5 s hold of Left or Home (Right refuses; CTAP 2.3 longTouchForReset, getInfo 0x18 = true; a hold
+- Reset (authenticatorReset): the dev board (no display) only within 10 s
+  after the core starts (boot or PIN unlock; lionkey; the window restarts
+  after a successful reset), the X4 Pro any time (the screen says a reset is
+  asked); then a 5 s hold of Left or Home (Right refuses; CTAP 2.3 longTouchForReset, getInfo 0x18 = true; a hold
   released early is not a refusal, the next press starts over; 30 s, CANCEL as
   above). The window is the board's `fido_reset_window_s` (0 = any time).
 - U2F (CTAP1) over BLE and USB HID (CTAPHID_MSG): register / authenticate
@@ -648,7 +651,7 @@ our fork [merlokk/lionkey](https://github.com/merlokk/lionkey), branch
 - Console (`fido2 info|list|delete|reset`): `fido_ctap_info/list/delete/reset`.
   A mutex serialises them with CTAP requests (a request holds it for its whole
   run, button wait included; the console waits 1 s, then "busy"). The console
-  reset is authenticatorReset without the 10 s / button rule. A delete only
+  reset is authenticatorReset without the window / button rule. A delete only
   flags the item: the file shrinks at the next boot (compaction).
 - An SD store for hundreds of keys: [storage-encryption.md](storage-encryption.md).
 - Tests: `tests/fido2` over BLE and USB HID (results:

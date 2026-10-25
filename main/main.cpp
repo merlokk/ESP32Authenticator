@@ -1259,8 +1259,8 @@ extern "C" void app_main() {
     ota::Boot();  // a trial boot after an OTA update is confirmed by BootDone's timer
     InitNvs();
     spiffs_fs::Init();  // not fatal: the console reports an unmounted fs
-    // config.json from SPIFFS; built-in defaults if missing/invalid or unmounted.
-    // TODO: look on the microSD card first.
+    // config.json from SPIFFS, never the card; built-in defaults if
+    // missing/invalid or unmounted.
     config::Init(spiffs_fs::kBasePath);
     // The USB port as config.json has it; stdin / stdout follow it from here.
     static_assert(static_cast<int>(usb::Mode::kSerialFido) ==

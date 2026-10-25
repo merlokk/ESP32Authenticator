@@ -160,7 +160,7 @@ Counters live in NVS: PIN failures and lock deadline, the store's rollback
 counter, the FIDO2 signature counter. NVS appends 32-byte entries and erases a
 4 KB page only when it recycles it; the partition is 5 pages (630 entries, ~380
 free today), so a page is erased about once per few hundred writes. The flash
-is NOR (dev board Macronix, X4 Pro Puya; 100k erase cycles typical): tens of millions of writes.
+is NOR (X4 Pro: Puya, JEDEC 0x852018; 100k erase cycles typical): tens of millions of writes.
 Rules that keep it so:
 
 - Write a value only when it changes, never per tick or per check.
