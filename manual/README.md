@@ -17,16 +17,24 @@ on the right).
 <img src="img/pin.png" width="240" align="right">
 
 The passwords and the FIDO2 keys are stored encrypted. The **6-digit PIN**
-is the key to them: nothing can be read or used until it is typed.
+is the key to them (with the device's seed phrase, below): nothing can be
+read or used until it is typed.
 
-- After a start, a reset or a power-off locked with Power x3, the device
-  shows the PIN pad. Type the 6 digits: the PIN is checked when the last
+- After a start, a reset or a power-off, the device shows the PIN pad
+  (after a power-off by the idle timer or Power held, not within *PIN
+  after sleep*, below). Type the 6 digits: the PIN is checked when the last
   digit is in. **✕** clears the digits, **⌫** removes the last one.
 - First start with an empty card: choose a PIN and type it twice.
 - 10 wrong PINs in a row lock the pad for a while (Settings > Security >
   *10 wrong PINs: lock*). A restart does not reset the count.
 - After a power-off by the idle timer or Power held, no PIN is needed within
-  *PIN after sleep* (Settings > Devices, 8 hours by default).
+  *PIN after sleep* (Settings > Devices; by default *Always*: the PIN after
+  every power-off). Power x3 always asks for it.
+- **Seed phrase**: 12 words made by the device with its first store and
+  kept in its own flash, never on the card. The key needs the PIN and these
+  words, so the files on the card alone never open. A new phrase: the web
+  site's Passwords page (the words are shown once: write them down); the
+  current one: the USB console's `seed show <PIN>`.
 - Settings > Security: *Change the PIN*, *PIN complexity* (no repeats,
   runs or common PINs), *Wipe PIN* (a second PIN that, typed on this pad,
   **erases** every password and FIDO2 key), *Lock now*.
@@ -197,8 +205,9 @@ sign in, U2F), the site and the account(s).
 
 - **Left** or **Home**: allow. **Right**: reject.
 - Nothing pressed: the request times out on the computer.
-- FIDO2 works while the screen is locked by the idle timer, but not after a
-  restart until the PIN is typed.
+- FIDO2 works only while the device is on and unlocked: not while it is
+  off (the idle timer turns it off), and not after a restart until the PIN
+  is typed.
 
 <br clear="right">
 
@@ -215,10 +224,10 @@ sign in, U2F), the site and the account(s).
   off after* (and their values on USB power); *PIN after sleep*;
   *Wallpaper* (grey or black & white); *Power in sleep* (*off* saves the
   battery but forgets the PIN); *USB port*: *Serial/JTAG (debug)*, *Serial
-  port*, or *Serial port + FIDO2* (the key over the USB cable too), at once;
-  *SD card reader*: the card is a drive on the computer until you eject it
-  there (or unplug the cable, or *Finish* on the screen); the vault locks,
-  the PIN after;
+  port*, or *Serial port + FIDO2* (the key over the USB cable too), at once
+  and kept; or *SD card reader* for a while: the card is a drive on the
+  computer until you eject it there (or unplug the cable, or *Finish* on
+  the screen), then the port is as before; the vault locks, the PIN after;
   *Touchscreen* (calibration: tap five crosses); *Power off*.
 - **Frontlight**: Settings, at the top (switch, Level, Warmth). It goes off
   after *Light off after* and comes on again at a touch or a button.
@@ -232,13 +241,16 @@ sign in, U2F), the site and the account(s).
 
 | Path | What |
 |---|---|
-| `.authenticator/vault.bin` | the passwords (encrypted with the PIN) |
-| `.authenticator/fido.bin` | the FIDO2 / U2F keys (encrypted with the PIN) |
+| `.authenticator/vault.bin` | the passwords (encrypted: the PIN and the seed phrase) |
+| `.authenticator/fido.bin` | the FIDO2 / U2F keys (encrypted the same way) |
 | `wallpapers/` | PNG pictures for the power-off screen |
+| `firmware.bin` | a firmware update, when you put one there (see above) |
 | `Books/`, `Fonts/`, `XTData/`, `XTCache/` | the stock reader firmware's; not used |
 
 - Without a card there are no passwords and no FIDO2 keys.
-- Copy `.authenticator` to keep a backup; it is useless without the PIN.
+- Copy `.authenticator` to keep a backup; it is useless without the PIN
+  and the seed phrase. The phrase is not on the card: keep the words written
+  down, or the backup cannot be opened on a new or wiped device.
   Do not edit or delete these files while the device is on.
 - The device's settings (`config.json`) are in its own flash, not on the
   card.

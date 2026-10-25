@@ -7,18 +7,18 @@ Target and status. Screen design and the open questions: [x4-design.md](x4-desig
 | Function | Status |
 |---|---|
 | FIDO2 key (CTAP 2.3, U2F) over BLE | done |
-| FIDO2 over USB | done (CTAPHID, `usb.mode` serial+fido) |
-| BLE keyboard: types login / password / TOTP | keyboard done; typing records not yet |
-| TOTP codes | done (`crypto::Totp`, console `totp`) |
-| PIN lock (6 digits, lockout after 10 tries, wipe PIN); the PIN also derives the storage key | PIN key for `vault.bin`, lockout, wipe PIN, console `pin` done; screen not yet |
-| Password records (site, user, password, TOTP): add / edit / delete | done on the console (`pass`); screen and typing not yet |
+| FIDO2 / U2F over USB | done (CTAPHID, `usb.mode` serial+fido) |
+| BLE keyboard: types login / password / TOTP | done (a tap on the password list) |
+| TOTP codes | done (`crypto::Totp`, console `totp`, the list, the site) |
+| PIN lock (6 digits, lockout after 10 tries, wipe PIN); the PIN and the seed phrase derive the storage key | done (PIN pad, console `pin`, the site) |
+| Password records (site, user, password, TOTP): add / edit / delete | done on the console (`pass`) and the site; the screen shows and types them |
 | Store file header (version, modification time) and rollback check (highest version in NVS) | done (`storefile`) |
 | Encrypted stores: `vault.bin` and `fido.bin`, AES-256-GCM with a key from the PIN and the seed phrase (the same on every device with both and the files), loaded whole into PSRAM | done |
 | Sync over the internet, the later modification time wins | not yet; service not chosen |
 | X4 Pro screen: status bar, credential list, pages, settings | status bar, the password list (pages, typing, TOTP), swipes, PIN pad, the U2F / FIDO2 list, Settings done |
-| Settings: frontlight, Wi-Fi | on the screen: frontlight, Wi-Fi, Bluetooth, touch calibration, display & power, date & time, security, about; also the console and the site |
+| Settings: frontlight, Wi-Fi | on the screen: frontlight, Wi-Fi (and the web site), Bluetooth, Devices (power, display, USB, touch calibration), security, date & time, about; also the console and the site |
 | Time: SNTP, zones, clock | done |
-| Battery: voltage, level, charging | done (CW2017 + charger STAT, console `battery`, BLE Battery Level); screen not yet |
+| Battery: voltage, level, charging | done (CW2017 + charger STAT, console `battery`, BLE Battery Level, the status bar) |
 | Wi-Fi, configuration site, console | done |
 | Power-off: a wallpaper on the screen, deep sleep, Power wakes | done (Power held, x3 locked, idle or `off`; PNGs in `/sdcard/wallpapers`; the PIN kept through a sleep: `power.keepPinHours`) |
 
@@ -27,8 +27,8 @@ Target and status. Screen design and the open questions: [x4-design.md](x4-desig
 | Layer | Choice |
 |---|---|
 | Framework | ESP-IDF (C/C++) |
-| UI | LVGL 9 (`components/ui`: 480x800 portrait on the e-ink panel, status bar, tabs, PIN pad; GT911 touch as the pointer; today: USB console + web site) |
-| Host link | BLE HID keyboard (types credentials), BLE FIDO2 (CTAP2) |
+| UI | LVGL 9 (`components/ui`: 480x800 portrait on the e-ink panel, status bar, tabs, PIN pad; GT911 touch as the pointer); also the USB console and the web site |
+| Host link | BLE HID keyboard (types credentials), FIDO2 / U2F over BLE and USB HID |
 | Network | Wi-Fi (client / AP / AP+client) and a configuration web site |
 | Storage | `config.json` on SPIFFS; store files (`vault.bin`, `fido.bin`, encrypted) in `/sdcard/.authenticator` when the board has a card slot (no card: no stores, never a second set on SPIFFS), else SPIFFS |
 
@@ -39,10 +39,10 @@ Reference ESP-IDF + LVGL project: `../../ai-remote/approver-esp32` ([GitHub](htt
 | Path | Contents |
 |---|---|
 | `main/` | `app_main`: OTA trial boot, NVS, SPIFFS, config, console, Wi-Fi manager + web server, BLE autostart |
-| `components/` | app components (`cli`: USB command line; `config`: config.json; `wifimgr`: Wi-Fi policy + manager; `web`: configuration site, see Wi-Fi and web; `fido_ctap`: CTAP 2.3 core, see FIDO2; `timesync`, `timezone`: see Time; `totp`: Base32 / Base64 secrets and the previous/current/next windows, codes from `crypto::Totp`; `ui`: LVGL and the power-off wallpaper, see UI; `power`: power-off, see UI; `storefile`: store file header, load/save with the rollback check; `vault`: passwords, see Passwords; `ota`: firmware updates, see Flash layout) |
+| `components/` | app components (`cli`: USB command line; `config`: config.json; `wifimgr`: Wi-Fi policy + manager; `web`: configuration site, see Wi-Fi and web; `fido_ctap`: CTAP 2.3 core, see FIDO2; `timesync`, `timezone`: see Time; `totp`: Base32 / Base64 secrets and the previous/current/next windows, codes from `crypto::Totp`; `ui`: LVGL and the power-off wallpaper, see UI; `power`: power-off, see UI; `pin_policy`: PIN complexity rules (pure C); `storefile`: store file header, load/save with the rollback check; `vault`: passwords, see Passwords; `ota`: firmware updates, see Flash layout) |
 | `lib/` | third-party git submodules (`lionkey`: our fork, see FIDO2) |
 | `host_test/` | host tests (Unity, MSVC), no board: see Tests |
-| `utils/` | host-side Python tools over the USB console (`device.py`: console session; `spiffs.py`: ls/info/rm/get/put; `wallpaper.py`: wallpapers on the card; `ble.py`: ble commands, `kb` text quoting) |
+| `utils/` | host-side Python tools over the USB console (`device.py`: console session; `console.py`: any command, the raw log; `spiffs.py`: ls/info/rm/get/put; `wallpaper.py`: wallpapers on the card; `firmware.py`: `/sdcard/firmware.bin`, `ota sd`; `ble.py`: ble commands, `kb` text quoting; `screenshot.py`: the screen as a PNG), see [utils/README.md](utils/README.md) |
 | `devices/` | hardware drivers, one component per device (`hardware`: SoC info, eFuse, USB host connected; `usb`: the USB port, see USB; `spiffs_fs`: SPIFFS on `spiffs` at `/spiffs`, never formatted, it holds stock data on the X4 Pro; `ble`, `ble_kb`, `ble_fido`: see BLE; `wifi`: the radio (`wifi::Radio`), no decisions, stores nothing; `buttons`: GPIO buttons, polled, debounced 25 ms (`button_logic.h`, pure: debounce, short/long press from approver-esp32; single/double/... press: `MultiPress`, 400 ms gap; `key_events.h`, pure: one `KeyTracker` per button: pressed / released edges, long at 600 ms (fired while held), click xN 400 ms after the last release, a press is long or a click, never both; a finger down at boot is no press), pins from the board; `keypad`: the one owner of the board's buttons, a task polling every 10 ms, events in a queue (16, full: dropped and counted) for the UI, listeners called from the task (bindings), `Pressed()` / `HeldMs()` for the rest (FIDO2 presence), console `keys`; `crypto`: hardware RNG, SHA-256, AES-256-CBC, AES-256-GCM, HMAC-SHA1 via PSA, HOTP/TOTP (`otp.h`, pure: counter, truncation); `clock`: `rtc::Clock`, see Time; `led`: one WS2812 from UART1, see Boards; `i2c_bus`: the board's I2C bus, leased (from approver-esp32), see Boards; `battery`: CW2017 fuel gauge and charger STAT, see Boards; `sd_card`: microSD over SDMMC, FAT at `/sdcard`, see Boards; `frontlight`: cool and warm LED strings on LEDC, see Boards; `touch`: the GT911 on the leased I2C bus (`gt911_logic.h`, pure), polled by the keypad task, see Boards; `epd`: the e-ink panel (SSD1677 / UC8179 / UC8279, detected), see Boards; `boards`: board classes, see Boards). `devices/config.h`: the board the firmware is built for |
 
 ## Config
@@ -63,7 +63,8 @@ Reference ESP-IDF + LVGL project: `../../ai-remote/approver-esp32` ([GitHub](htt
   `complexity` (default true): a new PIN, vault and FIDO2, must pass
   `pin_policy.h` (no repeats, runs or common PINs).
 - `power`: `idleMinutes` (0..1440, default 10, 0: never) off with nothing
-  done; `keepPinHours` (0..168, default 0: the PIN after every wake) how
+  done; `idleMinutesUsb` (0..1440, default 0: never) the same on USB power
+  (a host, or the charger charging); `keepPinHours` (0..168, default 0: the PIN after every wake) how
   long after a sleep a wake needs no PIN; `holdRail` (default true): GPIO1
   held high through the sleep (false: on the battery the power drops, no
   drain, the kept PIN lost).
@@ -73,6 +74,8 @@ Reference ESP-IDF + LVGL project: `../../ai-remote/approver-esp32` ([GitHub](htt
 - `Data` is over a kilobyte: parsing stages it on the heap, never on a task
   stack (main 3.5 KB, console and httpd 4 KB; a stack copy overflowed main
   and boot-looped the board).
+
+An example (the built-in default has no networks):
 
 ```json
 {
@@ -108,30 +111,44 @@ Reference ESP-IDF + LVGL project: `../../ai-remote/approver-esp32` ([GitHub](htt
 advertised and GAP name, 1..29 bytes of UTF-8 (the scan response); empty:
 the board's (`ble_name`: `ESP32 Auth`, X4 Pro `ESP32 Auth X4Pro`), put into
 the config at boot so a save keeps it. Applied at once (`ble name`, the
-site); a paired host may show the old name until it reconnects. Up to 4 networks, tried
-in order. Password: empty (open), 8..63 chars, or 64 hex digits. AP password:
+site); a paired host may show the old name until it reconnects. `wifi.mode`
+`client` / `ap` / `apsta`; `hostname` 1..32 of `A-Z a-z 0-9 -`, no `-` at
+either end. Up to 4 networks (no duplicate SSID), tried in order. Password: empty (open), 8..63 chars, or 64 hex digits. AP password:
 empty (open) or 8..63 chars; `rounds` 1..10, `apWindowSeconds` 30..3600,
 channel 1..13. Change the default AP password. `ip` (optional, per network):
 `static` false or absent is DHCP (the typed fields are kept); with `static`
 true address/netmask/gateway are required, DNS optional; dotted quads, no
 leading zeros. `internet`: `intervalSeconds` 5..3600, `timeoutMs` 100..10000,
-`failures` 1..10, up to 4 IPv4 `targets` (pinged: no names). `time`: `zone` a
+`failures` 1..10, up to 4 IPv4 `targets` (pinged: no names); `check` false:
+none. `web`: `mode` `off` / `on` / `auto`, `write`, `user` (0..32, no `:`)
+and `password` (0..64; auth only with both). `time`: `zone` a
 table name (`date zones`) or a POSIX TZ rule; `server` a host name or IPv4,
 empty: no sync; `syncHours` 0..168, 0: no sync. `led`: brightness ceilings in
 percent, 0..100 (`idleBrightness`: resting states); colours are compiled in.
+`frontlight`: `brightness` 1..100, `warmth` 0..100 (cool .. warm),
+`offMinutes` / `offMinutesUsb` 0..1440 (0: never) the light goes off with
+nothing done (on USB power). `display`: `wallpaper` `grey` / `bw`; `touch`
+the calibration, `xScale` / `yScale` 500..1500 (per mille), `xOffset` /
+`yOffset` -200..200 px, taken together (one bad value refuses the file). `usb.mode` `jtag` / `serial` /
+`serial+fido` (the card reader is never saved).
 
 ## Tests
 
 `host_test/`: plain CMake project built by MSVC (ESP-IDF's `linux` target
 cannot link on Windows), Unity from ESP-IDF, cJSON from `managed_components/`
 (run `idf.py build` once). `fakes/` shadows the few ESP-IDF headers used.
-Pattern from approver-esp32. Suites: `config`, `wifi_policy`, `reachability`,
-`web_auth`, `web_paths` (paths + server policy), `web_settings`, `clock`,
+Pattern from approver-esp32. Suites (`host_test/test_*.cpp`): `config`,
+`wifi_policy`, `reachability`, `web_auth`, `web_paths` (paths + server
+policy), `web_settings`, `web_admin`, `clock`, `rtc` (BM8563 BCD, counters
+<-> UTC, VL, write plan), `sd`, `frontlight`, `touch`, `epd`, `ui` (screen
+turn, status, lists, settings views, dialogs, PIN pad), `wallpaper`,
 `boards`, `timesync`, `timezone`, `led`, `buttons` (debounce, short/long,
-single/double press), `battery` (CW2017 VCELL, profile check, init decision),
-`rtc` (BM8563 BCD, counters <-> UTC, VL, write plan), `pin_policy`, `totp` (truncation against the RFC 4226
-HMAC values; the HMAC itself is checked on the board by `totp test`); only code with
-no hardware (pure headers) is under test.
+single/double press, key events), `battery` (CW2017 VCELL, profile check,
+init decision), `pin_policy`, `totp` (truncation against the RFC 4226 HMAC
+values; the HMAC itself is checked on the board by `totp test`),
+`storefile`, `vault` (records, seed phrase, PIN guard; the real `vault.cpp`
+with fakes), `ota` (image check), `usb`; pure headers, plus the few sources
+that run with fakes.
 
 ```powershell
 host_test\run.cmd            # all suites
@@ -264,7 +281,7 @@ system clock agree within 1 ms; after a reboot the system clock is within
 esp_timer tick; with a panel: the display and the `ui` task).
 `sdkconfig.defaults`: 1-bit colour (monochrome theme), refresh period 200 ms
 (e-ink is slow; FreeRTOS tick stays 100 Hz: the LVGL tick is esp_timer),
-Montserrat 14 / 20 / 32, custom allocator `lv_mem_psram.c`: every LVGL
+Montserrat 20 / 24 / 28 / 32 / 48 (14 is LVGL's default), custom allocator `lv_mem_psram.c`: every LVGL
 allocation (widgets, layers, draw buffers) in PSRAM, internal RAM only if
 PSRAM is full, so Wi-Fi, BLE and the web server keep the internal heap.
 
@@ -273,8 +290,8 @@ redraws dirty areas in place). On the last flushed area `ui_logic.h` (pure,
 host-tested) turns the screen 90 degrees clockwise into the 800x480 panel
 frame (portrait top = frame left, as held as a book; the bezel insets carry
 over) into a pending frame; the `ui_push` task (4 KB) draws the latest one
-with `epd::Refresh` (fast, every 20th full; a frame equal to the glass is
-dropped), so the ui task keeps reading the touch through the second a
+with `epd::Refresh` (fast; full every 20th or for a change of 12000 px or
+more, `RefreshPlan`; a frame equal to the glass is dropped), so the ui task keeps reading the touch through the second a
 refresh takes (no tap lost). `ui::HoldPanel` keeps frames off the panel (a
 wallpaper on it). `ui` task (8 KB stack, priority 3) runs `lv_timer_handler`; other tasks touch widgets only
 inside `ui::Lock` / `ui::Unlock`. Measured on the X4 Pro (UC8179): turn 61 ms,
@@ -306,8 +323,9 @@ waits). The touch reports the finger's moves too: a swipe down from the top
 quarter opens Settings (the frontlight, then pages; `settings_logic.h`, the
 texts and actions from `main.cpp` through `ui::SettingsHooks`; the Wi-Fi
 window: `wifi_view_logic.h`, `ui::WifiHooks`, the scan and the saves in the
-ui's own task; Bluetooth: `ble_view_logic.h`, `ui::BleHooks`; Display &
-power: `display_view_logic.h`, `ui::DisplayHooks`; Date & time:
+ui's own task; Bluetooth: `ble_view_logic.h`, `ui::BleHooks`; Devices
+(power, display, USB port, touch calibration): `display_view_logic.h`,
+`ui::DisplayHooks`; Date & time:
 `time_view_logic.h`, `ui::TimeHooks`; Security: `security_view_logic.h`,
 `ui::SecurityHooks`, the PINs only in the ui's own task's job, wiped after; Web site:
 `web_view_logic.h`, `ui::WebHooks`, the QR code by LVGL (`CONFIG_LV_USE_QRCODE`);
@@ -324,8 +342,8 @@ then "Delete this key?", No at once, Yes held 4 s, `fido_ctap_delete` in the
 typing task: `fido_list_logic.h` `Remove`), both with a back
 arrow and the name over them; the arrow (the list at
 its page), the opposite swipe or Home closes them (`nav::Classify`; a slid tap
-is no tap). FIDO2 presence: Left allows, Right refuses (OPERATION_DENIED,
-`deny_pressed` hook).
+is no tap). FIDO2 presence: Left or Home allows, Right refuses
+(OPERATION_DENIED, `deny_pressed` hook).
 
 PIN pad (`pin_pad.cpp`, `pin_pad_logic.h` pure): shown while the vault is
 locked (polled each second with `vault::GetState`, no lock): at boot unless
@@ -366,9 +384,13 @@ nothing counted). Without secure boot and with the download mode open,
 whoever holds the device could read it (as the 6-digit PIN can be brute-
 forced offline from the files today). Idle (`power.idleMinutes`, read live):
 a task checks every 5 s; activity is any key event, a touch press, BLE
-typing, a FIDO2 request (start and end), a web request; a USB host (the
-console, SOF frames: not a charger) or the pairing window keeps it on and
-the idle time starts when it ends. Wallpaper (`wallpaper.cpp`,
+typing, a FIDO2 request (start and end), a web request. On USB power (a
+host: Serial/JTAG SOF or TinyUSB configured; or the charger charging)
+`power.idleMinutesUsb` applies instead (default 0: never); unplugged, the
+battery's idle time starts then. The pairing window keeps it on and the idle
+time starts when it ends. The same task turns the frontlight off after
+`frontlight.offMinutes` (`offMinutesUsb` on USB power) with nothing done;
+a touch or a button lights it again (only if idling put it off). Wallpaper (`wallpaper.cpp`,
 `wallpaper_logic.h` pure): the PNG read whole into PSRAM (up to 4 MB),
 LVGL's lodepng (`LV_USE_LODEPNG`; it returns an `lv_draw_buf_t`, RGBA),
 grey (BT.601, alpha on white), centred (480x800 fills; larger is cropped),
@@ -387,8 +409,9 @@ rest of the card stays read-only to the console.
 
 ## USB
 
-`devices/usb`: one port, three modes (`usb.mode`, `usb mode`, Settings >
-Devices > USB port), switched at once, no restart; the host sees
+`devices/usb`: one port, three saved modes (`usb.mode`, `usb mode`,
+Settings > Devices > USB port) and the card reader for a while, switched
+at once, no restart; the host sees
 the old device leave and the new one arrive. `usb_logic.h` (pure): modes,
 product IDs, line endings.
 
@@ -439,7 +462,8 @@ product IDs, line endings.
 
 ## BLE
 
-NimBLE, peripheral, one connection. Stack is off at boot (`ble on`).
+NimBLE, peripheral, one connection. The stack starts at boot only with
+`ble.active` (`ble boot on`); else `ble on`.
 
 | Driver | Role |
 |---|---|
@@ -502,7 +526,7 @@ and never starts without lwIP (an assert).
 | `GET /api/status` | firmware, heap, SPIFFS, Wi-Fi (IP, MAC, internet), AP, BLE, FIDO (readiness, requests, credentials stored of max, store bytes, PIN set and attempts, signature counter, file version and modification time; `fido_store` false while a request holds the store, `fido_off` why FIDO2 is off), wallpaper, frontlight (present, on, level), `idle_minutes`, `hold_rail`, microSD (`sd`: mount outcome or `none`, CID name, card and FAT bytes, free), vault (`vault` state, records, wrong PINs, PIN lock left). No secrets |
 | `GET /api/devstatus` | the console's `devstatus` dump (stdout swapped for the request) |
 | `GET /api/hwinfo` | the console's `hwinfo` dump, the same way (eFuse key purposes and flags only, no NVS values) |
-| `GET /api/settings`, `POST /api/settings` | Wi-Fi mode, AP, networks (with `ip`; absent `ip` keeps the current one), `ble.name` (applied to the radio at once), `display.wallpaper` (`grey` / `bw`), `frontlight` {`brightness` 1..100, `warmth` 0..100} (applied to the light at once), `power` {`idleMinutes`, `holdRail`; not `keepPinHours`}; the settings page saves each. Whitelist; passwords write-only (absent/null keeps, `""` clears); all-or-nothing; memory only |
+| `GET /api/settings`, `POST /api/settings` | GET: writable, limits, Wi-Fi state, mode, AP, networks (with `ip`), `ble.name` (the rest comes from `/api/status`). POST: `wifi` {`mode` (`off` = `wifi.active` false, `client`, `ap`, `apsta`), `ap`, `networks` (with `ip`; absent `ip` keeps the current one)}, `ble.name` (not empty; applied to the radio at once), `display.wallpaper` (`grey` / `bw`), `frontlight` {`brightness` 1..100, `warmth` 0..100} (applied to the light at once), `power` {`idleMinutes`, `holdRail`; not `keepPinHours`}; the settings page saves each. Whitelist; passwords write-only (absent/null keeps, `""` clears); all-or-nothing; memory only |
 | `GET /api/wifi/scan` | access points (hidden/duplicate names dropped) |
 | `POST /api/action?do=save\|reload\|retry\|light-on\|light-off` | save config.json / reload it / put Wi-Fi settings on the radio / the frontlight on or off (not saved) |
 | `POST /api/reboot?confirm=reboot` | restart |
@@ -520,7 +544,8 @@ and never starts without lwIP (an assert).
 - Basic auth over every route when `web.user` and `web.password` are both set
   (console only: `web login`); the header is compared to the encoded expected
   value, never decoded, constant-time. Not TLS.
-- `web.write` false: settings and actions refused (403), pages read-only.
+- `web.write` false: settings, actions, vault / FIDO2 changes and updates
+  refused (403), pages read-only; the restart still works.
 - Vault / FIDO2 POSTs (`web_admin.h`, pure): a field whitelist, only
   `Content-Type: application/json` (a cross-site form cannot send it without
   a preflight), the body and parsed strings wiped after use; logs carry the
@@ -540,21 +565,22 @@ and never starts without lwIP (an assert).
   from 90 %, red from 98 %, hidden without a slot; firmware).
 - Settings page: BLE name, power-off wallpaper, frontlight, `idleMinutes`,
   `holdRail`, each set and saved at once.
-- Pages and `app.js` are cached for an hour: after a reflash, reload with
-  Ctrl+F5 to get the new script.
+- Pages and `app.js`: `ETag` = the app's ELF hash, `no-cache` (see Flash
+  layout): a reflash is picked up without Ctrl+F5.
 
 ## FIDO2
 
 `components/fido_ctap`: LionKey CTAP 2.3 core (`lib/lionkey`, git submodule:
 our fork [merlokk/lionkey](https://github.com/merlokk/lionkey), branch
 `esp32auth`, of [pokusew/lionkey](https://github.com/pokusew/lionkey)) behind
-`ble_fido`. API: `fido_ctap_init(hooks, store)`,
+`ble_fido` and `usb_fido` (USB HID, `usb.mode` serial+fido). API: `fido_ctap_init(hooks, store)`,
 `fido_ctap_request(msg) -> response`.
 
 - Crypto: lionkey's table with RNG, SHA-256, AES from the `crypto` driver;
   P-256 on lionkey's micro-ecc (no ECC accelerator on the S3; its `uECC_*`
   symbols are renamed `lk_uECC_*`, NimBLE's tinycrypt has the same names).
-- Store: `/spiffs/fido.bin` = store header + lionkey's RAM log, AES-256-GCM
+- Store: `fido.bin` in the store directory (`/sdcard/.authenticator` with a
+  card slot, else `/spiffs`; see Passwords) = store header + lionkey's RAM log, AES-256-GCM
   with the vault's key (Passwords), rewritten whole through a temp file on
   every change, compacted at load. FIDO2 is off from boot until the PIN
   (`fido_ctap_set_key` through `vault::Hooks`) and again after `pin lock`;
@@ -582,7 +608,7 @@ our fork [merlokk/lionkey](https://github.com/merlokk/lionkey), branch
   1..128: LionKey lists at most 128 per site and 128 sites); lionkey stores
   non-discoverable ones too, one more gets KEY_STORE_FULL. The RAM log
   (`FIDO_CTAP_STORE_BYTES`: 1 KB per credential + 2 KB, 22 KB for 20) and the
-  compaction buffer are in PSRAM. Next to each credential the store keeps a
+  compaction buffer are in PSRAM (internal RAM if that fails). Next to each credential the store keeps a
   origin item of its own (key 0x100, ignored by lionkey; fixed little-endian
   layout in `ctap_file_storage.h`, it travels with the store when devices
   sync): credential ID, transport and the host's BLE identity address, the
@@ -591,16 +617,17 @@ our fork [merlokk/lionkey](https://github.com/merlokk/lionkey), branch
   shown by `fido2 list`. A file larger than the log (limit lowered)
   is not loaded or touched: FIDO2 stays off.
   The signature counter is in NVS (`fido/sign_count`), kept by reset.
-- User presence: a fresh press of the Left button (GPIO0, BOOT on the dev
-  board; debounced by the keypad task) within 30 s; KEEPALIVE every 300 ms; CANCEL aborts the wait.
+- User presence: a fresh press of Left (GPIO0, BOOT on the dev board) or
+  Home (debounced by the keypad task) within 30 s; a fresh Right press
+  refuses (OPERATION_DENIED); KEEPALIVE every 300 ms; CANCEL aborts the wait.
 - Reset (authenticatorReset): only within 10 s after the core starts (boot or
   PIN unlock; lionkey; the window restarts after a successful reset), then a
-  5 s hold of Left (CTAP 2.3 longTouchForReset, getInfo 0x18 = true; a hold
+  5 s hold of Left or Home (Right refuses; CTAP 2.3 longTouchForReset, getInfo 0x18 = true; a hold
   released early is not a refusal, the next press starts over; 30 s, CANCEL as
   above). The window is the board's `fido_reset_window_s` (0 = any time).
-- U2F (CTAP1) over BLE: register / authenticate / version (LionKey fork
-  `ctap1.c`); a self-signed per-device attestation certificate; the BLE
-  service offers U2F 1.2 and FIDO2.
+- U2F (CTAP1) over BLE and USB HID (CTAPHID_MSG): register / authenticate
+  / version (LionKey fork `ctap1.c`); a self-signed per-device attestation
+  certificate; the BLE service offers U2F 1.2 and FIDO2.
 - authenticatorConfig (LionKey fork): toggleAlwaysUv, setMinPINLength
   (only raises; a PIN below it must be changed: forcePINChange),
   enableLongTouchForReset; kept in `fido.bin` (storage key 4), cleared by a
@@ -624,7 +651,8 @@ our fork [merlokk/lionkey](https://github.com/merlokk/lionkey), branch
   reset is authenticatorReset without the 10 s / button rule. A delete only
   flags the item: the file shrinks at the next boot (compaction).
 - An SD store for hundreds of keys: [storage-encryption.md](storage-encryption.md).
-- Tests: `tests/fido2` over BLE, all 67 pass on the dev board (see build.md).
+- Tests: `tests/fido2` over BLE and USB HID (results:
+  [testing-on-device.md](testing-on-device.md#fido2-suite-testsfido2), USB above).
 
 ## Passwords
 

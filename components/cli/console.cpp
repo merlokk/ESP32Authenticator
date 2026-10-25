@@ -485,9 +485,9 @@ const esp_console_cmd_t kCommands[] = {
     {
         .command = "ble",
         .help = "BLE: on | off | info | pair [seconds [bg]|stop] | bonds | conns | use <#|addr|any> | "
-                "disconnect | unpair <#|addr|all> | "
+                "disconnect | unpair <#|addr|all> | boot [on|off] | name [<name>] | "
                 "kb <text>",
-        .hint = "<on|off|info|pair|bonds|conns|use|disconnect|unpair|kb> [args]",
+        .hint = "<on|off|info|pair|bonds|conns|use|disconnect|unpair|boot|name|kb> [args]",
         .func = &CmdBle,
         .argtable = nullptr,
         .func_w_context = nullptr,
@@ -506,8 +506,8 @@ const esp_console_cmd_t kCommands[] = {
         .command = "pass",
         .help = "Passwords (encrypted vault.bin; never printed): info | list [filter] | "
                 "add <site> [user] [password] [otp] | set <#> <site|user|password|otp> [value] | "
-                "delete <#> | code <#> (TOTP) | reset [confirm [pin]]",
-        .hint = "<info|list|add|set|delete|code|reset> [args]",
+                "delete <#> | code <#> (TOTP) | move <#> <to #> | sort | reset [confirm [pin]]",
+        .hint = "<info|list|add|set|delete|code|move|sort|reset> [args]",
         .func = &CmdPass,
         .argtable = nullptr,
         .func_w_context = nullptr,
@@ -726,7 +726,7 @@ const esp_console_cmd_t kCommands[] = {
                 "wallpaper [grey|bw] (power-off wallpaper tones, saved) | "
                 "power [idle <minutes>] [keep <hours>] [rail on|off] (off when idle, the PIN kept through a "
                 "sleep; saved)",
-        .hint = "<show|info|reload|save|test|wallpaper>",
+        .hint = "<show|info|reload|save|test|wallpaper|power>",
         .func = &CmdConfig,
         .argtable = nullptr,
         .func_w_context = nullptr,

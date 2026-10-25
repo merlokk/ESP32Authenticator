@@ -239,7 +239,7 @@ void InitVault(const char *dir) {
     }
 }
 
-// The status bar (ui task, every 2 s): the gauge is read every 30 s (I2C),
+// The status bar (ui task, every 0.5 s): the gauge is read every 30 s (I2C),
 // the rest is the modules' state.
 void StatusSource(ui::status::Status *s) {
     namespace st = ui::status;
@@ -587,7 +587,7 @@ void DescribeFido(bool summary, char *out, size_t size) {
         static_cast<unsigned>(f.store_size / 1024), f.encrypted ? ", encrypted" : "");
     Put(out, size, "Signatures", "%u", static_cast<unsigned>(f.sign_count));
     Put(out, size, "Presence", "%s",
-        config::Get().test.auto_presence ? "AUTO (config test)" : "Left yes, Right no");
+        config::Get().test.auto_presence ? "AUTO (config test)" : "Left / Home yes, Right no");
 }
 
 void SettingsDescribe(ui::settings::Page page, bool summary, char *out, size_t size) {

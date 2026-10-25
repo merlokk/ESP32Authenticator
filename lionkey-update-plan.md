@@ -211,7 +211,8 @@ Our `devices/buttons` is a raw level read. Port from
   registration signature verified by python-fido2, not the certificate's
   self-signature):
   with test_info + test_config 22 passed, 1 skipped (2026-10-15).
-- Excluded: U2F over USB (no FIDO HID).
+- Later: U2F over USB HID too (CTAPHID_MSG in `devices/usb/usb_fido.cpp`,
+  `usb.mode` serial+fido).
 
 ## 8. hmac-secret-mc (2.2) (done)
 

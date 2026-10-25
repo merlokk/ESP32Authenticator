@@ -25,20 +25,22 @@ idf.py build
 idf.py -p COM6 flash
 ```
 
-- Dev board: bare ESP32-S3 (8 MB octal PSRAM, 16 MB flash) on USB Serial/JTAG,
-  used until the X4 Pro is available.
+- Dev board: bare ESP32-S3 (8 MB octal PSRAM, 16 MB flash) on USB Serial/JTAG
+  (`kBoardId` in `devices/config.h` picks the board).
 - A board running a TinyUSB app (PID 4001) ignores DTR/RTS. Enter download
   mode by hand: hold BOOT, press RESET.
 - Run `idf.py` from the project root or pass `-C <project>`: from a
   subdirectory (e.g. `host_test/`) it configures a build there.
 - `flash` writes bootloader, partition table and app; SPIFFS (`config.json`,
-  `fido.bin`) and NVS (bonds) are kept.
+  `seed.txt`; `fido.bin` / `vault.bin` on a board without a card slot), the
+  SD card and NVS (bonds) are kept.
 - If the app does not start after flashing, run
   `python -m esptool -p COM6 --before no-reset --after watchdog-reset chip-id`
   (esptool is in the IDF Python env: run it inside the profile).
 - Console silent, panics, checks after a flash: [testing-on-device.md](testing-on-device.md).
-- On the X4 Pro the app `.bin` is flashed through the CrossPoint unlocker-tool
-  (see [architecture.md](architecture.md)).
+- On the X4 Pro the first app `.bin` is flashed through the CrossPoint
+  unlocker-tool (see [architecture.md](architecture.md#flash-layout)); then
+  our own OTA (the site, `ota sd`).
 
 ## Version
 
@@ -48,7 +50,7 @@ idf.py -p COM6 flash
 
 ## Utils
 
-`utils/` (Python 3, `pip install -r utils/requirements.txt`): console helpers (`console.py`: any command or the raw log; `spiffs.py`; `wallpaper.py`; `ble.py`), see [utils/README.md](utils/README.md).
+`utils/` (Python 3, `pip install -r utils/requirements.txt`): console helpers (`console.py`: any command or the raw log; `spiffs.py`; `wallpaper.py`; `firmware.py`; `ble.py`; `screenshot.py`), see [utils/README.md](utils/README.md).
 Transfers are streamed in chunks, files are never loaded whole. `device.py` answers smart-mode cursor queries and switches the console to `term dumb` on connect.
 
 ```powershell
@@ -76,8 +78,8 @@ host_test\run.cmd [suite...]   # host tests, no board (MSVC); see architecture.m
 host_test\lionkey.cmd [regex]   # LionKey's GoogleTest suite in WSL (gcc, ASan/UBSan)
 ```
 
-Suites: `config`, `wifi_policy`, `reachability`, `web_auth`, `web_paths`,
-`web_settings`, `clock`, `boards`, `timesync`, `timezone`, `led`, `buttons`, `pin_policy`, `totp`. Run them after any change to those components.
+Suites: one per `host_test/test_*.cpp` (list: [architecture.md](architecture.md#tests)).
+Run them after any change to the code they cover.
 
 `lionkey.cmd`: run after any change in `lib/lionkey`. Needs WSL Ubuntu with
 gcc/g++ and CMake >= 3.30 + Ninja (on PATH or the release binaries in
@@ -102,12 +104,14 @@ Up when `web` says `running`; `web` prints the address(es).
 - Open site by default; `web login <user> <password>` locks every route.
 - Quick API checks: [testing-on-device.md](testing-on-device.md#web-site).
 - Front page: network (address, MAC, internet), BLE and the FIDO2 store
-  (credentials used of 10, PIN, counter), device; the bars show what is used.
+  (credentials used of the board's maximum, PIN, counter), device; the bars
+  show what is used.
 - Passwords page: unlock with the PIN, find, add, edit (password and TOTP
-  write-only: an empty box keeps), delete (tap twice), the current TOTP code,
-  lock. FIDO2 page: the credentials, delete (tap twice).
-- Pages and `app.js` are cached for an hour: after a reflash reload with
-  Ctrl+F5.
+  write-only: an empty box keeps), delete (tap twice), order, the current
+  TOTP code, lock, a new seed phrase. FIDO2 page: the credentials, delete
+  (tap twice).
+- Pages and `app.js` carry an `ETag` (the firmware's hash): a reflash is
+  picked up without Ctrl+F5.
 
 ## CLI
 
@@ -121,7 +125,7 @@ after `usb mode jtag`, or hold BOOT).
 |---|---|
 | `help` | command list |
 | `term` / `term smart` / `term dumb` | ask the terminal / force line editing + up-arrow history (32 commands) on / off. Off at boot: nobody answers the probe then. Smart mode needs a terminal that answers cursor queries (PuTTY does); if the console goes silent, reset the board |
-| `version` | firmware version, build date, IDF version, ELF SHA256, chip, running slot |
+| `version` | firmware version, build date, IDF version, LVGL version, ELF SHA256, chip, running slot |
 | `info` | short: model, MACs, unique ID, flash size, CPU temperature, USB host (connected = host sends SOF, port open or not), reset reason, uptime |
 | `reboot` | software reset (the USB console reconnects) |
 | `usb [info]` / `usb mode jtag\|serial\|serial+fido` | the port: mode, VID:PID, host, DTR, FIDO counters, the last failed switch / switch at once (the console moves to the new port), saved |
@@ -166,11 +170,11 @@ after `usb mode jtag`, or hold BOOT).
 | `fido2 delete <#\|id>` | delete one: number from `fido2 list` (1-3 digits) or a unique id prefix (4+ hex digits; numbers shift after a delete) |
 | `fido2 reset` / `fido2 reset confirm` | say what would go / delete every credential and the PIN (counter kept; the file becomes an empty store with the next version). Waits up to 1 s for a running FIDO request, else "busy". Also the way out of a refused store file |
 | `ota [info]` / `ota sd [confirm]` | firmware update: running slot, version, OTA state (on trial: seconds to its confirmation), next slot, the last job, the image refused at boot, `/sdcard/firmware.bin` and the check of its head / that check / write it into the next slot (a task; `ota` shows the progress) and restart |
-| `sd [info]` / `sd ls [dir]` / `sd put <name.png> <length> <crc32>` / `sd rm <name.png>` | microSD: card (CID name), size, bus clock, mount point, FAT free of total, or why not mounted / a directory: type, size, local modification time, name (no `..`) / a wallpaper into `/sdcard/wallpapers` (one base64 line, as `spiffs write`; `utils/wallpaper.py`) / deletes one. `firmware.bin` instead of a PNG name: `/sdcard/firmware.bin` for `ota sd` (`utils/firmware.py`). Read-only but these |
+| `sd [info]` / `sd mount` / `sd ls [dir]` / `sd put <name.png> <length> <crc32>` / `sd rm <name.png>` | microSD: card (CID name), size, bus clock, mount point, FAT free of total, or why not mounted / mount again as at boot, then `sd info` / a directory: type, size, local modification time, name (no `..`) / a wallpaper into `/sdcard/wallpapers` (one base64 line, as `spiffs write`; `utils/wallpaper.py`) / deletes one. `firmware.bin` instead of a PNG name: `/sdcard/firmware.bin` for `ota sd` (`utils/firmware.py`). Read-only but these |
 | `light [info]` / `light <1..100> [warmth]` / `light warmth <0..100>` / `light on\|off` | the frontlight: on/off, level, PWM duty per string / set the level (warmth 0 cool .. 100 warm, saved to `frontlight`) and light it / now only, not saved. Off at boot; Power x2 toggles. Fades 250 ms |
 | `epd [info]` / `epd test [orient\|corners\|edges\|checker\|black\|white\|grey] [full\|fast]` / `epd sleep` | the e-ink panel: controller, both probe passes (FLG, VER), the stock screenType, refreshes and the last duration (full, fast or grey) / draw a test frame (orient: which way is up; corners, edges: what the bezel hides; grey: four bands black to white, UC8179 only) / deep sleep, the picture stays |
 | `touch [info]` / `touch watch [s]` | the GT911: address, product, firmware, panel size, vendor, config head (version, output size, contacts, INT mode), frames and read errors, Home / each new frame that differs from the last for 1..120 s (repeats only counted: printing ~100 frames a second jammed the USB console until a replug): status, contacts raw and decoded (id, x, y, size) |
-| `ui [info]` / `ui wallpaper [grey\|bw]` / `ui show\|key\|click\|swipe\|screenshot\|demo ...` | LVGL display: size, refreshes, the last one, the turn time, the ui task's free stack, touch (up/down, last point, presses) / draw a random power-off wallpaper now (as `display.wallpaper`, or as given), staying on / drive and read the screen: [testing-on-device.md](testing-on-device.md#screen) |
+| `ui [info]` / `ui wallpaper [grey\|bw]` / `ui show\|key\|click\|swipe\|screenshot ...` / `ui demo prompt\|fido [n]` / `ui demo off` | LVGL display: size, refreshes, the last one, the turn time, the ui task's free stack, touch (up/down, last point, presses) / draw a random power-off wallpaper now (as `display.wallpaper`, or as given), staying on / drive and read the screen: [testing-on-device.md](testing-on-device.md#screen) |
 | `off [lock] [wake <s>]` | power-off: a wallpaper, deep sleep; Power wakes (a reboot). Also Power held, idle (`power.idleMinutes`); the vault key kept for `power.keepPinHours`, `lock` (also Power x3): not; `wake`: a timer wakes it too (tests) |
 | `keys [info]` / `keys watch [s]` | the buttons: GPIO, raw and debounced level, held time, queue / events from now on for 1..120 s (default 10): pressed, released, long, click xN |
 | `battery [info]` | gauge (CW2017 at 0x63, profile, last init action), voltage (mV), level (%), charging (STAT pin) |
@@ -194,19 +198,19 @@ after `usb mode jtag`, or hold BOOT).
 | `seed [info]` / `seed show <pin>` | the seed phrase (12 BIP39 words in the key with the PIN; `/spiffs/seed.txt`): set or not, its id, the one `vault.bin` names / the words (store open) |
 | `seed set [<pin>] <words>` / `seed new [<pin>]` | locked: another device's phrase (words whole or 4+ letters, any case) / a random one (hardware RNG; only while there is no store); store open: with the PIN, a new key for both stores (as a PIN change). `new` prints the words once |
 | `pin wipe set <pin>` / `pin wipe off` | the wipe PIN (needs the open store; must differ from the PIN), saved to config.json as a salted hash. Entering it with `pin` erases the password store and the FIDO2 credentials and answers "wrong PIN" |
-
-`pin` also shows wrong PINs in a row and the lock: 10 wrong PINs lock PIN
-entry for `pin.lockMinutes` (config.json), also across a reboot.
 | `date [info]` | UTC and local time (offset, DST), zone, board clock (kept when off or not, drift from the system clock), sync (server, interval, next, last, step, failures) |
 | `date sync` | ask the time server now and wait for it (up to 20 s) |
 | `date set [utc] <YYYY-MM-DD> <HH:MM:SS>` | set the clock: local time, or UTC with `utc`; written to the board clock too |
 | `date zone [<name\|rule>]` / `date zones [filter]` | show / set the time zone, a table name or a POSIX TZ rule (saved) / the zone table |
 | `date server <host\|off>` / `date hours <0..168>` | SNTP server / sync interval, `off` or 0: no sync (saved) |
-| `devstatus` | `version`, `info`, `board`, `date`, `battery`, `sd`, `led info`, `wifi info`, `web`, `ble info`, `fido2 info` in one dump (also the site's Device page; its "Full hardware info" button shows `hwinfo`, "Firmware update" the OTA page) |
+| `devstatus` | `version`, `info`, `usb`, `board`, `date`, `battery`, `sd`, `led info`, `wifi info`, `web`, `ble info`, `fido2 info`, `pass info` in one dump (also the site's Device page; its "Full hardware info" button shows `hwinfo`, "Firmware update" the OTA page) |
 | `config show` | current config as JSON, passwords masked (networks, AP, web) |
 | `config info` | file path, source (file / built-in defaults), why the file was not used |
-| `config test [pin <6 digits>\|off \| presence on\|off]` | development: `test.pin` and `test.autoPresence`, saved ([testing-on-device.md](testing-on-device.md#configjson-test)) |
-| `config power [idle <0..1440 min>] [keep <0..168 h>] [rail on\|off]` | off when idle (0: never; never on USB) / a wake this soon after the sleep needs no PIN (0: always) / GPIO1 held through the sleep (off: on the battery the power drops), saved |
+| `config test [pin <6 digits>\|off \| presence on\|off]` (i.e. `config test pin off`) | development: `test.pin` and `test.autoPresence`, saved ([testing-on-device.md](testing-on-device.md#configjson-test)) |
+| `config power [idle <0..1440 min>] [keep <0..168 h>] [rail on\|off]` | off when idle on the battery (0: never; on USB power `power.idleMinutesUsb`, set on the screen) / a wake this soon after the sleep needs no PIN (0: always) / GPIO1 held through the sleep (off: on the battery the power drops), saved |
 | `config wallpaper [grey\|bw]` | the power-off wallpaper: 4 grey levels (where the panel has them) or black and white (`display.wallpaper`), saved |
 | `config reload` / `config save` | re-read config.json (keeps values on error) and apply Wi-Fi (incl. internet check), web, time and LED settings / write current values |
 | `efuse` | every eFuse field (list generated at build time from IDF `esp_efuse_table.csv`) and raw blocks BLK0..BLK10 |
+
+`pin` also shows wrong PINs in a row and the lock: 10 wrong PINs lock PIN
+entry for `pin.lockMinutes` (config.json), also across a reboot.

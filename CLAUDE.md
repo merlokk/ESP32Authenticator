@@ -5,15 +5,16 @@ Firmware: C/C++ on **ESP-IDF**.
 
 ## Overview
 
-- Stores an encrypted file with device settings and credentials.
+- Stores encrypted credential files (`vault.bin`, `fido.bin`); settings in
+  `config.json`.
 - Credential entry: site (name) / login / password / TOTP / FIDO2.
 - Credentials are shown on the e-ink screen and sent to the host via:
   - **BLE keyboard** (HID): types login/password/TOTP code;
-  - **BLE FIDO2** authenticator.
+  - **FIDO2 / U2F** authenticator over BLE and USB HID.
 
 ## Status
 
-- Done: BLE keyboard + FIDO2 (CTAP 2.1, works with Chrome on Windows 11),
+- Done: BLE keyboard + FIDO2 (CTAP 2.3, works with Chrome on Windows 11),
   bonding and host switching; FIDO2 credential management on the console
   (`fido2 info|list|delete|reset`) and the store on the web settings page; Wi-Fi
   client / AP / AP+client with static IPs and an internet check; configuration
@@ -28,11 +29,12 @@ Firmware: C/C++ on **ESP-IDF**.
   charger STAT on a leased I2C bus (`battery`, BLE Battery Level); microSD
   (SDMMC, FAT at `/sdcard`, `sd` read-only but wallpapers), the store files in
   `/sdcard/.authenticator` on the X4 Pro (no card: no stores); LVGL 9 on the e-ink panel (480x800 portrait, status bar, the password list in pages: a tap types
-  the user / password / TOTP or shows the password; Settings (frontlight, Wi-Fi networks, Bluetooth hosts and pairing, touch
-  calibration, display & power, date & time, security: PIN change, wipe
-  PIN, FIDO2 state and reset; web site with its QR code and login; About
-  with Restart; dialogs in `dialog.h`) and the
-  U2F / FIDO2 keys by swipes, deleted from their row; FIDO2 presence Left yes / Right no; PIN pad while
+  the user / password / TOTP or shows the password; Settings (frontlight; Wi-Fi networks and
+  the web site with its QR code and login; Bluetooth hosts and pairing;
+  Devices: power, display, USB port, touch calibration; security: PIN
+  change, wipe PIN, FIDO2 state and reset; date & time; About with
+  Restart; dialogs in `dialog.h`) and the
+  U2F / FIDO2 keys by swipes, deleted from their row; FIDO2 presence Left or Home yes / Right no; PIN pad while
 the vault is locked, GT911 touch as the pointer, `ui`); power-off
   (Power held / x3 locked / idle `power.idleMinutes` / `off`): a random PNG from
   `/sdcard/wallpapers` (dithered to 4 grey levels on
@@ -50,14 +52,14 @@ the vault is locked, GT911 touch as the pointer, `ui`); power-off
   boot).
   PIN lockout (10 tries, `pin.lockMinutes`) and a wipe PIN (`pin wipe set`).
   LionKey fork (`merlokk/lionkey`, branch `esp32auth`): CTAP 2.3 (FIDO_2_3),
-  U2F over BLE, EdDSA, authenticatorConfig, minPinLength, PIN complexity,
+  U2F (BLE and USB), EdDSA, authenticatorConfig, minPinLength, PIN complexity,
   hmac-secret-mc, pcmr, attestation formats, encIdentifier, built-in UV
   plumbing (`uv: false`); see
   lionkey-update-plan.md. Firmware update (OTA): a `.bin` uploaded on the
   site (Device > Firmware update) or `/sdcard/firmware.bin` (button, `ota
   sd confirm`), checked while streaming (`image_check.h`), trial boot
   confirmed after 30 s, else rolled back.
-- Not yet: e-ink UI screens, eFuse-bound key, sync over Wi-Fi.
+- Not yet: eFuse-bound key, sync over Wi-Fi.
 
 ## Architecture
 

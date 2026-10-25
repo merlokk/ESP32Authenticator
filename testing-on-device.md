@@ -41,7 +41,7 @@ a device with real secrets; turn both off after a run.
 
 | Key | Console | Effect |
 |---|---|---|
-| `test.pin` (empty or 6 digits) | `config test pin <6 digits>` / `config test off` | the vault (and FIDO2) unlock at boot: reboots in test runs need no PIN. Masked by `config show`, never on the site; a wrong one is logged |
+| `test.pin` (empty or 6 digits) | `config test pin <6 digits>` / `config test pin off` | the vault (and FIDO2) unlock at boot: reboots in test runs need no PIN. Masked by `config show`, never on the site; a wrong one is logged |
 | `test.autoPresence` (default false) | `config test presence on\|off` | FIDO2 / U2F user presence without the button (a log warning each time, `fido2 info` says AUTO; not the reset's 5 s hold). Read at every request: takes effect at once |
 
 ```json
@@ -66,7 +66,7 @@ a device with real secrets; turn both off after a run.
 
 The screen can be driven and read from the console, without touching it.
 Portrait coordinates: 480x800, (0, 0) top left; the status bar is the top
-52 px, the tab row the bottom 72 px, a list row is cut in quarters of 118 px.
+52 px, the tab row 72 px over a 2 px bottom inset (y 726..797), a list row is cut in quarters of 118 px.
 
 | Command | Does |
 |---|---|
@@ -111,7 +111,8 @@ curl http://<ip>/api/settings
 curl http://<ip>/api/wifi/scan
 ```
 
-Pages and `app.js` are cached for an hour: reload with Ctrl+F5 after a flash.
+Pages and `app.js` carry an `ETag` (the firmware's hash): a flash is picked
+up without Ctrl+F5.
 
 ## FIDO2 suite (`tests/fido2/`)
 

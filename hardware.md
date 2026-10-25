@@ -35,7 +35,8 @@ Stock firmware 7.5.11 ships waveforms for UC8179 and UC8279 (`*_gray_full`,
 panel kind is stored in NVS `hw_calib` (`screenType`, `screenId`; both 1 on our
 unit, meaning unknown).
 
-- Write-only SPI (no MISO); BUSY is active-HIGH.
+- Write-only SPI (no MISO); BUSY: SSD1677 high while busy, UC81xx low
+  (BUSY_N).
 - SPI clock: OEM 5 MHz, FreeInk 10 MHz, TuyaOpen 20 MHz.
 - Native landscape scan. Viewable insets T/R/B/L = 9/7/3/7 px (bezel overlap;
   FreeInk). Our unit, measured in 4 px steps, in frame coordinates
@@ -58,7 +59,7 @@ unit, meaning unknown).
 | 3 | Button Power | active-LOW, pull-up |
 | 4 | GT911 RST | |
 | 5 | SD power enable | active-LOW; pulse HIGH→LOW before mount, keep LOW |
-| 6 | EPD BUSY | input, busy = HIGH |
+| 6 | EPD BUSY | input; busy = HIGH on the SSD1677, LOW on the UC81xx |
 | 7 | Button Right | active-LOW, pull-up |
 | 8 | Frontlight cool | PWM, active-HIGH |
 | 9 | Frontlight warm | PWM, active-HIGH |

@@ -4,21 +4,16 @@ Target design for the XTEINK X4 Pro (e-ink 480x800 portrait, 1-bit, GT911
 touch, Left / Right / Power buttons, frontlight, microSD). Status per function:
 [architecture.md](architecture.md#functionality).
 
-## Today
-
-The dev board is a FIDO2 key: CTAP 2.1 over BLE (done) and USB (not yet), plus
-the console, the configuration site, the BLE keyboard and `totp` on the console.
-
 ## Functions
 
 | Function | |
 |---|---|
-| FIDO2 key | CTAP 2.1 over BLE and USB; user presence: a button (later: a tap) |
-| PIN lock | the screen is locked by a PIN; the same PIN derives the storage key (option B / C in [storage-encryption.md](storage-encryption.md)), so nothing opens without it |
+| FIDO2 key | CTAP 2.3 and U2F over BLE and USB; user presence: Left or Home (Right refuses) |
+| PIN lock | the screen is locked by a PIN; the PIN and the seed phrase derive the storage key (option B in [storage-encryption.md](storage-encryption.md)), so nothing opens without it |
 | Password manager | records: site (name), login, password, TOTP secret; typed into the host over the BLE keyboard |
-| Encrypted store | one `.bin` file: records + settings, AES-256-GCM, with a counter and a modification time |
+| Encrypted stores | `vault.bin` (records) and `fido.bin` (FIDO2), AES-256-GCM, each with a counter and a modification time; settings in plain `config.json` |
 | Sync | over the internet; service not chosen yet (may be our own). The copy changed last wins (see below) |
-| Settings | frontlight, Wi-Fi, Bluetooth, display & power, security, date & time, about |
+| Settings | frontlight, Wi-Fi (and the web site), Bluetooth, Devices, security, date & time, about |
 
 ## Screen
 
@@ -43,7 +38,8 @@ Portrait, 480x800. The panel scans landscape (hardware.md): `ui_logic.h` turns t
   selection), the site, the account (a sign-in: the store's key in the allowList,
   else for the site; of several the first 4 names and "+N more"), whether the PIN was given, with "< Allow" and "Reject >" by
   the buttons (the edges, at the password list's second row) and "Home:
-  allow" at the bottom (`fido_prompt_logic.h` reads the request).
+  allow" at the bottom (`fido_prompt_logic.h` reads the request); a reset
+  shows "< Hold" and "Hold Left 5 s" instead.
 - **List**: the records in the user's order, set on the web site (up /
   down, to the top / bottom per record, "Sort A to Z") or the console (`pass move`, `pass sort`);
   a new one goes last. The password hidden, the TOTP code shown (new every
@@ -57,7 +53,8 @@ Portrait, 480x800. The panel scans landscape (hardware.md): `ui_logic.h` turns t
   Level and Warmth sliders: lit at once, saved when let go), then a row per
   page with its summary and ">": Wi-Fi, Bluetooth, Devices,
   Security, Date & time, About. A page lists "label  value" lines (looked at every
-  2 s) and may have one button: Power off, Lock now, Sync the time now; its
+  2 s) and may have one button: Power off, Lock now, Sync the time now,
+  Restart, Reset FIDO2; its
   arrow goes back to Settings. Wi-Fi is a window of its own: a switch, the
   state, Mode and access point (the mode: client / access point / both; the
   access point's name, password, channel, after how many rounds it opens
@@ -80,7 +77,9 @@ Portrait, 480x800. The panel scans landscape (hardware.md): `ui_logic.h` turns t
   full cell is not seen), PIN after sleep (always .. a week),
   Wallpaper (grey / black & white), Power in sleep (kept / off:
   `power.holdRail`, off loses the kept PIN): a tap lists the choices with a check at
-  the one in use, a tap keeps one (config.json); Touchscreen (its calibration);
+  the one in use, a tap keeps one (config.json); USB port (Serial/JTAG
+  (debug) / Serial port / Serial port + FIDO2, saved; SD card reader, for a
+  while); Touchscreen (its calibration);
   what the Power button does;
   Power off. Date & time: the clock big with the date and the offset; Time
   zone (a region, then its cities A to Z, 9 a page with < 1 / 3 >), Sync (never ..
@@ -102,7 +101,8 @@ Portrait, 480x800. The panel scans landscape (hardware.md): `ui_logic.h` turns t
   (web.write), Login (set on the keyboard, the user then the password; or
   off).
 - **U2F / FIDO2 list**: a swipe up from the bottom quarter; the keys by site
-  (A to Z), 6 a page: site, user, "made <date>, <alg>, resident / U2F";
+  (A to Z), 6 a page: site, user, "made <date>, <alg>, resident /
+  non-resident / U2F" (no "made" without a known date);
   Left / Right or the bar under it (‹, "1 / 2", ›) flip the pages, the title says the count; its
   back arrow, a swipe down or Home closes it. Delete: a swipe left on a key
   shows a trash can at its right end (a swipe right or a tap elsewhere hides
@@ -115,8 +115,9 @@ Portrait, 480x800. The panel scans landscape (hardware.md): `ui_logic.h` turns t
   `pin lock`); done (`pin_pad.cpp`).
   See PIN below.
 
-E-ink: 1-bit LVGL, redraw at most every 200 ms; partial updates for list and
-status changes, a full refresh now and then against ghosting (driver's choice).
+E-ink: 1-bit LVGL, redraw at most every 200 ms; fast refreshes for list and
+status changes, a full one every 20th or for a big change against ghosting
+(`ui::RefreshPlan`).
 
 ## PIN
 
@@ -124,28 +125,29 @@ status changes, a full refresh now and then against ghosting (driver's choice).
 - 10 wrong PINs in a row: locked for `lockMinutes` (config); then 10 more
   tries. The failure count and the lock deadline live in NVS, so a reboot
   does not reset them.
-- One key from the PIN for the store and `fido.bin` (salt and key id in the
-  headers: synced devices with the PIN derive the same key; a PIN change
-  makes a new key and rewrites both). After a reboot nothing
-  is decrypted and FIDO2 does not work until the first PIN entry.
-- Locking the screen (idle, sleep) keeps the key and the decrypted data in
-  RAM: FIDO2 keeps working on a locked device (user presence: the button).
-  Light sleep keeps RAM; deep sleep or power-off is a reboot (PIN again,
-  unless `power.keepPinHours` kept the key in RTC memory; Power x3: locked).
-  Power-off (Power held, idle `power.idleMinutes`) shows a random wallpaper
-  from `/sdcard/wallpapers`.
+- One key from the PIN and the seed phrase for `vault.bin` and `fido.bin`
+  (salt, key id and seed id in the headers: synced devices with both derive
+  the same key; a PIN or seed change makes a new key and rewrites both).
+  After a reboot nothing is decrypted and FIDO2 does not work until the
+  first PIN entry.
+- There is no screen lock while on: `pin lock` (Settings > Security > Lock
+  now) wipes the key and stops FIDO2. Off is deep sleep (Power held, idle
+  `power.idleMinutes`, Power x3, `off`): BLE off, a random wallpaper from
+  `/sdcard/wallpapers`; a wake is a reboot (PIN again, unless
+  `power.keepPinHours` kept the key in RTC memory; Power x3: always the PIN).
 - A special **wipe PIN** (config) erases the store and the FIDO2 credentials
   (as `fido2 reset`) and the key in RAM when typed on the PIN pad.
   It has to be checked before anything is decrypted, so config keeps only a
   salted hash of it, never the PIN; it must differ from the real PIN.
-  Done on the console (`pin`, `pin wipe set`): the store file and its kept
-  version go, so the next PIN makes a new, empty store.
+  Set on the console (`pin wipe set`) or Settings > Security: the store
+  files, their kept versions and the seed phrase go, so the next PIN makes
+  a new, empty store.
 
 ## Store file and sync
 
-- One encrypted `.bin` (records and settings). Header (`store_header.h`, as
-  on `fido.bin` now): format, **counter** (version), **modification time**
-  (UTC), then AES-256-GCM (format: storage-encryption.md). The header is
+- Each store (`vault.bin`, `fido.bin`) is one encrypted file. Header
+  (`store_header.h`): format, **counter** (version), **modification time**
+  (UTC), store id, seed id, then AES-256-GCM (format: storage-encryption.md). The header is
   authenticated (GCM associated data): counter and time cannot be edited
   without the key.
 - Every change: counter + 1, modification time = now. The X4 Pro always has
@@ -163,5 +165,4 @@ status changes, a full refresh now and then against ghosting (driver's choice).
 ## Open questions
 
 - Sync service.
-- Sleep: light (RAM and key kept, FIDO2 without a PIN) or deep (a reboot: PIN
-  again), decided by measured power draw.
+- Decided: off is deep sleep (a reboot); `power.keepPinHours` spares the PIN.

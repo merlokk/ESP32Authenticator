@@ -8,7 +8,7 @@ both). Open: C (below).
 
 ## Why encrypt
 
-`/spiffs/fido.bin` is LionKey's store as is: per credential the P-256 private
+Unencrypted (as it was), `fido.bin` is LionKey's store as is: per credential the P-256 private
 key (32 B), hmac-secret randoms, RP ID, user name; plus the PIN state
 (LEFT(SHA-256(PIN), 16) and the retry counter).
 
@@ -44,8 +44,9 @@ alone; C does for the device: ESP-IDF has `esp_hmac_derive_pbkdf2_key`
 so guesses must run on this chip, and the PIN lockout (10 tries) caps them.
 It needs an eFuse key burn (irreversible) and, against a foreign app calling
 the HMAC, secure boot or no download mode.
-FIDO2 is unavailable from a reboot until the first PIN entry; a locked screen
-keeps the key in RAM, so FIDO2 keeps working (x4-design.md). A alone
+FIDO2 is unavailable from a reboot until the first PIN entry; off is deep
+sleep (a reboot), and only `power.keepPinHours` keeps the key through it, in
+RTC memory (x4-design.md). A alone
 only defeats a desoldered flash chip. NVS can be encrypted by ESP-IDF with an
 eFuse HMAC key (`CONFIG_NVS_SEC_KEY_PROTECT_USING_HMAC`): fits A or C.
 
@@ -70,13 +71,13 @@ on this device again.
   any length, no padding (no 16-byte boundary); 16-byte tag = integrity (a
   tampered or truncated file is refused). CBC (in `crypto` now) would need
   PKCS#7 padding and a separate HMAC.
-- File: the store header (`store_header.h`, 40 bytes, already in front of
-  `fido.bin`: version, modification time, length, cipher, nonce) |
-  ciphertext | tag (16). The header is the GCM associated data. Never reuse a
-  nonce with the same key.
+- File: the store header (`store_header.h`, 80 bytes, format 3: kind,
+  cipher, version, length, modification time, nonce, PBKDF2 iterations and
+  salt, key id, store id, seed id) | ciphertext | tag (16). The header is
+  the GCM associated data. A random nonce per write: never reused with the
+  same key.
 - Rollback to an older valid file is not detected by GCM: the header's
-  version is checked against the highest one kept in NVS (done for the plain
-  `fido.bin`). Sync: the later modification time wins (x4-design.md).
+  version is checked against the highest one kept in NVS (both stores). Sync: the later modification time wins (x4-design.md).
 
 ## Speed
 
@@ -123,11 +124,13 @@ Target: ~500 FIDO2 credentials and ~500 password records.
 | 500 records (site, login, password, TOTP secret; fixed 512 B or variable) | ~100 KB | 256 KB |
 | In PSRAM, with the 1 KB/credential reservation and the boot compaction buffer | | ~1.3 MB of 8 MB |
 
-PSRAM used today: ~20 KB (12 KB FIDO2 log, LVGL). Internal RAM (~110 KB free)
-holds none of it.
+PSRAM on the X4 Pro (125 credentials, 500 records): the FIDO2 log 127 KB,
+the records ~1.2 KB each (~600 KB), LVGL's buffers. Internal RAM holds none
+of it.
 
-Where: microSD. SPIFFS is 80 KB (68 KB usable, stock X4 Pro table): it keeps
-`fido.bin` for boards without SD (10 credentials).
+Where: microSD (X4 Pro: 125 credentials, 500 records). SPIFFS is 80 KB
+(68 KB usable, stock X4 Pro table): it keeps the stores for boards without
+a card slot (dev board: 20 credentials, 50 records).
 
 How (decided): each store is one encrypted file, loaded whole into PSRAM at
 unlock and rewritten whole (sorted, if wanted: it is all in RAM) on a change.
@@ -157,7 +160,7 @@ Counters live in NVS: PIN failures and lock deadline, the store's rollback
 counter, the FIDO2 signature counter. NVS appends 32-byte entries and erases a
 4 KB page only when it recycles it; the partition is 5 pages (630 entries, ~380
 free today), so a page is erased about once per few hundred writes. The flash
-is a Macronix NOR (100k erase cycles typical): tens of millions of writes.
+is NOR (dev board Macronix, X4 Pro Puya; 100k erase cycles typical): tens of millions of writes.
 Rules that keep it so:
 
 - Write a value only when it changes, never per tick or per check.
@@ -167,9 +170,10 @@ Rules that keep it so:
 
 ## Plan
 
-1. GCM container in `ctap_file_storage.c` (between RAM and file; LionKey
-   untouched), key through one `StorageKey()` so the source can change.
+1. GCM container between RAM and file, LionKey untouched (done:
+   `storefile/store_io`).
 2. SD backend (RAM log in PSRAM and `max_credentials` per board: done).
-3. Key source per the threat model (lost / stolen device: B or C); any eFuse
-   burn only with explicit consent (irreversible).
+3. Key source per the threat model (lost / stolen device): B with the seed
+   phrase done; C open, any eFuse burn only with explicit consent
+   (irreversible).
 4. Same container for `config.json`; NVS encryption with the eFuse HMAC key.
