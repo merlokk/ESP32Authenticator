@@ -6,6 +6,7 @@
 // Six digits are checked as soon as the sixth is typed. The digits are wiped
 // as soon as they are not needed.
 
+#include <cstddef>
 #include <cstdint>
 
 namespace ui::pinpad {
@@ -148,5 +149,17 @@ constexpr uint8_t TriesLeft(uint8_t failures, uint8_t max) {
     return failures < max ? static_cast<uint8_t>(max - failures) : 0;
 }
 constexpr uint32_t MinutesUp(uint32_t seconds) { return (seconds + 59) / 60; }
+
+// A new PIN makes a store only where there never was one: a device that took
+// a vault.bin (`kept_version`, NVS) whose file is gone now (the card lent to a
+// USB host, pulled out) asks for the PIN as ever (the vault says why it fails).
+constexpr bool NewStore(size_t file_size, uint32_t kept_version) {
+    return file_size == 0 && kept_version == 0;
+}
+
+// Nothing typed yet: the pad may change its mind (the file came or went).
+constexpr bool Untouched(Stage stage, uint8_t count) {
+    return (stage == Stage::kEnter || stage == Stage::kNew) && count == 0;
+}
 
 }  // namespace ui::pinpad

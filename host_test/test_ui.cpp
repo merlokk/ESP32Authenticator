@@ -182,6 +182,22 @@ void test_pin_pad_new_pin_twice(void) {
     TEST_ASSERT_TRUE(pad.stage() == pp::Stage::kNew);
 }
 
+// A store this device once took is never offered a new PIN (the card lent to
+// a USB host meanwhile); the pad changes its mind only before a key.
+void test_pin_pad_new_store(void) {
+    TEST_ASSERT_TRUE(pp::NewStore(0, 0));
+    TEST_ASSERT_FALSE(pp::NewStore(0, 46));
+    TEST_ASSERT_FALSE(pp::NewStore(1100, 46));
+    TEST_ASSERT_FALSE(pp::NewStore(1100, 0));
+    pp::Pad pad;
+    pad.Start(true);
+    TEST_ASSERT_TRUE(pp::Untouched(pad.stage(), pad.count()));
+    Type(&pad, "1");
+    TEST_ASSERT_FALSE(pp::Untouched(pad.stage(), pad.count()));
+    TEST_ASSERT_TRUE(Type(&pad, "35790") == pp::Step::kRepeat);  // once: the second time
+    TEST_ASSERT_FALSE(pp::Untouched(pad.stage(), pad.count()));
+}
+
 void test_pin_pad_texts(void) {
     TEST_ASSERT_EQUAL_UINT8(9, pp::TriesLeft(1, 10));
     TEST_ASSERT_EQUAL_UINT8(0, pp::TriesLeft(10, 10));
@@ -1175,6 +1191,7 @@ void RegisterUiTests(void) {
     RUN_TEST(test_pin_pad_keys);
     RUN_TEST(test_pin_pad_enter);
     RUN_TEST(test_pin_pad_new_pin_twice);
+    RUN_TEST(test_pin_pad_new_store);
     RUN_TEST(test_pin_pad_texts);
     RUN_TEST(test_status_texts);
     RUN_TEST(test_status_battery);

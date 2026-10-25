@@ -92,7 +92,7 @@ void Checked(vault::Error e, const vault::Info &info) {
         Close();
         return;
     }
-    new_store = info.file_size == 0;
+    new_store = pinpad::NewStore(info.file_size, info.kept_version);
     pad.Done(new_store);
     ShowTitle();
     ShowDots();
@@ -174,7 +174,7 @@ lv_obj_t *Label(lv_obj_t *parent, const lv_font_t *font) {
 // the glass makes no refresh), keys outlined.
 void Open() {
     const vault::Info info = vault::GetInfo();
-    new_store = info.file_size == 0;
+    new_store = pinpad::NewStore(info.file_size, info.kept_version);
     pad.Start(new_store);
     home_screen = lv_screen_active();
     pad_screen = lv_obj_create(nullptr);
@@ -245,9 +245,19 @@ void Watch(lv_timer_t *) {
         Open();
     } else if (state != vault::State::kLocked && pad_screen != nullptr) {
         Close();
-    } else if (pad_screen != nullptr && lock_shown &&
-               lv_tick_elaps(lock_drawn_ms) >= kLockRefreshMs) {
-        ShowState(vault::GetInfo(), nullptr);
+    } else if (pad_screen != nullptr) {
+        const vault::Info info = vault::GetInfo();
+        const bool now_new = pinpad::NewStore(info.file_size, info.kept_version);
+        if (now_new != new_store && pinpad::Untouched(pad.stage(), pad.count())) {
+            // The store file came or went since the pad opened (the card reader).
+            new_store = now_new;
+            pad.Start(new_store);
+            ShowTitle();
+            ShowDots();
+            ShowState(info, nullptr);
+        } else if (lock_shown && lv_tick_elaps(lock_drawn_ms) >= kLockRefreshMs) {
+            ShowState(info, nullptr);
+        }
     }
 }
 

@@ -333,7 +333,9 @@ locked (polled each second with `vault::GetState`, no lock): at boot unless
 opens, from the pad or the console. Six dots and a 3x4 pad (clear, 0,
 backspace); the sixth digit is checked by `vault::Unlock` in a task of its
 own (the derivation holds the vault for a second or more). No store yet: a
-new PIN typed twice. Under the dots: tries left, the lock's minutes (redrawn
+new PIN typed twice; only where no vault.bin was ever taken (NVS kept
+version 0): a file gone for a while (the card reader) asks the PIN as ever,
+and the pad looks again each second until a key is typed. Under the dots: tries left, the lock's minutes (redrawn
 each minute), too simple. Keys have no pressed look (no refresh for it). The
 wipe PIN works here as on the console. Only with the touch.
 Console `ui`; version in `version`.
