@@ -86,7 +86,7 @@ int CmdInfo(int, char **) {
     printf("file       %s, %u bytes, AES-256-GCM\n", info.path,
            static_cast<unsigned>(info.file_size));
     if (info.has_key) {
-        printf("key        PBKDF2-HMAC-SHA256 of the PIN, %" PRIu32 " iterations (%" PRIu32
+        printf("key        HKDF(seed, PBKDF2-HMAC-SHA256(PIN)), %" PRIu32 " iterations (%" PRIu32
                " ms), id ",
                info.kdf_iterations, info.unlock_ms);
         PrintKeyId(info);
@@ -348,7 +348,7 @@ int CmdPinInfo() {
     printf("vault      %s%s%s\n", vault::StateName(info.state), info.why ? ": " : "",
            info.why ? info.why : "");
     if (info.has_key) {
-        printf("key        in (PBKDF2-HMAC-SHA256, %" PRIu32 " iterations, %" PRIu32 " ms), id ",
+        printf("key        in (HKDF(seed, PBKDF2), %" PRIu32 " iterations, %" PRIu32 " ms), id ",
                info.kdf_iterations, info.unlock_ms);
         PrintKeyId(info);
         printf("\n");

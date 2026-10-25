@@ -77,7 +77,7 @@ int CmdInfo(int, char **) {
            static_cast<unsigned>(info.store_size ? info.store_used * 100 / info.store_size : 0));
     if (info.persistent) {
         printf("file       %s, %u bytes%s\n", info.path, static_cast<unsigned>(info.file_size),
-               info.encrypted ? ", AES-256-GCM (the PIN key)" : "");
+               info.encrypted ? ", AES-256-GCM (the PIN + seed key)" : "");
         printf("version    %" PRIu32 " (highest seen here %" PRIu32 "), changed ", info.file_version,
                info.kept_version);
         PrintTime(info.modified_utc);
