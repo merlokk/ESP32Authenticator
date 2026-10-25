@@ -9,6 +9,7 @@
 //                  a wallpaper into /sdcard/wallpapers: one base64 line, as
 //                  `spiffs write` (utils/wallpaper.py sends it)
 //   sd rm <name.png>   deletes a wallpaper
+//   sd put|rm firmware.bin   /sdcard/firmware.bin for `ota sd` (utils/firmware.py)
 
 namespace console {
 

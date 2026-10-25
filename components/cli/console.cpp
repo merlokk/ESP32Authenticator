@@ -468,7 +468,7 @@ const esp_console_cmd_t kCommands[] = {
         .command = "sd",
         .help = "microSD card (read-only but wallpapers): [info] card, size, clock, FAT free | "
                 "ls [dir] | put <name.png> <length> <crc32> (base64 line, utils/wallpaper.py) | "
-                "rm <name.png> (in /sdcard/wallpapers)",
+                "rm <name.png> (in /sdcard/wallpapers) | put/rm firmware.bin (the root, for ota sd)",
         .hint = "[info | ls [dir] | put <name.png> <len> <crc32> | rm <name.png>]",
         .func = &CmdSd,
         .argtable = nullptr,

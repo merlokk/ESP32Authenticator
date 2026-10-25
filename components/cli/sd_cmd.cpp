@@ -9,6 +9,7 @@
 #include <ctime>
 
 #include "files.h"
+#include "ota_update.h"
 #include "sd_card.h"
 #include "wallpaper_logic.h"
 
@@ -68,15 +69,24 @@ int CmdLs(const char *rel) {
     return 0;
 }
 
-// Writes and deletes only wallpapers (plain *.png names in /sdcard/wallpapers):
-// the rest of the card, the store files above all, stays read-only here.
+constexpr const char *kFirmwareName = "firmware.bin";
+constexpr size_t kMaxFirmwareBytes = 8 * 1024 * 1024;  // an OTA slot is a little less
+
+// Writes and deletes only wallpapers (plain *.png names in /sdcard/wallpapers)
+// and firmware.bin in the root (ota sd): the rest of the card, the store files
+// above all, stays read-only here.
 bool WallpaperPath(const char *name, char *path, size_t size) {
     if (!sd_card::Mounted()) {
         printf("sd card    %s\n", sd_card::Name(sd_card::Status()));
         return false;
     }
+    if (strcmp(name, kFirmwareName) == 0) {
+        snprintf(path, size, "%s", ota::kSdFile);
+        return true;
+    }
     if (!ui::wallpaper::IsImageName(name)) {
-        printf("name: a plain *.png name (written to %s)\n", ui::wallpaper::kDir);
+        printf("name: a plain *.png name (written to %s), or %s\n", ui::wallpaper::kDir,
+               kFirmwareName);
         return false;
     }
     const int n = snprintf(path, size, "%s/%s", ui::wallpaper::kDir, name);
@@ -91,6 +101,14 @@ int CmdPut(const char *name, size_t length, uint32_t crc) {
     static char path[kPathSize];
     if (!WallpaperPath(name, path, sizeof path)) {
         return 1;
+    }
+    if (strcmp(name, kFirmwareName) == 0) {
+        if (length > kMaxFirmwareBytes) {
+            printf("over %u MB: larger than an OTA slot\n",
+                   static_cast<unsigned>(kMaxFirmwareBytes / (1024 * 1024)));
+            return 1;
+        }
+        return ReceiveFile(path, length, crc, true);
     }
     if (length > ui::wallpaper::kMaxFileBytes) {
         printf("over %u KB: the device reads a wallpaper whole\n",
@@ -134,7 +152,8 @@ int CmdSd(int argc, char **argv) {
     if (strcmp(argv[1], "rm") == 0 && argc == 3) {
         return CmdRm(argv[2]);
     }
-    printf("usage: sd [info] | sd ls [dir] | sd put <name.png> <length> <crc32> | sd rm <name.png>\n");
+    printf("usage: sd [info] | sd ls [dir] | sd put <name.png|firmware.bin> <length> <crc32> | "
+           "sd rm <name.png|firmware.bin>\n");
     return 1;
 }
 

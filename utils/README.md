@@ -16,6 +16,7 @@ All tools take `-p <port>` (e.g. `COM6`) and exit with 1 when the device reports
 | `console.py` | Any console command (`wifi`, `web`, `config`, `devstatus`, ...), or the raw log without writing |
 | `spiffs.py` | SPIFFS files |
 | `wallpaper.py` | power-off wallpapers (PNG) in `/sdcard/wallpapers` |
+| `firmware.py` | firmware update: `ota` info, an app `.bin` to `/sdcard/firmware.bin`, `ota sd confirm`, remove it |
 | `ble.py` | BLE stack, pairing, host switching, keyboard |
 | `screenshot.py` | the e-ink screen as a PNG (`ui screenshot`) |
 
