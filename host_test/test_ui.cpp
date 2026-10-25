@@ -528,7 +528,7 @@ void test_settings_pages(void) {
     TEST_ASSERT_EQUAL_UINT8(0, n.settings_page());
 
     TEST_ASSERT_EQUAL_STRING("Wi-Fi", st::Title(st::kRows[0]));
-    TEST_ASSERT_EQUAL_UINT8(8, st::kRowCount);
+    TEST_ASSERT_EQUAL_UINT8(7, st::kRowCount);
     TEST_ASSERT_TRUE(st::PageAction(st::Page::kSecurity) == st::Action::kLockNow);
     TEST_ASSERT_TRUE(st::PageAction(st::Page::kWifi) == st::Action::kNone);
     TEST_ASSERT_TRUE(st::PageAction(st::Page::kAbout) == st::Action::kRestart);
@@ -691,9 +691,11 @@ void test_ble_view(void) {
     n.OpenSettings(static_cast<uint8_t>(st::Page::kBlePair));
     n.Back();
     TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(st::Page::kBluetooth), n.settings_page());
+    n.Back();
+    n.OpenSettings(static_cast<uint8_t>(st::Page::kDisplay));
     n.OpenSettings(static_cast<uint8_t>(st::Page::kTouch));
     n.Back();
-    TEST_ASSERT_EQUAL_UINT8(0, n.settings_page());
+    TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(st::Page::kDisplay), n.settings_page());
 
     char text[16];
     bv::Passkey(42, text, sizeof text);

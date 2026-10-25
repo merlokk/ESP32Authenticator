@@ -134,7 +134,7 @@ enum class JobKind : uint8_t {
     kBlePair,     // the pairing window opened (`flag`) or closed
     kBleName,     // the name `ssid` (`flag`), or the board's
     kSaveTouch,   // `calibration` into config.json
-    kDisplaySet,  // Display & power: `setting` to `id`
+    kDisplaySet,  // Devices: `setting` to `id`
     kTimeZone,    // the zone named in `password`
     kTimeSync,    // sync every `id` hours
     kTimeSet,     // the clock to `manual` (local)
@@ -2192,7 +2192,7 @@ bool PollWifiMore() {
     return nav_state.Back() || changed;
 }
 
-// --- Settings: Display & power -----------------------------------------------------
+// --- Settings: Devices -------------------------------------------------------------
 
 const DisplayHooks *display_hooks = nullptr;
 display_view::View display_shown;
@@ -2214,9 +2214,9 @@ void OnOption(lv_event_t *event) {
 }
 
 
-// The battery, a row per setting, what Power does, "Power off".
+// The battery, a row per setting, the touchscreen's, what Power does, "Power off".
 void ShowDisplay() {
-    TitleBar("Display & power");
+    TitleBar("Devices");
     display_hooks->view(&display_shown);
     const display_view::View &v = display_shown;
     int32_t y = kTitleHeight;
@@ -2235,13 +2235,21 @@ void ShowDisplay() {
     lv_label_set_text(b, text);
     lv_obj_align(b, LV_ALIGN_RIGHT_MID, -12, 0);
     y += 56 + 16;
-    constexpr int32_t kRow = 50;  // eight rows
+    constexpr int32_t kRow = 46;  // nine rows
     for (uint8_t i = 0; i < display_view::kSettingCount; ++i, y += kRow) {
         const display_view::Setting s = display_view::kSettings[i];
         display_view::Label(s, v.value[i], text, sizeof text);
         lv_obj_t *row = ChoiceRow(y, display_view::Title(s), text, false, OnSettingRow, i);
         lv_obj_set_height(row, kRow);
     }
+    text[0] = '\0';
+    if (settings_hooks != nullptr) {
+        settings_hooks->describe(settings::Page::kTouch, true, text, sizeof text);
+    }
+    lv_obj_t *touch = ChoiceRow(y, settings::Title(settings::Page::kTouch), text, false,
+                                OnSettingRow, display_view::kSettingCount);
+    lv_obj_set_height(touch, kRow);
+    y += kRow;
     lv_obj_t *help = Label(content, &lv_font_montserrat_20);
     lv_label_set_long_mode(help, LV_LABEL_LONG_MODE_WRAP);
     lv_obj_set_width(help, kRowWidth - 24);
@@ -2280,6 +2288,8 @@ bool PollDisplay() {
         if (setting_tapped < display_view::kSettingCount) {
             choice_setting = display_view::kSettings[setting_tapped];
             changed |= nav_state.OpenSettings(static_cast<uint8_t>(settings::Page::kDisplayChoice));
+        } else if (setting_tapped == display_view::kSettingCount) {
+            changed |= nav_state.OpenSettings(static_cast<uint8_t>(settings::Page::kTouch));
         }
         setting_tapped = -1;
     }

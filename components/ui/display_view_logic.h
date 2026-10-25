@@ -1,9 +1,10 @@
 #pragma once
 
-// The Display & power window of Settings (x4-design.md): the battery, then a
-// row per setting with its value (the USB port's too); a tap lists the choices (a check at the
-// one in use), a tap on one keeps it. The device fills View and keeps a
-// choice (ui::DisplayHooks). Pure (host-tested).
+// The Devices window of Settings (x4-design.md): the battery, then a row per
+// setting with its value (the USB port's too), then the touchscreen's row; a
+// tap lists the choices (a check at the one in use), a tap on one keeps it.
+// The device fills View and keeps a choice (ui::DisplayHooks). Pure
+// (host-tested).
 
 #include <cstddef>
 #include <cstdint>

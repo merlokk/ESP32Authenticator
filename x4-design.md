@@ -55,8 +55,8 @@ Portrait, 480x800. The panel scans landscape (hardware.md): `ui_logic.h` turns t
 - **Settings**: a swipe down from the top quarter; its back arrow, a swipe
   up or Home closes it. As on a phone: the frontlight on top (a switch,
   Level and Warmth sliders: lit at once, saved when let go), then a row per
-  page with its summary and ">": Wi-Fi, Bluetooth, Web site, Touchscreen,
-  Display & power, Security, Date & time, About. A page lists "label  value" lines (looked at every
+  page with its summary and ">": Wi-Fi, Bluetooth, Web site,
+  Devices, Security, Date & time, About. A page lists "label  value" lines (looked at every
   2 s) and may have one button: Power off, Lock now, Sync the time now; its
   arrow goes back to Settings. Wi-Fi is a window of its own: a switch, the
   state, Mode and access point (the mode: client / access point / both; the
@@ -70,17 +70,18 @@ Portrait, 480x800. The panel scans landscape (hardware.md): `ui_logic.h` turns t
   boot), the state, the name (a tap: change it on the keyboard, or the
   board's; applied at once, `ble.name`), the paired hosts (a tap: Use only this host /
   Let any paired host in, Forget), "Pair a new host": a 60 s window, what to
-  do on the host, the passkey in big digits. Touchscreen: five crosses one by
+  do on the host, the passkey in big digits. Devices > Touchscreen: five crosses one by
   one, a straight line per axis through the raw taps (scale and offset,
   `display.touch` in config.json), Save / Again / Use the default; a fit far
-  off (a tap beside a cross) is refused. Display & power: the battery, then
+  off (a tap beside a cross) is refused. Devices: the battery, then
   Light off after and On USB, light off after (never .. 30 min; on again at
   the next touch or button), Power off after and On USB, off after (never ..
   1 hour; USB power: a host, or the charger charging, as a charger with a
   full cell is not seen), PIN after sleep (always .. a week),
   Wallpaper (grey / black & white), Power in sleep (kept / off:
   `power.holdRail`, off loses the kept PIN): a tap lists the choices with a check at
-  the one in use, a tap keeps one (config.json); what the Power button does;
+  the one in use, a tap keeps one (config.json); Touchscreen (its calibration);
+  what the Power button does;
   Power off. Date & time: the clock big with the date and the offset; Time
   zone (a region, then its cities A to Z, 9 a page with < 1 / 3 >), Sync (never ..
   every week), the server and the last sync, Set the time by hand (year ..

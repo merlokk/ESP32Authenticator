@@ -851,7 +851,7 @@ const char *BleSetName(const char *name) {
 const ui::BleHooks kBleHooks = {BleView, BlePairingEvent, BlePairingLeft, BleSetActive,
                                 BleUse,  BleForget,       BlePair,        BleSetName};
 
-// --- The Display & power window (ui::DisplayHooks) -----------------------------------
+// --- The Devices window (ui::DisplayHooks) -------------------------------------------
 
 void DisplayView(ui::display_view::View *out) {
     namespace dv = ui::display_view;

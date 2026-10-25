@@ -107,7 +107,7 @@ struct BleHooks {
 };
 void SetBleHooks(const BleHooks *hooks);
 
-// The Display & power window (display_view_logic.h), filled by the device.
+// The Devices window (display_view_logic.h), filled by the device.
 struct DisplayHooks {
     // What it shows. ui task, every 2 s while shown: keep it quick.
     void (*view)(display_view::View *out);

@@ -26,7 +26,7 @@ is the key to them: nothing can be read or used until it is typed.
 - 10 wrong PINs in a row lock the pad for a while (Settings > Security >
   *10 wrong PINs: lock*). A restart does not reset the count.
 - After a power-off by the idle timer or Power held, no PIN is needed within
-  *PIN after sleep* (Settings > Display & power, 8 hours by default).
+  *PIN after sleep* (Settings > Devices, 8 hours by default).
 - Settings > Security: *Change the PIN*, *PIN complexity* (no repeats,
   runs or common PINs), *Wipe PIN* (a second PIN that, typed on this pad,
   **erases** every password and FIDO2 key), *Lock now*.
@@ -80,8 +80,8 @@ A swipe down from the top quarter of the screen. The back arrow, a swipe up
 or Home closes it.
 
 - **Frontlight**: the switch, Level and Warmth.
-- A row per page with its summary: Wi-Fi, Bluetooth, Web site, Touchscreen
-  (calibration), Display & power, Security, Date & time, About (versions,
+- A row per page with its summary: Wi-Fi, Bluetooth, Web site,
+  Devices (power, display, USB, the touchscreen's calibration), Security, Date & time, About (versions,
   Restart).
 
 <br clear="right">
@@ -208,7 +208,7 @@ sign in, U2F), the site and the account(s).
 - Off, the screen keeps a random picture from the card's `wallpapers`
   folder.
 - **Charging**: USB-C; the status bar shows the bolt.
-- Settings > **Display & power**: the battery; *Light off after* and *Power
+- Settings > **Devices**: the battery; *Light off after* and *Power
   off after* (and their values on USB power); *PIN after sleep*;
   *Wallpaper* (grey or black & white); *Power in sleep* (*off* saves the
   battery but forgets the PIN); *USB port*: *Serial/JTAG (debug)*, *Serial
@@ -216,7 +216,7 @@ sign in, U2F), the site and the account(s).
   *SD card reader*: the card is a drive on the computer until you eject it
   there (or unplug the cable, or *Finish* on the screen); the vault locks,
   the PIN after;
-  *Power off*.
+  *Touchscreen* (calibration: tap five crosses); *Power off*.
 - **Frontlight**: Settings, at the top (switch, Level, Warmth). It goes off
   after *Light off after* and comes on again at a touch or a button.
 - **Reset** (the small button on the top edge, on the right): restarts the

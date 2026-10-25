@@ -388,7 +388,7 @@ rest of the card stays read-only to the console.
 ## USB
 
 `devices/usb`: one port, three modes (`usb.mode`, `usb mode`, Settings >
-Display & power > USB port), switched at once, no restart; the host sees
+Devices > USB port), switched at once, no restart; the host sees
 the old device leave and the new one arrive. `usb_logic.h` (pure): modes,
 product IDs, line endings.
 
