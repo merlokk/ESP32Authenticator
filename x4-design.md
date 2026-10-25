@@ -55,13 +55,13 @@ Portrait, 480x800. The panel scans landscape (hardware.md): `ui_logic.h` turns t
 - **Settings**: a swipe down from the top quarter; its back arrow, a swipe
   up or Home closes it. As on a phone: the frontlight on top (a switch,
   Level and Warmth sliders: lit at once, saved when let go), then a row per
-  page with its summary and ">": Wi-Fi, Bluetooth, Web site,
-  Devices, Security, Date & time, About. A page lists "label  value" lines (looked at every
+  page with its summary and ">": Wi-Fi, Bluetooth, Devices,
+  Security, Date & time, About. A page lists "label  value" lines (looked at every
   2 s) and may have one button: Power off, Lock now, Sync the time now; its
   arrow goes back to Settings. Wi-Fi is a window of its own: a switch, the
   state, Mode and access point (the mode: client / access point / both; the
   access point's name, password, channel, after how many rounds it opens
-  and how long it stays; the hostname), the saved networks (a tap: Connect,
+  and how long it stays; the hostname), Web site, the saved networks (a tap: Connect,
   i.e. tried first; IP address: DHCP or static, the fields on a digit
   keyboard, checked whole on Save; Forget), "Add a network": a scan
   (strongest first, padlock, signal bars, "saved"), a tap joins a saved or
@@ -97,7 +97,7 @@ Portrait, 480x800. The panel scans landscape (hardware.md): `ui_logic.h` turns t
   PIN erased). About: the name and the model big, then
   firmware, build, ESP-IDF, LVGL, chip, flash and PSRAM, the MACs, the web
   site, uptime, free memory, SD card (a snapshot), Restart (asked first: the
-  PIN after it). Web site: running or why not, the address and its QR code,
+  PIN after it). Wi-Fi > Web site: running or why not, the address and its QR code,
   Runs (off / on / on the device's access point), Changes from the site
   (web.write), Login (set on the keyboard, the user then the password; or
   off).

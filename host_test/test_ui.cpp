@@ -528,7 +528,7 @@ void test_settings_pages(void) {
     TEST_ASSERT_EQUAL_UINT8(0, n.settings_page());
 
     TEST_ASSERT_EQUAL_STRING("Wi-Fi", st::Title(st::kRows[0]));
-    TEST_ASSERT_EQUAL_UINT8(7, st::kRowCount);
+    TEST_ASSERT_EQUAL_UINT8(6, st::kRowCount);
     TEST_ASSERT_TRUE(st::PageAction(st::Page::kSecurity) == st::Action::kLockNow);
     TEST_ASSERT_TRUE(st::PageAction(st::Page::kWifi) == st::Action::kNone);
     TEST_ASSERT_TRUE(st::PageAction(st::Page::kAbout) == st::Action::kRestart);
@@ -896,8 +896,8 @@ void test_web_view(void) {
     namespace wv = ui::web_view;
     namespace st = ui::settings;
     TEST_ASSERT_TRUE(st::Parent(st::Page::kWebLogin) == st::Page::kWeb);
-    TEST_ASSERT_TRUE(st::Parent(st::Page::kWeb) == st::Page::kMain);
-    TEST_ASSERT_EQUAL_STRING("Web site", st::Title(st::kRows[2]));
+    TEST_ASSERT_TRUE(st::Parent(st::Page::kWeb) == st::Page::kWifi);
+    TEST_ASSERT_EQUAL_STRING("Devices", st::Title(st::kRows[2]));
     TEST_ASSERT_TRUE(wv::UserOk("admin"));
     TEST_ASSERT_FALSE(wv::UserOk(""));
     TEST_ASSERT_FALSE(wv::UserOk("a:b"));

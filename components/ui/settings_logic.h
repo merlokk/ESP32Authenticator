@@ -30,7 +30,7 @@ enum class Page : uint8_t {
     kTimeSet,       // Date & time: the time by hand
     kSecurityLock,  // Security: the lock after wrong PINs
     kSecurityPin,   // Security: a PIN typed (change it, the wipe PIN)
-    kWeb,           // the web site
+    kWeb,           // Wi-Fi: the web site
     kWebMode,       // Web site: when it runs
     kWebLogin,      // Web site: the login on the keyboard
     kFido,          // Security: FIDO2 / U2F (its state, the keys, reset)
@@ -45,7 +45,9 @@ enum class Page : uint8_t {
 
 // Where a page's back arrow goes.
 constexpr Page Parent(Page p) {
-    return p == Page::kWifiScan || p == Page::kWifiMore || p == Page::kWifiStatic ? Page::kWifi
+    return p == Page::kWifiScan || p == Page::kWifiMore || p == Page::kWifiStatic ||
+                   p == Page::kWeb
+               ? Page::kWifi
            : p == Page::kWifiChoice || p == Page::kWifiText ? Page::kWifiMore
            : p == Page::kWifiStaticText ? Page::kWifiStatic
            : p == Page::kWifiHidden   ? Page::kWifiScan
@@ -61,9 +63,8 @@ constexpr Page Parent(Page p) {
 }
 
 // The main page's rows, under the frontlight.
-inline constexpr Page kRows[] = {Page::kWifi,     Page::kBluetooth, Page::kWeb,
-                                 Page::kDisplay,  Page::kSecurity,  Page::kTime,
-                                 Page::kAbout};
+inline constexpr Page kRows[] = {Page::kWifi,     Page::kBluetooth, Page::kDisplay,
+                                 Page::kSecurity, Page::kTime,      Page::kAbout};
 inline constexpr uint8_t kRowCount = sizeof kRows / sizeof kRows[0];
 
 constexpr const char *Title(Page p) {

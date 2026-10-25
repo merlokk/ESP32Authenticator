@@ -1171,11 +1171,18 @@ int choice_tapped = -1;
 int static_row_tapped = -1;  // 0 the switch, 1..4 address, netmask, gateway, DNS
 bool static_save = false;
 bool more_tapped = false;
+bool web_open_tapped = false;
 bool hidden_tapped = false;
 
 void OnMore(lv_event_t *) {
     if (LastWasTap()) {
         more_tapped = true;
+    }
+}
+
+void OnWebPage(lv_event_t *) {
+    if (LastWasTap()) {
+        web_open_tapped = true;
     }
 }
 
@@ -1340,7 +1347,8 @@ lv_obj_t *ChoiceRow(int32_t y, const char *name, const char *value, bool check,
     return row;
 }
 
-// The switch, the state, the saved networks, "Add a network".
+// The switch, the state, Mode and access point, the web site, the saved
+// networks, "Add a network".
 void ShowWifi() {
     TitleBar("Wi-Fi");
     wifi_hooks->view(&wifi_shown);
@@ -1371,6 +1379,12 @@ void ShowWifi() {
     char mode[48];
     snprintf(mode, sizeof mode, "%s", wifi_view::ModeLabel(v.mode));
     ChoiceRow(y, "Mode and access point", mode, false, OnMore, 0);
+    y += kNetRow;
+    mode[0] = 0;
+    if (settings_hooks != nullptr) {
+        settings_hooks->describe(settings::Page::kWeb, true, mode, sizeof mode);
+    }
+    ChoiceRow(y, settings::Title(settings::Page::kWeb), mode, false, OnWebPage, 0);
     y += kNetRow + 16;
 
     SectionHead(y, "SAVED NETWORKS");
@@ -2083,6 +2097,10 @@ bool PollWifiMore() {
     if (more_tapped) {
         more_tapped = false;
         open(settings::Page::kWifiMore);
+    }
+    if (web_open_tapped) {
+        web_open_tapped = false;
+        open(settings::Page::kWeb);
     }
     if (more_row_tapped >= 0) {
         const int row = more_row_tapped;

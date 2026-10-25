@@ -80,7 +80,7 @@ A swipe down from the top quarter of the screen. The back arrow, a swipe up
 or Home closes it.
 
 - **Frontlight**: the switch, Level and Warmth.
-- A row per page with its summary: Wi-Fi, Bluetooth, Web site,
+- A row per page with its summary: Wi-Fi (and the web site), Bluetooth,
   Devices (power, display, USB, the touchscreen's calibration), Security, Date & time, About (versions,
   Restart).
 
@@ -109,6 +109,7 @@ Wi-Fi is needed for the web site and the clock (time sync).
 - The switch and the state (the IP address when online).
 - **Mode and access point**: client, the device's own access point, or
   both; the access point's name, password and channel; the hostname.
+- **Web site**: below.
 - **Saved networks**: a tap: *Connect* (tried first), *IP address* (DHCP
   or static), *Forget*.
 - **Add a network**: a scan; a tap joins it (the password on the screen
@@ -117,6 +118,8 @@ Wi-Fi is needed for the web site and the clock (time sync).
 <br clear="right">
 
 ### Web site
+
+Settings > Wi-Fi > Web site.
 
 <img src="img/web.png" width="240" align="right">
 
