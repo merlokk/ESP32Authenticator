@@ -11,7 +11,6 @@
 #include "config.h"
 #include "driver/gpio.h"
 #include "driver/rtc_io.h"
-#include "driver/usb_serial_jtag.h"
 #include "epd.h"
 #include "esp_attr.h"
 #include "esp_log.h"
@@ -24,6 +23,7 @@
 #include "keypad.h"
 #include "power_logic.h"
 #include "ui.h"
+#include "usb.h"
 
 namespace power {
 
@@ -76,7 +76,7 @@ bool Held() { return ble::PairingSecondsLeft() > 0; }
 // USB power: a host (the console, a PC), or the charger charging. A charger
 // with a full cell looks like the battery (no VBUS line to read).
 bool OnUsb() {
-    return usb_serial_jtag_is_connected() || battery::ChargeState() == battery::Charge::kCharging;
+    return usb::HostConnected() || battery::ChargeState() == battery::Charge::kCharging;
 }
 
 void IdleTask(void *) {

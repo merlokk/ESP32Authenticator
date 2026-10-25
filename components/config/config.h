@@ -173,6 +173,19 @@ struct Pin {
     bool complexity;        // a new PIN must pass pin_policy.h (vault and FIDO2)
 };
 
+// The USB port (devices/usb): the chip's built-in Serial/JTAG (the console,
+// flashing and JTAG), or TinyUSB: a serial port with the console, with a
+// FIDO2 / U2F key (CTAPHID) beside it. Switched at once, no restart.
+enum class UsbMode : uint8_t {
+    kJtag,        // "jtag": built-in USB Serial/JTAG
+    kSerial,      // "serial": a CDC-ACM serial port
+    kSerialFido,  // "serial+fido": the serial port and a FIDO2 / U2F key
+};
+
+struct Usb {
+    UsbMode mode;
+};
+
 // Development and testing aids. Plain text in config.json: never on a
 // device that holds real secrets.
 struct Test {
@@ -191,6 +204,7 @@ struct Data {
     Display display;
     Power power;
     Pin pin;
+    Usb usb;
     Test test;
 };
 
@@ -250,6 +264,8 @@ const char *Name(WebMode mode);
 bool ParseWebMode(const char *text, WebMode *out);
 const char *Name(WallpaperMode mode);
 bool ParseWallpaperMode(const char *text, WallpaperMode *out);
+const char *Name(UsbMode mode);
+bool ParseUsbMode(const char *text, UsbMode *out);
 
 // --- File -------------------------------------------------------------------
 

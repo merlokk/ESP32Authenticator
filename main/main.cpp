@@ -26,6 +26,8 @@
 #include "esp_timer.h"
 #include "epd.h"
 #include "fido_ctap.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "frontlight.h"
 #include "host/ble_hs.h"
 #include "keypad.h"
@@ -39,6 +41,8 @@
 #include "timezone.h"
 #include "clock_math.h"
 #include "ui.h"
+#include "usb.h"
+#include "usb_fido.h"
 #include "vault.h"
 #include "web_server.h"
 #include "wifi_manager.h"
@@ -82,10 +86,13 @@ std::atomic<bool> fido_waiting{false};
 // What a request asks, for the prompt on the screen (ui::SetFidoRequest),
 // before the core takes it: a sign-in also counts the store's keys it may use
 // (those in the allowList, else the site's; the core is idle now, its lock
-// free) and names the one there is, or the first few.
+// free) and names the one there is, or the first few. BLE and USB requests
+// may come together: one at a time here.
 void PromptFor(const uint8_t *msg, size_t len) {
     namespace fp = ui::fido_prompt;
+    static SemaphoreHandle_t lock = xSemaphoreCreateMutex();
     static fp::Request request;  // ~800 bytes: off the transport task's stack
+    xSemaphoreTake(lock, portMAX_DELAY);
     request = fp::Parse(msg, len);
     if (request.kind == fp::Kind::kSignIn || request.kind == fp::Kind::kU2fSignIn) {
         static fido_ctap_credential_t *keys = nullptr;  // PSRAM, the store's size
@@ -107,25 +114,38 @@ void PromptFor(const uint8_t *msg, size_t len) {
         }
     }
     ui::SetFidoRequest(request);
+    xSemaphoreGive(lock);
 }
 
-// FIDO2 over BLE: the LionKey CTAP core behind the ble_fido transport. User
-// presence: the board's Left button (BOOT on the dev board) or Home (the
-// touch key under the glass), debounced by the keypad task, which owns the
-// pins; Right refuses.
+// FIDO2: the LionKey CTAP core behind two transports, BLE (ble_fido) and USB
+// HID (usb_fido, usb.mode serial+fido); one request at a time (the core's
+// lock), the hooks go to the transport whose worker runs it. User presence:
+// the board's Left button (BOOT on the dev board) or Home (the touch key
+// under the glass), debounced by the keypad task, which owns the pins; Right
+// refuses.
 void InitFido(const char *dir) {
     static char store[64];
     const bool have_fs = dir != nullptr && snprintf(store, sizeof store, "%s/fido.bin", dir) <
                                                static_cast<int>(sizeof store);
-    // The only transport today is BLE: the creator of a credential is the host
-    // on the link.
+    // The creator of a credential: the host on the BLE link, or "USB".
     const fido_ctap_hooks_t hooks = {
-        ble_fido::Keepalive, ble_fido::Cancelled,
+        [](uint8_t status) {
+            if (usb::fido::InWorker()) {
+                usb::fido::Keepalive(status);
+            } else {
+                ble_fido::Keepalive(status);
+            }
+        },
+        [] { return usb::fido::InWorker() ? usb::fido::Cancelled() : ble_fido::Cancelled(); },
         [] {
             return keypad::Pressed(boards::ButtonId::kLeft) ||
                    keypad::Pressed(boards::ButtonId::kHome);
         },
         [](fido_ctap_client_t *out) {
+            if (usb::fido::InWorker()) {
+                out->transport = FIDO_CTAP_TRANSPORT_USB;
+                return true;  // no address
+            }
             out->transport = FIDO_CTAP_TRANSPORT_BLE;
             return ble::PeerIdentity(&out->addr_type, out->addr);
         },
@@ -142,14 +162,15 @@ void InitFido(const char *dir) {
     if (fido_ctap_init(&hooks, have_fs ? store : nullptr, boards::kBoard.fido_max_credentials) ==
         ESP_OK) {
         // A request (and its wait for the button) is activity: no idle off.
-        ble_fido::SetMessageHandler([](const uint8_t *msg, size_t len, uint8_t *out,
-                                       size_t out_size) {
+        const auto handler = [](const uint8_t *msg, size_t len, uint8_t *out, size_t out_size) {
             power::NoteActivity();
             PromptFor(msg, len);
             const size_t n = fido_ctap_request(msg, len, out, out_size);
             power::NoteActivity();
             return n;
-        });
+        };
+        ble_fido::SetMessageHandler(handler);
+        usb::fido::SetMessageHandler(handler);
     } else {
         ESP_LOGE(TAG, "fido: CTAP core init failed");
     }
@@ -857,6 +878,7 @@ void DisplayView(ui::display_view::View *out) {
                 out->value[i] = c.display.wallpaper == config::WallpaperMode::kBw ? 1 : 0;
                 break;
             case dv::Setting::kHoldRail: out->value[i] = c.power.hold_rail ? 1 : 0; break;
+            case dv::Setting::kUsb: out->value[i] = static_cast<uint16_t>(usb::GetMode()); break;
         }
     }
 }
@@ -875,6 +897,17 @@ const char *DisplaySet(ui::display_view::Setting setting, uint16_t value) {
             c.display.wallpaper = value == 1 ? config::WallpaperMode::kBw : config::WallpaperMode::kGrey;
             break;
         case dv::Setting::kHoldRail: c.power.hold_rail = value == 1; break;
+        case dv::Setting::kUsb: {
+            if (value > static_cast<uint16_t>(config::UsbMode::kSerialFido)) {
+                return "no such USB mode";
+            }
+            c.usb.mode = static_cast<config::UsbMode>(value);
+            const bool saved = config::Save() == ESP_OK;
+            if (usb::SetMode(static_cast<usb::Mode>(value)) != ESP_OK) {
+                return "the port did not start: Serial/JTAG";
+            }
+            return saved ? "saved" : "in use, but config.json is not saved";
+        }
     }
     return config::Save() == ESP_OK ? "saved" : "in use, but config.json is not saved";
 }
@@ -1219,6 +1252,10 @@ extern "C" void app_main() {
     // config.json from SPIFFS; built-in defaults if missing/invalid or unmounted.
     // TODO: look on the microSD card first.
     config::Init(spiffs_fs::kBasePath);
+    // The USB port as config.json has it; stdin / stdout follow it from here.
+    static_assert(static_cast<int>(usb::Mode::kSerialFido) ==
+                  static_cast<int>(config::UsbMode::kSerialFido));
+    usb::Init(static_cast<usb::Mode>(config::Get().usb.mode));
     tz::ApplyZone(config::Get().time.zone);
     // No name in config.json: the board's, put into the config so a save keeps it.
     config::Ble &ble_cfg = config::Get().ble;

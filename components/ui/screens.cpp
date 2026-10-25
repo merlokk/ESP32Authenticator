@@ -2235,7 +2235,7 @@ void ShowDisplay() {
     lv_label_set_text(b, text);
     lv_obj_align(b, LV_ALIGN_RIGHT_MID, -12, 0);
     y += 56 + 16;
-    constexpr int32_t kRow = 54;  // seven rows
+    constexpr int32_t kRow = 50;  // eight rows
     for (uint8_t i = 0; i < display_view::kSettingCount; ++i, y += kRow) {
         const display_view::Setting s = display_view::kSettings[i];
         display_view::Label(s, v.value[i], text, sizeof text);

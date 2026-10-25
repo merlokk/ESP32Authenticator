@@ -73,6 +73,9 @@ const char kDefaultJson[] = R"json({
     "wipe": "",
     "complexity": true
   },
+  "usb": {
+    "mode": "jtag"
+  },
   "test": {
     "pin": "",
     "autoPresence": false
@@ -636,6 +639,17 @@ bool ParseSections(const cJSON *root, Data *staged, char *error, size_t size) {
             return false;
         }
     }
+    const cJSON *usb = cJSON_GetObjectItemCaseSensitive(root, "usb");
+    if (usb != nullptr) {
+        if (!cJSON_IsObject(usb)) {
+            SetError(error, size, "usb: expected an object");
+            return false;
+        }
+        if (!GetMode(usb, "mode", ParseUsbMode, &parsed.usb.mode, "jtag, serial, serial+fido",
+                     "usb", error, size)) {
+            return false;
+        }
+    }
     const cJSON *test = cJSON_GetObjectItemCaseSensitive(root, "test");
     if (test != nullptr) {
         if (!cJSON_IsObject(test)) {
@@ -803,6 +817,8 @@ size_t Serialize(const Data &d, char *out, size_t size) {
     cJSON_AddNumberToObject(pin, "lockMinutes", d.pin.lock_minutes);
     cJSON_AddStringToObject(pin, "wipe", d.pin.wipe);
     cJSON_AddBoolToObject(pin, "complexity", d.pin.complexity);
+    cJSON *usb = cJSON_AddObjectToObject(root, "usb");
+    cJSON_AddStringToObject(usb, "mode", Name(d.usb.mode));
     cJSON *test = cJSON_AddObjectToObject(root, "test");
     cJSON_AddStringToObject(test, "pin", d.test.pin);
     cJSON_AddBoolToObject(test, "autoPresence", d.test.auto_presence);
@@ -1073,6 +1089,22 @@ const char *Name(WallpaperMode mode) {
 
 bool ParseWallpaperMode(const char *text, WallpaperMode *out) {
     for (WallpaperMode mode : {WallpaperMode::kGrey, WallpaperMode::kBw}) {
+        if (strcmp(text, Name(mode)) == 0) {
+            *out = mode;
+            return true;
+        }
+    }
+    return false;
+}
+
+const char *Name(UsbMode mode) {
+    return mode == UsbMode::kSerial       ? "serial"
+           : mode == UsbMode::kSerialFido ? "serial+fido"
+                                          : "jtag";
+}
+
+bool ParseUsbMode(const char *text, UsbMode *out) {
+    for (UsbMode mode : {UsbMode::kJtag, UsbMode::kSerial, UsbMode::kSerialFido}) {
         if (strcmp(text, Name(mode)) == 0) {
             *out = mode;
             return true;

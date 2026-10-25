@@ -526,6 +526,30 @@ void test_parse_display() {
     AssertParseFails(R"({"display": {"touch": {"xOffset": 1.5}}})", "display.touch.xOffset");
 }
 
+// usb.mode: the built-in Serial/JTAG by default, kept through a save.
+void test_parse_usb_mode() {
+    config::Data d;
+    config::FillDefaults(&d);
+    TEST_ASSERT_TRUE(d.usb.mode == config::UsbMode::kJtag);
+    char error[config::kErrorSize] = {};
+    TEST_ASSERT_TRUE_MESSAGE(ParseText(R"({"usb": {"mode": "serial+fido"}})", &d, error, sizeof error),
+                             error);
+    TEST_ASSERT_TRUE(d.usb.mode == config::UsbMode::kSerialFido);
+    char json[config::kMaxFileSize];
+    TEST_ASSERT_GREATER_THAN(0, config::Serialize(d, json, sizeof json));
+    config::Data out;
+    config::FillDefaults(&out);
+    TEST_ASSERT_TRUE_MESSAGE(ParseText(json, &out, error, sizeof error), error);
+    TEST_ASSERT_TRUE(out.usb.mode == config::UsbMode::kSerialFido);
+    config::UsbMode mode = config::UsbMode::kJtag;
+    TEST_ASSERT_TRUE(config::ParseUsbMode("serial", &mode));
+    TEST_ASSERT_TRUE(mode == config::UsbMode::kSerial);
+    TEST_ASSERT_EQUAL_STRING("jtag", config::Name(config::UsbMode::kJtag));
+    TEST_ASSERT_FALSE(config::ParseUsbMode("cdc", &mode));
+    AssertParseFails(R"({"usb": 1})", "usb: expected an object");
+    AssertParseFails(R"({"usb": {"mode": "fido"}})", "usb.mode");
+}
+
 void test_parse_power_usb() {
     config::Data d;
     config::FillDefaults(&d);
@@ -876,6 +900,7 @@ void RegisterConfigTests(void) {
     RUN_TEST(test_parse_led);
     RUN_TEST(test_parse_frontlight);
     RUN_TEST(test_parse_display);
+    RUN_TEST(test_parse_usb_mode);
     RUN_TEST(test_parse_power_usb);
     RUN_TEST(test_parse_power);
     RUN_TEST(test_parse_ipv4);

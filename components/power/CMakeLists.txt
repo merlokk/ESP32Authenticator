@@ -4,4 +4,4 @@ idf_component_register(SRCS "power.cpp"
                     INCLUDE_DIRS "."
                     REQUIRES boards
                     PRIV_REQUIRES ui config epd frontlight keypad ble battery clock esp_driver_gpio
-                                  esp_driver_usb_serial_jtag esp_hw_support esp_system esp_timer freertos)
+                                  usb esp_hw_support esp_system esp_timer freertos)

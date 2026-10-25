@@ -1,0 +1,4 @@
+## TinyUSB on the USB OTG controller: the CDC-ACM serial port and the
+## FIDO2 / U2F HID key (usb.mode serial, serial+fido).
+dependencies:
+  espressif/esp_tinyusb: "~2.4.0"

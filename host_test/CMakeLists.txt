@@ -58,6 +58,7 @@ add_executable(host_test
     test_storefile.cpp
     test_vault.cpp
     test_ota.cpp
+    test_usb.cpp
     fakes/fake_platform.cpp
     fakes/fake_store.cpp
 
@@ -103,6 +104,7 @@ target_include_directories(host_test PRIVATE
     ../devices/frontlight
     ../devices/touch
     ../devices/epd
+    ../devices/usb
     ../components/ui
     ../components/power
     ../components/pin_policy

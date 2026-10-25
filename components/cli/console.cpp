@@ -39,7 +39,11 @@
 #include "epd_cmd.h"
 #include "epd.h"
 #include "web_server.h"
+#include "usb.h"
 #include "linenoise/linenoise.h"
+
+#include <fcntl.h>
+#include <unistd.h>
 
 namespace console {
 
@@ -49,6 +53,23 @@ constexpr const char *TAG = "cli";
 
 // Commands kept for the up-arrow (esp_console's default).
 constexpr int kHistoryLength = 32;
+
+// The command line runs in a task of its own over stdin / stdout, which
+// devices/usb keeps on the port in use: esp_console's REPLs are bound to one
+// device. Stack and priority as esp_console's REPL.
+constexpr const char *kPrompt = "auth> ";
+constexpr uint32_t kReplStack = 4096;
+constexpr UBaseType_t kReplPriority = 2;
+constexpr size_t kMaxCommandLine = 256;
+
+// linenoise reads with plain blocking read()s: a probe may leave stdin
+// non-blocking, or (esp_console's select-based reader linked in) a reader
+// our stdin device cannot serve.
+void BlockingReads() {
+    linenoiseSetReadFunction(read);
+    const int fd = fileno(stdin);
+    fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) & ~O_NONBLOCK);
+}
 
 // off [lock] [wake <seconds>]: wake is for tests (a timer wakes it too).
 int CmdOff(int argc, char **argv) {
@@ -252,6 +273,8 @@ void PrintDevStatus() {
     CmdVersion(0, nullptr);
     Section("info");
     hardware::PrintShortInfo();
+    Section("usb");
+    usb::PrintInfo();
     Section("board");
     CmdBoard(0, nullptr);
     Section("date");
@@ -323,6 +346,7 @@ int CmdTerm(int argc, char **argv) {
     }
     // Bounded probe (500 ms), safe to run from any terminal.
     const bool answered = linenoiseProbe() == 0;
+    BlockingReads();
     linenoiseSetDumbMode(!answered);
     if (answered) {
         printf("the terminal answered: line editing and history are on\n");
@@ -332,7 +356,81 @@ int CmdTerm(int argc, char **argv) {
     return 0;
 }
 
+// usb [info] | usb mode <jtag|serial|serial+fido>: the port, switched at once
+// and saved.
+int CmdUsb(int argc, char **argv) {
+    static_assert(static_cast<int>(usb::Mode::kSerialFido) ==
+                  static_cast<int>(config::UsbMode::kSerialFido));
+    if (argc == 3 && strcmp(argv[1], "mode") == 0) {
+        config::UsbMode mode = config::UsbMode::kJtag;
+        if (!config::ParseUsbMode(argv[2], &mode)) {
+            printf("usage: usb mode jtag|serial|serial+fido\n");
+            return 1;
+        }
+        const usb::Mode next = static_cast<usb::Mode>(mode);
+        config::Get().usb.mode = mode;
+        const bool saved = config::Save() == ESP_OK;
+        if (next == usb::GetMode()) {
+            printf("usb %s already%s\n", argv[2], saved ? "" : " (config.json not saved)");
+            return 0;
+        }
+        printf("usb %s%s: the console moves to the new port\n", argv[2],
+               saved ? " (saved)" : " (config.json not saved)");
+        const esp_err_t err = usb::SetMode(next);
+        if (err != ESP_OK) {
+            printf("%s: %s; the port is %s\n", argv[2], esp_err_to_name(err),
+                   usb::Name(usb::GetMode()));
+            return 1;
+        }
+        return 0;
+    }
+    if (argc > 2 || (argc == 2 && strcmp(argv[1], "info") != 0)) {
+        printf("usage: usb [info] | usb mode jtag|serial|serial+fido\n");
+        return 1;
+    }
+    usb::PrintInfo();
+    return 0;
+}
+
+void ReplTask(void *) {
+    setvbuf(stdin, nullptr, _IONBF, 0);
+    // Nobody may have the port open yet: no answer leaves plain lines ('term').
+    if (linenoiseProbe() != 0) {
+        linenoiseSetDumbMode(1);
+    }
+    BlockingReads();
+    printf("\nType 'help' to get the list of commands.\n");
+    for (;;) {
+        char *line = linenoise(kPrompt);
+        if (line == nullptr) {
+            vTaskDelay(pdMS_TO_TICKS(10));  // the port went away: no spin
+            continue;
+        }
+        linenoiseHistoryAdd(line);
+        int ret = 0;
+        const esp_err_t err = esp_console_run(line, &ret);
+        if (err == ESP_ERR_NOT_FOUND) {
+            printf("Unrecognized command\n");
+        } else if (err == ESP_OK && ret != ESP_OK) {
+            printf("Command returned non-zero error code: 0x%x (%s)\n", ret, esp_err_to_name(ret));
+        } else if (err != ESP_OK && err != ESP_ERR_INVALID_ARG) {  // INVALID_ARG: an empty line
+            printf("Internal error: %s\n", esp_err_to_name(err));
+        }
+        linenoiseFree(line);
+    }
+}
+
 const esp_console_cmd_t kCommands[] = {
+    {
+        .command = "usb",
+        .help = "The USB port: [info] | mode jtag|serial|serial+fido (the chip's Serial/JTAG, a "
+                "serial port, a serial port and a FIDO2 / U2F key; at once, saved)",
+        .hint = "[info | mode <jtag|serial|serial+fido>]",
+        .func = &CmdUsb,
+        .argtable = nullptr,
+        .func_w_context = nullptr,
+        .context = nullptr,
+    },
     {
         .command = "term",
         .help = "Line editing and up-arrow history: 'term smart' on, 'term dumb' off, "
@@ -578,7 +676,7 @@ const esp_console_cmd_t kCommands[] = {
     },
     {
         .command = "devstatus",
-        .help = "Everything at once: version, info, board, date, battery, sd, led info, wifi info, web, ble info, fido2 info, "
+        .help = "Everything at once: version, info, usb, board, date, battery, sd, led info, wifi info, web, ble info, fido2 info, "
                 "pass info "
                 "(also the site's Device page)",
         .hint = nullptr,
@@ -641,20 +739,19 @@ const esp_console_cmd_t kCommands[] = {
 }  // namespace
 
 esp_err_t Init() {
-    esp_console_repl_t *repl = nullptr;
-    esp_console_repl_config_t repl_config = ESP_CONSOLE_REPL_CONFIG_DEFAULT();
-    repl_config.prompt = "auth>";
-    repl_config.max_cmdline_length = 256;
-    repl_config.max_history_len = kHistoryLength;
-
-    const esp_console_dev_usb_serial_jtag_config_t dev_config =
-        ESP_CONSOLE_DEV_USB_SERIAL_JTAG_CONFIG_DEFAULT();
-
-    esp_err_t err = esp_console_new_repl_usb_serial_jtag(&dev_config, &repl_config, &repl);
+    esp_console_config_t console_config = ESP_CONSOLE_CONFIG_DEFAULT();
+    console_config.max_cmdline_length = kMaxCommandLine;
+    console_config.hint_color = -1;  // no log colours either
+    esp_err_t err = esp_console_init(&console_config);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "console init failed: %s", esp_err_to_name(err));
         return err;
     }
+    linenoiseSetMultiLine(1);
+    linenoiseSetCompletionCallback(&esp_console_get_completion);
+    linenoiseSetHintsCallback(reinterpret_cast<linenoiseHintsCallback *>(&esp_console_get_hint));
+    linenoiseHistorySetMaxLen(kHistoryLength);
+    linenoiseSetMaxLineLen(kMaxCommandLine);
 
     web::SetDiagnostics(&PrintDevStatus);
     web::SetHardwareInfo([] { CmdHwInfo(0, nullptr); });
@@ -668,13 +765,11 @@ esp_err_t Init() {
         }
     }
 
-    err = esp_console_start_repl(repl);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "repl did not start: %s", esp_err_to_name(err));
-        return err;
+    if (xTaskCreate(ReplTask, "console", kReplStack, nullptr, kReplPriority, nullptr) != pdPASS) {
+        ESP_LOGE(TAG, "no console task");
+        return ESP_ERR_NO_MEM;
     }
-
-    ESP_LOGI(TAG, "console on USB Serial/JTAG, type 'help'");
+    ESP_LOGI(TAG, "console on USB (%s), type 'help'", usb::Name(usb::GetMode()));
     return ESP_OK;
 }
 

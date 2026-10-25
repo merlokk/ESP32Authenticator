@@ -111,8 +111,11 @@ Up when `web` says `running`; `web` prints the address(es).
 
 ## CLI
 
-`esp_console` REPL on USB Serial/JTAG (same port as the monitor), prompt `auth>`.
-Opening the port with RTS asserted resets the chip.
+Command line (esp_console commands, our linenoise task) on the USB port in
+use, prompt `auth>`: USB Serial/JTAG (`usb.mode` jtag, same port as the
+monitor; opening it with RTS asserted resets the chip) or the TinyUSB serial
+port (`serial`, `serial+fido`: another COM port, DTR/RTS do nothing; flash
+after `usb mode jtag`, or hold BOOT).
 
 | Command | Output |
 |---|---|
@@ -121,6 +124,7 @@ Opening the port with RTS asserted resets the chip.
 | `version` | firmware version, build date, IDF version, ELF SHA256, chip, running slot |
 | `info` | short: model, MACs, unique ID, flash size, CPU temperature, USB host (connected = host sends SOF, port open or not), reset reason, uptime |
 | `reboot` | software reset (the USB console reconnects) |
+| `usb [info]` / `usb mode jtag\|serial\|serial+fido` | the port: mode, VID:PID, host, DTR, FIDO counters, the last failed switch / switch at once (the console moves to the new port), saved |
 | `hwinfo` | chip, MACs, eFuse unique ID, flash JEDEC/size, PSRAM, heap, eFuse security/download/USB bits, key blocks, NVS stats, flash layout (bootloader version, partitions, image sizes, gaps), OTA state (running/boot/next slot, rollback, raw otadata), CPU temperature, USB host, reset reason, uptime, clock (hardware RTC found or not, source, RTC timer, clock and system time to the ms, drift; no time: why, e.g. VL set), battery (as `battery`), e-ink (as `epd`), touch (as `touch`), SD card (as `sd`), LED (as `led info`) |
 | `spiffs info` | partition address/size, mount point, total/used/free (esp_spiffs_info), file count |
 | `spiffs ls` | SPIFFS files: size, modification time, file/fs totals |

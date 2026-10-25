@@ -745,7 +745,10 @@ void test_display_view(void) {
     for (const dv::Option &o : dv::kKeepPin) {
         TEST_ASSERT_TRUE(o.value <= 168);
     }
-    dv::View a = {50, false, {2, 0, 10, 0, 8, 0, 1}};
+    dv::Label(dv::Setting::kUsb, 2, text, sizeof text);
+    TEST_ASSERT_EQUAL_STRING("Serial port + FIDO2", text);
+    TEST_ASSERT_EQUAL_INT(0, dv::Index(dv::Setting::kUsb, 0));
+    dv::View a = {50, false, {2, 0, 10, 0, 8, 0, 1, 0}};
     dv::View b = a;
     TEST_ASSERT_TRUE(dv::Equal(a, b));
     b.value[1] = 4;
@@ -1103,7 +1106,7 @@ void test_wifi_settings(void) {
 
     namespace dv = ui::display_view;
     char text[24];
-    TEST_ASSERT_EQUAL_UINT8(7, dv::kSettingCount);
+    TEST_ASSERT_EQUAL_UINT8(8, dv::kSettingCount);
     dv::Label(dv::Setting::kLightOff, 2, text, sizeof text);
     TEST_ASSERT_EQUAL_STRING("2 min", text);
     dv::Label(dv::Setting::kIdleUsb, 0, text, sizeof text);

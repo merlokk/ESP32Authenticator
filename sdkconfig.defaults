@@ -59,3 +59,13 @@ CONFIG_LV_USE_LODEPNG=y
 
 # FAT long file names in UTF-8: the microSD card holds books named in any script.
 CONFIG_FATFS_API_ENCODING_UTF_8=y
+
+# USB (devices/usb, usb.mode): TinyUSB on the OTG controller beside the
+# Serial/JTAG: one CDC-ACM port (the console) and one HID interface (the
+# FIDO2 / U2F key); the descriptors are ours, per mode.
+# Its debug lines go to the ROM printf, the Serial/JTAG: off the PHY then.
+CONFIG_TINYUSB_DEBUG_LEVEL=0
+CONFIG_TINYUSB_CDC_ENABLED=y
+CONFIG_TINYUSB_CDC_COUNT=1
+CONFIG_TINYUSB_CDC_TX_BUFSIZE=1024
+CONFIG_TINYUSB_HID_COUNT=1

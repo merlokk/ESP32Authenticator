@@ -1,7 +1,7 @@
 #pragma once
 
 // The Display & power window of Settings (x4-design.md): the battery, then a
-// row per setting with its value; a tap lists the choices (a check at the
+// row per setting with its value (the USB port's too); a tap lists the choices (a check at the
 // one in use), a tap on one keeps it. The device fills View and keeps a
 // choice (ui::DisplayHooks). Pure (host-tested).
 
@@ -20,11 +20,12 @@ enum class Setting : uint8_t {
     kHoldRail,   // power.holdRail: 1 the peripherals' power kept through a sleep
     kLightOff,     // frontlight.offMinutes: the light off after this long idle, 0 never
     kLightOffUsb,  // frontlight.offMinutesUsb: the same on USB power
+    kUsb,          // usb.mode: 0 Serial/JTAG, 1 serial port, 2 serial port + FIDO2
 };
 
 inline constexpr Setting kSettings[] = {Setting::kLightOff, Setting::kLightOffUsb, Setting::kIdle,
                                         Setting::kIdleUsb,  Setting::kKeepPin,     Setting::kWallpaper,
-                                        Setting::kHoldRail};
+                                        Setting::kHoldRail, Setting::kUsb};
 inline constexpr uint8_t kSettingCount = sizeof kSettings / sizeof kSettings[0];
 
 struct Option {
@@ -42,6 +43,9 @@ inline constexpr Option kLight[] = {{0, "Never"},  {1, "1 min"},   {2, "2 min"},
                                     {5, "5 min"},  {10, "10 min"}, {30, "30 min"}};
 // Off: no drain while asleep, but the PIN kept through a sleep is lost.
 inline constexpr Option kHoldRail[] = {{1, "Kept"}, {0, "Off"}};
+// config::UsbMode's order. Switched at once: the console moves with it.
+inline constexpr Option kUsb[] = {{0, "Serial/JTAG (debug)"}, {1, "Serial port"},
+                                  {2, "Serial port + FIDO2"}};
 
 constexpr const Option *Options(Setting s, size_t *count) {
     switch (s) {
@@ -52,6 +56,7 @@ constexpr const Option *Options(Setting s, size_t *count) {
         case Setting::kHoldRail: *count = sizeof kHoldRail / sizeof kHoldRail[0]; return kHoldRail;
         case Setting::kLightOff:
         case Setting::kLightOffUsb: *count = sizeof kLight / sizeof kLight[0]; return kLight;
+        case Setting::kUsb: *count = sizeof kUsb / sizeof kUsb[0]; return kUsb;
     }
     *count = 0;
     return nullptr;
@@ -64,6 +69,7 @@ constexpr const char *Title(Setting s) {
            : s == Setting::kWallpaper ? "Wallpaper"
            : s == Setting::kLightOff  ? "Light off after"
            : s == Setting::kLightOffUsb ? "On USB, light off after"
+           : s == Setting::kUsb         ? "USB port"
                                      : "Power in sleep";
 }
 

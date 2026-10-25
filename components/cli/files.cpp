@@ -9,12 +9,12 @@
 #include <cstring>
 #include <ctime>
 
-#include "driver/usb_serial_jtag.h"
 #include "esp_partition.h"
 #include "esp_rom_crc.h"
 #include "freertos/FreeRTOS.h"
 #include "spiffs_fs.h"
 #include "subcommand.h"
+#include "usb.h"
 
 namespace console {
 
@@ -240,15 +240,16 @@ class Base64Writer {
 // No data for this long aborts `spiffs write`.
 constexpr int kWriteIdleTimeoutS = 10;
 
-// Flow control: the USB Serial/JTAG driver drops input once its 256-byte RX
-// ring buffer is full, and SPIFFS writes are slow. So after every kAckBlock
+// Flow control: the USB Serial/JTAG driver drops input once its 512-byte RX
+// ring buffer is full (the serial port holds the host back instead), and
+// SPIFFS writes are slow. So after every kAckBlock
 // base64 chars consumed the device prints '.', and a sender must not have more
 // than one block in flight (utils/spiffs.py waits for each '.').
 constexpr int kAckBlock = 192;
 
 // Reads one base64 line from the console into `writer`, in small chunks.
 // Leading CR/LF (left over from the command line) are skipped; the next CR/LF
-// ends the file. Reads the USB Serial/JTAG driver directly to get an idle
+// ends the file. Reads the USB port directly (usb::Read) to get an idle
 // timeout. Sets `acked` if any '.' was printed.
 // Returns nullptr on success, or an error text.
 const char *ReceiveBase64Line(Base64Writer &writer, bool *acked) {
@@ -256,8 +257,7 @@ const char *ReceiveBase64Line(Base64Writer &writer, bool *acked) {
     bool started = false;
     int block = 0;
     while (true) {
-        const int n = usb_serial_jtag_read_bytes(in, sizeof in,
-                                                 pdMS_TO_TICKS(kWriteIdleTimeoutS * 1000));
+        const int n = usb::Read(in, sizeof in, pdMS_TO_TICKS(kWriteIdleTimeoutS * 1000));
         if (n <= 0) {
             return "timeout waiting for data";
         }

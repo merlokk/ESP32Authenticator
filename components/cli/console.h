@@ -1,7 +1,9 @@
 #pragma once
 
-// Device command line on the native USB Serial/JTAG port (esp_console REPL).
+// Device command line on the USB port (devices/usb: the Serial/JTAG or the
+// serial port, whichever is in use), linenoise in a task of its own.
 //
+//   usb        info | mode jtag|serial|serial+fido: the port, switched at once
 //   term       line editing / up-arrow history: smart, dumb, or probe
 //   version    firmware version, build date, IDF version, chip, running slot
 //   info       short hardware summary

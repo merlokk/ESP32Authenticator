@@ -7,7 +7,7 @@ Target and status. Screen design and the open questions: [x4-design.md](x4-desig
 | Function | Status |
 |---|---|
 | FIDO2 key (CTAP 2.3, U2F) over BLE | done |
-| FIDO2 over USB | not yet |
+| FIDO2 over USB | done (CTAPHID, `usb.mode` serial+fido) |
 | BLE keyboard: types login / password / TOTP | keyboard done; typing records not yet |
 | TOTP codes | done (`crypto::Totp`, console `totp`) |
 | PIN lock (6 digits, lockout after 10 tries, wipe PIN); the PIN also derives the storage key | PIN key for `vault.bin`, lockout, wipe PIN, console `pin` done; screen not yet |
@@ -43,7 +43,7 @@ Reference ESP-IDF + LVGL project: `../../ai-remote/approver-esp32` ([GitHub](htt
 | `lib/` | third-party git submodules (`lionkey`: our fork, see FIDO2) |
 | `host_test/` | host tests (Unity, MSVC), no board: see Tests |
 | `utils/` | host-side Python tools over the USB console (`device.py`: console session; `spiffs.py`: ls/info/rm/get/put; `wallpaper.py`: wallpapers on the card; `ble.py`: ble commands, `kb` text quoting) |
-| `devices/` | hardware drivers, one component per device (`hardware`: SoC info, eFuse, USB host connected; `spiffs_fs`: SPIFFS on `spiffs` at `/spiffs`, never formatted, it holds stock data on the X4 Pro; `ble`, `ble_kb`, `ble_fido`: see BLE; `wifi`: the radio (`wifi::Radio`), no decisions, stores nothing; `buttons`: GPIO buttons, polled, debounced 25 ms (`button_logic.h`, pure: debounce, short/long press from approver-esp32; single/double/... press: `MultiPress`, 400 ms gap; `key_events.h`, pure: one `KeyTracker` per button: pressed / released edges, long at 600 ms (fired while held), click xN 400 ms after the last release, a press is long or a click, never both; a finger down at boot is no press), pins from the board; `keypad`: the one owner of the board's buttons, a task polling every 10 ms, events in a queue (16, full: dropped and counted) for the UI, listeners called from the task (bindings), `Pressed()` / `HeldMs()` for the rest (FIDO2 presence), console `keys`; `crypto`: hardware RNG, SHA-256, AES-256-CBC, AES-256-GCM, HMAC-SHA1 via PSA, HOTP/TOTP (`otp.h`, pure: counter, truncation); `clock`: `rtc::Clock`, see Time; `led`: one WS2812 from UART1, see Boards; `i2c_bus`: the board's I2C bus, leased (from approver-esp32), see Boards; `battery`: CW2017 fuel gauge and charger STAT, see Boards; `sd_card`: microSD over SDMMC, FAT at `/sdcard`, see Boards; `frontlight`: cool and warm LED strings on LEDC, see Boards; `touch`: the GT911 on the leased I2C bus (`gt911_logic.h`, pure), polled by the keypad task, see Boards; `epd`: the e-ink panel (SSD1677 / UC8179 / UC8279, detected), see Boards; `boards`: board classes, see Boards). `devices/config.h`: the board the firmware is built for |
+| `devices/` | hardware drivers, one component per device (`hardware`: SoC info, eFuse, USB host connected; `usb`: the USB port, see USB; `spiffs_fs`: SPIFFS on `spiffs` at `/spiffs`, never formatted, it holds stock data on the X4 Pro; `ble`, `ble_kb`, `ble_fido`: see BLE; `wifi`: the radio (`wifi::Radio`), no decisions, stores nothing; `buttons`: GPIO buttons, polled, debounced 25 ms (`button_logic.h`, pure: debounce, short/long press from approver-esp32; single/double/... press: `MultiPress`, 400 ms gap; `key_events.h`, pure: one `KeyTracker` per button: pressed / released edges, long at 600 ms (fired while held), click xN 400 ms after the last release, a press is long or a click, never both; a finger down at boot is no press), pins from the board; `keypad`: the one owner of the board's buttons, a task polling every 10 ms, events in a queue (16, full: dropped and counted) for the UI, listeners called from the task (bindings), `Pressed()` / `HeldMs()` for the rest (FIDO2 presence), console `keys`; `crypto`: hardware RNG, SHA-256, AES-256-CBC, AES-256-GCM, HMAC-SHA1 via PSA, HOTP/TOTP (`otp.h`, pure: counter, truncation); `clock`: `rtc::Clock`, see Time; `led`: one WS2812 from UART1, see Boards; `i2c_bus`: the board's I2C bus, leased (from approver-esp32), see Boards; `battery`: CW2017 fuel gauge and charger STAT, see Boards; `sd_card`: microSD over SDMMC, FAT at `/sdcard`, see Boards; `frontlight`: cool and warm LED strings on LEDC, see Boards; `touch`: the GT911 on the leased I2C bus (`gt911_logic.h`, pure), polled by the keypad task, see Boards; `epd`: the e-ink panel (SSD1677 / UC8179 / UC8279, detected), see Boards; `boards`: board classes, see Boards). `devices/config.h`: the board the firmware is built for |
 
 ## Config
 
@@ -99,6 +99,7 @@ Reference ESP-IDF + LVGL project: `../../ai-remote/approver-esp32` ([GitHub](htt
   "display": {"wallpaper": "grey", "touch": {"xScale": 1000, "xOffset": 0, "yScale": 1000, "yOffset": 0}},
   "power": {"idleMinutes": 10, "idleMinutesUsb": 0, "keepPinHours": 0, "holdRail": true},
   "pin": {"lockMinutes": 10, "wipe": "", "complexity": true},
+  "usb": {"mode": "jtag"},
   "test": {"pin": "", "autoPresence": false}
 }
 ```
@@ -377,6 +378,44 @@ inverted, fast) and then runs full (2.6 s together): no grey shows through. No f
 `ui wallpaper` draws one without sleeping; `sd put` / `sd rm`
 (`utils/wallpaper.py`) write only plain `*.png` names into the folder: the
 rest of the card stays read-only to the console.
+
+## USB
+
+`devices/usb`: one port, three modes (`usb.mode`, `usb mode`, Settings >
+Display & power > USB port), switched at once, no restart; the host sees
+the old device leave and the new one arrive. `usb_logic.h` (pure): modes,
+product IDs, line endings.
+
+| Mode | Port |
+|---|---|
+| `jtag` (default) | the chip's USB Serial/JTAG (303a:1001): console, flashing, JTAG |
+| `serial` | TinyUSB (`espressif/esp_tinyusb` 2.4) on the OTG controller: CDC-ACM (303a:4001) |
+| `serial+fido` | the CDC-ACM and a FIDO2 / U2F HID key (303a:4005) |
+
+- The PHY is one: Serial/JTAG out = its D+ pull-up off (override) 100 ms,
+  then TinyUSB takes the PHY; back = `tud_disconnect`, 100 ms, TinyUSB
+  uninstalled, the Serial/JTAG driver (maps the PHY back), its pulls
+  written back to the reset values (the override's values outlive it and a
+  software reset: D+ left without its pull-up, the port never came back,
+  not even in the ROM, until BOOT). A TinyUSB failing: back on the
+  Serial/JTAG (`usb`: the step and the error).
+- Before `esp_restart` and deep sleep, and at boot, the OTG controller is
+  reset and the PHY given to the Serial/JTAG: the ROM, the bootloader and
+  the download mode are always there. Flashing over USB: `jtag` first.
+- stdin / stdout / stderr are `/dev/authusb` (our VFS) following the port;
+  the command line is our own linenoise task over it (esp_console's REPLs
+  are bound to one device). Output during a switch, or 50 ms not taken by
+  the host, is dropped, never waited for; the CDC needs no DTR (TinyUSB's
+  FIFO keeps the latest). TinyUSB's debug output is off (the ROM printf,
+  the Serial/JTAG, is off the PHY then).
+- FIDO2 (`usb_fido`): CTAPHID framing and channels from LionKey
+  (`core/ctaphid.c`), 64-byte reports every 5 ms; a link task (INIT, PING,
+  WINK, CANCEL, BUSY to other channels, the 2 s transaction timeout) and a
+  worker running the CTAP core (12 KB); KEEPALIVE for CBOR and MSG. The
+  core's hooks go to the transport whose worker runs the request; its
+  credentials say "by USB". python-fido2 suite over HID (2026-10-25): 87
+  passed, 21 skipped (destructive, fill, reset, BLE).
+- `power`: a USB host = Serial/JTAG SOF or TinyUSB configured, not suspended.
 
 ## BLE
 

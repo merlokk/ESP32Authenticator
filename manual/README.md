@@ -211,7 +211,9 @@ sign in, U2F), the site and the account(s).
 - Settings > **Display & power**: the battery; *Light off after* and *Power
   off after* (and their values on USB power); *PIN after sleep*;
   *Wallpaper* (grey or black & white); *Power in sleep* (*off* saves the
-  battery but forgets the PIN); *Power off*.
+  battery but forgets the PIN); *USB port*: *Serial/JTAG (debug)*, *Serial
+  port*, or *Serial port + FIDO2* (the key over the USB cable too), at once;
+  *Power off*.
 - **Frontlight**: Settings, at the top (switch, Level, Warmth). It goes off
   after *Light off after* and comes on again at a touch or a button.
 - **Reset** (the small button on the top edge, on the right): restarts the

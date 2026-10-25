@@ -5,7 +5,7 @@
 #include <cstring>
 
 #include "driver/temperature_sensor.h"
-#include "driver/usb_serial_jtag.h"
+#include "usb.h"
 #include "esp_chip_info.h"
 #include "esp_efuse.h"
 #include "esp_efuse_table.h"
@@ -434,9 +434,10 @@ void PrintRuntimeLines() {
     if (CpuTemperature(&celsius) == ESP_OK) {
         printf("cpu temp   %.1f C\n", celsius);
     }
-    // USB Serial/JTAG: a host sending SOF frames, port open or not. A charger
-    // alone (no SOF) is not a host.
-    printf("usb        %s\n", usb_serial_jtag_is_connected() ? "connected to a host" : "no host");
+    // A host talking to the port (devices/usb), opened or not. A charger
+    // alone is no host.
+    printf("usb        %s, %s\n", usb::Name(usb::GetMode()),
+           usb::HostConnected() ? "connected to a host" : "no host");
     const esp_reset_reason_t reason = esp_reset_reason();
     printf("reset      %s (%d)\n", ResetReasonName(reason), static_cast<int>(reason));
     const int64_t up = esp_timer_get_time() / 1000000;

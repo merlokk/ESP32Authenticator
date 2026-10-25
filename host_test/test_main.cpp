@@ -32,6 +32,7 @@ void RegisterTotpTests(void);
 void RegisterStorefileTests(void);
 void RegisterVaultTests(void);
 void RegisterOtaTests(void);
+void RegisterUsbTests(void);
 
 void setUp(void) {}
 
@@ -87,5 +88,6 @@ int main(int argc, char **argv) {
     if (Wanted("storefile")) RegisterStorefileTests();
     if (Wanted("vault")) RegisterVaultTests();
     if (Wanted("ota")) RegisterOtaTests();
+    if (Wanted("usb")) RegisterUsbTests();
     return UNITY_END();
 }
