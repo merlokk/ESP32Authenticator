@@ -216,11 +216,15 @@ Power x2 (`click x2`, a keypad listener in `main.cpp`) toggles it; console
 SD card (`devices/sd_card`): native SDMMC, 1-bit, FAT at `/sdcard`, mounted
 once at boot (`sd_card::Init()` after `battery::Init()`). Sequence from
 FreeInk: power off 80 ms / on 120 ms (GPIO5, active low) before each
-attempt, mount, then a real read of sector 0; the power stays on.
+attempt, mount, then a real read of sector 0; the power stays on. While
+the power is off CLK / CMD / D0 are driven low: pulled up, as a driver
+leaves them, they feed the card and it never resets (after the card reader,
+or a software reset after it: no answer until a hard reset).
 `sd_policy.h` (pure): 40 MHz twice, then 20 MHz, at most 4 attempts; no
 answer twice = no card; no FAT = left alone. Never formatted (the card holds
 the reader's books). Long names in UTF-8 (`CONFIG_FATFS_API_ENCODING_UTF_8`).
-No card-detect line. Console `sd` (read-only), `[sd card]` in `hwinfo`.
+No card-detect line. Console `sd` (read-only), `sd mount` (again, as at
+boot), `[sd card]` in `hwinfo`. `Lend` / `TakeBack`: the card reader (USB).
 Measured: the stock 16 GB card mounts on the first attempt at 40 MHz, ~1 s
 of boot.
 
@@ -391,6 +395,7 @@ product IDs, line endings.
 | `jtag` (default) | the chip's USB Serial/JTAG (303a:1001): console, flashing, JTAG |
 | `serial` | TinyUSB (`espressif/esp_tinyusb` 2.4) on the OTG controller: CDC-ACM (303a:4001) |
 | `serial+fido` | the CDC-ACM and a FIDO2 / U2F HID key (303a:4005) |
+| `reader` | the CDC-ACM and the microSD card as a USB drive (303a:4003); for a while: `usb reader [on\|off]`, the screen's USB port, never saved |
 
 - The PHY is one: Serial/JTAG out = its D+ pull-up off (override) 100 ms,
   then TinyUSB takes the PHY; back = `tud_disconnect`, 100 ms, TinyUSB
@@ -416,6 +421,14 @@ product IDs, line endings.
   credentials say "by USB". python-fido2 suite over HID (2026-10-25): 87
   passed, 21 skipped (destructive, fill, reset, BLE).
 - `power`: a USB host = Serial/JTAG SOF or TinyUSB configured, not suspended.
+- Card reader: the vault locks first (the PC may change the files; the PIN
+  loads them again), a window covers the screens (Finish: the saved mode, in
+  a task of its own). `sd_card::Lend`: FAT unmounted, the card initialised
+  alone at the mount's clock; esp_tinyusb's MSC on it (`auto_mount_off`,
+  `do_not_format`: never mounted here, never formatted; 8 KB a transfer:
+  ~0.8 MB/s read, ~0.9 MB/s write on the X4 Pro). Back: the drive deleted
+  (queued writes first), `sd_card::TakeBack` mounts FAT as at boot (seconds).
+  Inquiry strings stay esp_tinyusb's ("TinyUSB TEST MSC Storage").
 
 ## BLE
 

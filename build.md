@@ -125,6 +125,7 @@ after `usb mode jtag`, or hold BOOT).
 | `info` | short: model, MACs, unique ID, flash size, CPU temperature, USB host (connected = host sends SOF, port open or not), reset reason, uptime |
 | `reboot` | software reset (the USB console reconnects) |
 | `usb [info]` / `usb mode jtag\|serial\|serial+fido` | the port: mode, VID:PID, host, DTR, FIDO counters, the last failed switch / switch at once (the console moves to the new port), saved |
+| `usb reader [on\|off]` | the microSD card as a USB drive beside the serial port (the vault locks; not saved, a restart ends it too) / the saved mode back, FAT mounted again |
 | `hwinfo` | chip, MACs, eFuse unique ID, flash JEDEC/size, PSRAM, heap, eFuse security/download/USB bits, key blocks, NVS stats, flash layout (bootloader version, partitions, image sizes, gaps), OTA state (running/boot/next slot, rollback, raw otadata), CPU temperature, USB host, reset reason, uptime, clock (hardware RTC found or not, source, RTC timer, clock and system time to the ms, drift; no time: why, e.g. VL set), battery (as `battery`), e-ink (as `epd`), touch (as `touch`), SD card (as `sd`), LED (as `led info`) |
 | `spiffs info` | partition address/size, mount point, total/used/free (esp_spiffs_info), file count |
 | `spiffs ls` | SPIFFS files: size, modification time, file/fs totals |

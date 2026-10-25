@@ -193,6 +193,12 @@ void ShowUpdate(const char *version, const char *source, uint32_t written, uint3
 // else the reason, and the window closes after a few seconds.
 void EndUpdate(const char *error);
 
+// The card reader (usb reader), from any task: on, a window over every screen
+// (the PIN pad too) while the microSD card is a drive on the computer, its
+// Finish button calling `finish` in a task of its own (the card mounts again
+// for seconds); off, the window goes.
+void ShowCardReader(bool on, void (*finish)());
+
 // Called from the ui task when a finger goes down (power::NoteActivity).
 void SetPressHook(void (*hook)());
 

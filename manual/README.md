@@ -213,6 +213,9 @@ sign in, U2F), the site and the account(s).
   *Wallpaper* (grey or black & white); *Power in sleep* (*off* saves the
   battery but forgets the PIN); *USB port*: *Serial/JTAG (debug)*, *Serial
   port*, or *Serial port + FIDO2* (the key over the USB cable too), at once;
+  *SD card reader*: the card is a drive on the computer until *Finish* on
+  the screen (eject it on the computer first); the vault locks, the PIN
+  after;
   *Power off*.
 - **Frontlight**: Settings, at the top (switch, Level, Warmth). It goes off
   after *Light off after* and comes on again at a touch or a button.

@@ -9,6 +9,7 @@
 
 #include "esp_err.h"
 #include "sd_policy.h"
+#include "sd_protocol_types.h"
 
 namespace sd_card {
 
@@ -21,6 +22,16 @@ esp_err_t Init();
 
 bool Mounted();
 Outcome Status();
+
+// The card reader (usb.h): FAT unmounted (files under /sdcard fail
+// meanwhile), the card itself kept powered and initialised for a USB host's
+// block reads and writes. TakeBack mounts FAT again, as at boot (the host may
+// have changed anything). Lend: ESP_ERR_NOT_FOUND without a mounted card.
+esp_err_t Lend(sdmmc_card_t **card);
+// Mounts FAT again as at boot when it is not (and the card is not lent).
+esp_err_t Remount();
+esp_err_t TakeBack();
+bool Lent();
 
 struct Info {
     char name[8];         // from the CID

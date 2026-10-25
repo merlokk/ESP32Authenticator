@@ -26,6 +26,8 @@
 #include "tinyusb.h"
 #include "tinyusb_cdc_acm.h"
 #include "tinyusb_default_config.h"
+#include "tinyusb_msc.h"
+#include "sd_card.h"
 #include "usb_fido.h"
 
 namespace usb {
@@ -94,13 +96,17 @@ int fd_flags[kMaxFds];
 
 // --- Descriptors (TinyUSB keeps the pointers: static)
 
-enum : uint8_t { kItfCdc, kItfCdcData, kItfHid };
-enum : uint8_t { kStrLang, kStrMaker, kStrProduct, kStrSerial, kStrCdc, kStrHid, kStrCount };
+enum : uint8_t { kItfCdc, kItfCdcData, kItfThird };  // the third: the FIDO2 HID or the drive
+enum : uint8_t {
+    kStrLang, kStrMaker, kStrProduct, kStrSerial, kStrCdc, kStrHid, kStrDrive, kStrCount
+};
 constexpr uint8_t kEpCdcNotify = 0x81;
 constexpr uint8_t kEpCdcOut = 0x02;
 constexpr uint8_t kEpCdcIn = 0x82;
 constexpr uint8_t kEpHidOut = 0x03;
 constexpr uint8_t kEpHidIn = 0x83;
+constexpr uint8_t kEpDriveOut = 0x04;
+constexpr uint8_t kEpDriveIn = 0x84;
 constexpr uint8_t kHidIntervalMs = 5;
 constexpr uint16_t kPowerMa = 500;  // the charger draws it anyway
 
@@ -116,8 +122,15 @@ const uint8_t kConfigSerialFido[] = {
                           TUD_CONFIG_DESC_LEN + TUD_CDC_DESC_LEN + TUD_HID_INOUT_DESC_LEN, 0,
                           kPowerMa),
     TUD_CDC_DESCRIPTOR(kItfCdc, kStrCdc, kEpCdcNotify, 8, kEpCdcOut, kEpCdcIn, 64),
-    TUD_HID_INOUT_DESCRIPTOR(kItfHid, kStrHid, HID_ITF_PROTOCOL_NONE, sizeof kFidoReport,
+    TUD_HID_INOUT_DESCRIPTOR(kItfThird, kStrHid, HID_ITF_PROTOCOL_NONE, sizeof kFidoReport,
                              kEpHidOut, kEpHidIn, CFG_TUD_HID_EP_BUFSIZE, kHidIntervalMs),
+};
+
+const uint8_t kConfigReader[] = {
+    TUD_CONFIG_DESCRIPTOR(1, 3, 0, TUD_CONFIG_DESC_LEN + TUD_CDC_DESC_LEN + TUD_MSC_DESC_LEN, 0,
+                          kPowerMa),
+    TUD_CDC_DESCRIPTOR(kItfCdc, kStrCdc, kEpCdcNotify, 8, kEpCdcOut, kEpCdcIn, 64),
+    TUD_MSC_DESCRIPTOR(kItfThird, kStrDrive, kEpDriveOut, kEpDriveIn, 64),
 };
 
 char serial[13];  // the base MAC in hex, as the BLE Device Information's
@@ -128,8 +141,57 @@ const char *strings[kStrCount] = {
     serial,
     "ESP32 Auth console",
     "ESP32 Auth FIDO2",
+    "ESP32 Auth microSD",
 };
 tusb_desc_device_t device;
+
+// The card reader: the card (sd_card::Lend) and esp_tinyusb's drive on it.
+void (*reader_hook)(bool on) = nullptr;
+tinyusb_msc_storage_handle_t drive = nullptr;
+// A drive deleted with writes still queued is refused: retried this long.
+constexpr int kDriveDeleteTries = 100;  // 10 ms each
+
+void OnDriveEvent(tinyusb_msc_storage_handle_t, tinyusb_msc_event_t *, void *) {}
+
+esp_err_t StartDrive(Mode m) {
+    sdmmc_card_t *card = nullptr;
+    esp_err_t err = Note(m, "the card", sd_card::Lend(&card));
+    if (err != ESP_OK) {
+        return err;
+    }
+    // Never mounted for the app here, never formatted: the host has it all.
+    tinyusb_msc_driver_config_t driver = {};
+    driver.user_flags.auto_mount_off = 1;
+    driver.callback = OnDriveEvent;
+    err = Note(m, "MSC", tinyusb_msc_install_driver(&driver));
+    if (err == ESP_OK) {
+        tinyusb_msc_storage_config_t storage = {};
+        storage.medium.card = card;
+        storage.fat_fs.do_not_format = true;
+        storage.mount_point = TINYUSB_MSC_STORAGE_MOUNT_USB;
+        err = Note(m, "the drive", tinyusb_msc_new_storage_sdmmc(&storage, &drive));
+        if (err != ESP_OK) {
+            tinyusb_msc_uninstall_driver();
+        }
+    }
+    if (err != ESP_OK) {
+        sd_card::TakeBack();
+    }
+    return err;
+}
+
+void StopDrive() {
+    for (int i = 0; drive != nullptr && i < kDriveDeleteTries; ++i) {
+        if (tinyusb_msc_delete_storage(drive) == ESP_OK) {
+            drive = nullptr;
+        } else {
+            vTaskDelay(pdMS_TO_TICKS(10));
+        }
+    }
+    tinyusb_msc_uninstall_driver();
+    drive = nullptr;
+    sd_card::TakeBack();  // FAT again: what the host left
+}
 
 // --- Serial/JTAG
 
@@ -200,8 +262,16 @@ esp_err_t StartOtg(Mode m) {
     cfg.descriptor.device = &device;
     cfg.descriptor.string = strings;
     cfg.descriptor.string_count = kStrCount;
-    cfg.descriptor.full_speed_config = HasFido(m) ? kConfigSerialFido : kConfigSerial;
-    esp_err_t err = Note(m, "TinyUSB", tinyusb_driver_install(&cfg));  // takes the PHY
+    cfg.descriptor.full_speed_config = HasFido(m)   ? kConfigSerialFido
+                                       : HasCard(m) ? kConfigReader
+                                                    : kConfigSerial;
+    esp_err_t err = HasCard(m) ? StartDrive(m) : ESP_OK;  // the drive before the host asks
+    if (err == ESP_OK) {
+        err = Note(m, "TinyUSB", tinyusb_driver_install(&cfg));  // takes the PHY
+        if (err != ESP_OK && HasCard(m)) {
+            StopDrive();
+        }
+    }
     if (err != ESP_OK) {
         return err;
     }
@@ -211,6 +281,9 @@ esp_err_t StartOtg(Mode m) {
     err = Note(m, "CDC-ACM", tinyusb_cdcacm_init(&acm));
     if (err != ESP_OK) {
         tinyusb_driver_uninstall();
+        if (HasCard(m)) {
+            StopDrive();
+        }
         return err;
     }
     if (HasFido(m)) {
@@ -220,8 +293,8 @@ esp_err_t StartOtg(Mode m) {
     return ESP_OK;
 }
 
-void StopOtg(bool had_fido) {
-    if (had_fido) {
+void StopOtg(Mode m) {
+    if (HasFido(m)) {
         fido::Stop();
     }
     // What is still queued goes out first (a terminal reading).
@@ -233,6 +306,9 @@ void StopOtg(bool had_fido) {
     }
     tud_disconnect();  // D+ released: the host sees the device go
     vTaskDelay(kDetachTicks);
+    if (HasCard(m)) {
+        StopDrive();
+    }
     tinyusb_cdcacm_deinit(TINYUSB_CDC_ACM_0);
     tinyusb_driver_uninstall();
 }
@@ -268,7 +344,7 @@ esp_err_t Apply(Mode next) {
     port = Port::kNone;
     if (started) {
         if (OnOtg(mode)) {
-            StopOtg(HasFido(mode));
+            StopOtg(mode);
         } else {
             StopJtag();
         }
@@ -468,7 +544,7 @@ const esp_vfs_fs_ops_t kVfs = {
 }  // namespace
 
 esp_err_t Init(Mode m) {
-    if (switch_lock != nullptr) {
+    if (switch_lock != nullptr || HasCard(m)) {
         return ESP_ERR_INVALID_STATE;
     }
     switch_lock = xSemaphoreCreateMutex();
@@ -512,8 +588,13 @@ esp_err_t SetMode(Mode next) {
     }
     xSemaphoreTake(switch_lock, portMAX_DELAY);
     esp_err_t err = ESP_OK;
-    if (next != mode) {
+    if (HasCard(next) && next != mode && !sd_card::Mounted()) {
+        err = ESP_ERR_NOT_FOUND;  // no card to lend: the port stays as it is
+    } else if (next != mode) {
         const Mode was = mode;
+        if (reader_hook != nullptr && HasCard(next)) {
+            reader_hook(true);  // before the card goes
+        }
         fflush(stdout);
         switching = true;
         xSemaphoreTake(rx_lock, portMAX_DELAY);
@@ -527,12 +608,17 @@ esp_err_t SetMode(Mode next) {
         } else {
             ESP_LOGI(TAG, "%s -> %s", Name(was), Name(mode));
         }
+        if (reader_hook != nullptr && HasCard(was) && !HasCard(mode)) {
+            reader_hook(false);  // the card is back (or not: sd_card says)
+        }
     }
     xSemaphoreGive(switch_lock);
     return err;
 }
 
 Mode GetMode() { return mode; }
+
+void SetReaderHook(void (*hook)(bool on)) { reader_hook = hook; }
 
 bool HostConnected() {
     switch (port) {
@@ -579,6 +665,10 @@ void PrintInfo() {
     printf("host       %s\n", HostConnected() ? "connected" : "none");
     if (OnOtg(mode)) {
         printf("port       %s\n", PortOpen() ? "open (DTR)" : "closed");
+    }
+    if (HasCard(mode)) {
+        printf("card       %s\n",
+               sd_card::Lent() ? "a USB drive (FAT unmounted here)" : "not lent");
     }
     if (failure.err != ESP_OK) {
         printf("failed     %s, %s: %s (%lld s ago)\n", Name(failure.to), failure.step,

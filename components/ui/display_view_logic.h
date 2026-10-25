@@ -20,7 +20,8 @@ enum class Setting : uint8_t {
     kHoldRail,   // power.holdRail: 1 the peripherals' power kept through a sleep
     kLightOff,     // frontlight.offMinutes: the light off after this long idle, 0 never
     kLightOffUsb,  // frontlight.offMinutesUsb: the same on USB power
-    kUsb,          // usb.mode: 0 Serial/JTAG, 1 serial port, 2 serial port + FIDO2
+    kUsb,          // usb.mode: 0 Serial/JTAG, 1 serial port, 2 serial port + FIDO2;
+                   // 3 the card reader (for a while, not saved)
 };
 
 inline constexpr Setting kSettings[] = {Setting::kLightOff, Setting::kLightOffUsb, Setting::kIdle,
@@ -45,7 +46,7 @@ inline constexpr Option kLight[] = {{0, "Never"},  {1, "1 min"},   {2, "2 min"},
 inline constexpr Option kHoldRail[] = {{1, "Kept"}, {0, "Off"}};
 // config::UsbMode's order. Switched at once: the console moves with it.
 inline constexpr Option kUsb[] = {{0, "Serial/JTAG (debug)"}, {1, "Serial port"},
-                                  {2, "Serial port + FIDO2"}};
+                                  {2, "Serial port + FIDO2"}, {3, "SD card reader"}};
 
 constexpr const Option *Options(Setting s, size_t *count) {
     switch (s) {

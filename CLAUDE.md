@@ -18,7 +18,7 @@ Firmware: C/C++ on **ESP-IDF**.
   (`fido2 info|list|delete|reset`) and the store on the web settings page; Wi-Fi
   client / AP / AP+client with static IPs and an internet check; configuration
   web site; USB console; USB port modes switched at run time (`usb`:
-  Serial/JTAG, TinyUSB serial, serial + FIDO2/U2F over HID); `config.json`; time (SNTP, time zones, `rtc::Clock`:
+  Serial/JTAG, TinyUSB serial, serial + FIDO2/U2F over HID, the SD card reader); `config.json`; time (SNTP, time zones, `rtc::Clock`:
   BM8563 RTC on the X4 Pro, else the CPU timer); board classes chosen in `devices/config.h`; WS2812 LED (red at boot,
   green breathing when ready, blue while typing, yellow
   blinking for the FIDO2 button); TOTP codes on the console (`totp`); buttons (Left, Right, Power, Home on the
@@ -54,8 +54,7 @@ the vault is locked, GT911 touch as the pointer, `ui`); power-off
   site (Device > Firmware update) or `/sdcard/firmware.bin` (button, `ota
   sd confirm`), checked while streaming (`image_check.h`), trial boot
   confirmed after 30 s, else rolled back.
-- Not yet: e-ink UI screens, eFuse-bound key, sync over Wi-Fi, the USB card
-  reader mode (the SD card as mass storage, `usb` switches it in and out).
+- Not yet: e-ink UI screens, eFuse-bound key, sync over Wi-Fi.
 
 ## Architecture
 

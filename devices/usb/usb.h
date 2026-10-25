@@ -24,12 +24,18 @@
 namespace usb {
 
 // Puts stdin / stdout on the port and starts `mode` (the TinyUSB one failing:
-// the Serial/JTAG, and an error). Once, early in app_main.
+// the Serial/JTAG, and an error). Once, early in app_main; not kReader.
 esp_err_t Init(Mode mode);
 
 // Switches the port; output in flight is flushed first (up to 50 ms). The
-// TinyUSB one failing: back on the Serial/JTAG, and an error.
+// TinyUSB one failing: back on the Serial/JTAG, and an error. kReader: the
+// microSD card leaves FAT (sd_card::Lend) for the host's drive and comes back
+// when another mode is set (no card: ESP_ERR_NOT_FOUND, nothing changed).
 esp_err_t SetMode(Mode mode);
+
+// Called with true before the card goes to the host, false after it is back:
+// whatever keeps files on the card in memory lets go of them (the vault).
+void SetReaderHook(void (*hook)(bool on));
 
 // The port in use.
 Mode GetMode();

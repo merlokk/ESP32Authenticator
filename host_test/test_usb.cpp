@@ -19,6 +19,13 @@ void test_usb_modes() {
     // A product ID per interface set.
     TEST_ASSERT_EQUAL_HEX16(0x4001, usb::ProductId(usb::Mode::kSerial));
     TEST_ASSERT_EQUAL_HEX16(0x4005, usb::ProductId(usb::Mode::kSerialFido));
+    // The card reader: the serial port and the drive, never FIDO2.
+    TEST_ASSERT_EQUAL_STRING("reader", usb::Name(usb::Mode::kReader));
+    TEST_ASSERT_TRUE(usb::OnOtg(usb::Mode::kReader));
+    TEST_ASSERT_TRUE(usb::HasCard(usb::Mode::kReader));
+    TEST_ASSERT_FALSE(usb::HasFido(usb::Mode::kReader));
+    TEST_ASSERT_FALSE(usb::HasCard(usb::Mode::kSerialFido));
+    TEST_ASSERT_EQUAL_HEX16(0x4003, usb::ProductId(usb::Mode::kReader));
 }
 
 void test_usb_expand_newlines() {

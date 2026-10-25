@@ -384,8 +384,29 @@ int CmdUsb(int argc, char **argv) {
         }
         return 0;
     }
+    if (strcmp(argv[argc > 1 ? 1 : 0], "reader") == 0 && argc <= 3) {
+        const bool off = argc == 3 && strcmp(argv[2], "off") == 0;
+        if (argc == 3 && !off && strcmp(argv[2], "on") != 0) {
+            printf("usage: usb reader [on|off]\n");
+            return 1;
+        }
+        // Off: back to the saved mode. On: not saved, a restart ends it too.
+        const usb::Mode next =
+            off ? static_cast<usb::Mode>(config::Get().usb.mode) : usb::Mode::kReader;
+        if (!off && usb::GetMode() != next) {
+            printf("the card goes to the PC as a drive, the vault locks; 'usb reader off' "
+                   "ends it\n");
+        }
+        const esp_err_t err = usb::SetMode(next);
+        if (err != ESP_OK) {
+            printf("%s\n", err == ESP_ERR_NOT_FOUND ? "no microSD card mounted" : esp_err_to_name(err));
+            return 1;
+        }
+        printf("usb %s\n", usb::Name(usb::GetMode()));
+        return 0;
+    }
     if (argc > 2 || (argc == 2 && strcmp(argv[1], "info") != 0)) {
-        printf("usage: usb [info] | usb mode jtag|serial|serial+fido\n");
+        printf("usage: usb [info] | usb mode jtag|serial|serial+fido | usb reader [on|off]\n");
         return 1;
     }
     usb::PrintInfo();
@@ -424,8 +445,10 @@ const esp_console_cmd_t kCommands[] = {
     {
         .command = "usb",
         .help = "The USB port: [info] | mode jtag|serial|serial+fido (the chip's Serial/JTAG, a "
-                "serial port, a serial port and a FIDO2 / U2F key; at once, saved)",
-        .hint = "[info | mode <jtag|serial|serial+fido>]",
+                "serial port, a serial port and a FIDO2 / U2F key; at once, saved) | "
+                "reader [on|off] (the microSD card as a USB drive beside the serial port, the "
+                "vault locked; off: the saved mode; not saved)",
+        .hint = "[info | mode <jtag|serial|serial+fido> | reader [on|off]]",
         .func = &CmdUsb,
         .argtable = nullptr,
         .func_w_context = nullptr,

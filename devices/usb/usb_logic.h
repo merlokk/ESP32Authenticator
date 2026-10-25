@@ -9,16 +9,19 @@
 
 namespace usb {
 
-// What the port is (config.json usb.mode).
+// What the port is: config.json usb.mode, or for a while the card reader.
 enum class Mode : uint8_t {
     kJtag,        // the chip's USB Serial/JTAG: the console, flashing, JTAG
     kSerial,      // TinyUSB: a CDC-ACM serial port with the console
     kSerialFido,  // TinyUSB: the serial port and a FIDO2 / U2F key (CTAPHID)
+    kReader,      // TinyUSB: the serial port and the microSD card as a USB drive
+                  // (never saved: until switched back or a restart)
 };
 
 constexpr const char *Name(Mode m) {
     return m == Mode::kSerial       ? "serial"
            : m == Mode::kSerialFido ? "serial+fido"
+           : m == Mode::kReader     ? "reader"
                                     : "jtag";
 }
 
@@ -27,11 +30,15 @@ constexpr bool OnOtg(Mode m) { return m != Mode::kJtag; }
 
 constexpr bool HasFido(Mode m) { return m == Mode::kSerialFido; }
 
+constexpr bool HasCard(Mode m) { return m == Mode::kReader; }
+
 // Espressif's VID with TinyUSB's PID map (0x4000 | CDC 1 | MSC 2 | HID 4): a
 // product ID per interface set, so a host never applies one layout's cached
 // drivers to another.
 constexpr uint16_t kVendorId = 0x303A;
-constexpr uint16_t ProductId(Mode m) { return HasFido(m) ? 0x4005 : 0x4001; }
+constexpr uint16_t ProductId(Mode m) {
+    return HasFido(m) ? 0x4005 : HasCard(m) ? 0x4003 : 0x4001;
+}
 
 // Console output: '\n' goes out as "\r\n" (terminals move the caret back on
 // CR only). Converts from `in` (`n` bytes) as much as fits `out` (`size`

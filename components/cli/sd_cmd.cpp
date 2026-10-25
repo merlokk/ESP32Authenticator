@@ -152,8 +152,13 @@ int CmdSd(int argc, char **argv) {
     if (strcmp(argv[1], "rm") == 0 && argc == 3) {
         return CmdRm(argv[2]);
     }
+    if (strcmp(argv[1], "mount") == 0 && argc == 2) {
+        const esp_err_t err = sd_card::Remount();
+        sd_card::PrintInfo();
+        return err == ESP_OK ? 0 : 1;
+    }
     printf("usage: sd [info] | sd ls [dir] | sd put <name.png|firmware.bin> <length> <crc32> | "
-           "sd rm <name.png|firmware.bin>\n");
+           "sd rm <name.png|firmware.bin> | sd mount (again, as at boot)\n");
     return 1;
 }
 

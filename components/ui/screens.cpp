@@ -3839,6 +3839,60 @@ void DrawUpdatePercent(uint8_t percent) {
     update_shown = percent;
 }
 
+// --- the card reader ------------------------------------------------------------------
+
+lv_obj_t *reader_box = nullptr;  // under Lock
+void (*reader_finish)() = nullptr;
+bool reader_finishing = false;   // one Finish at a time
+
+void FinishReader(void *) {
+    reader_finish();
+    reader_finishing = false;
+    vTaskDelete(nullptr);
+}
+
+void OnReaderFinish(lv_event_t *) {
+    if (LastWasTap() && !reader_finishing && reader_finish != nullptr &&
+        xTaskCreate(FinishReader, "reader_end", 4096, nullptr, 3, nullptr) == pdPASS) {
+        reader_finishing = true;
+    }
+}
+
+// Over everything, as the firmware update's window.
+void OpenReader() {
+    reader_box = lv_obj_create(lv_layer_top());
+    lv_obj_remove_style_all(reader_box);
+    lv_obj_add_flag(reader_box, LV_OBJ_FLAG_CLICKABLE);  // the page under it takes no taps
+    lv_obj_remove_flag(reader_box, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_pos(reader_box, kLeft, kContentTop);
+    lv_obj_set_size(reader_box, kRowWidth, kScreenBottom - kContentTop);
+    lv_obj_set_style_bg_color(reader_box, lv_color_white(), 0);
+    lv_obj_set_style_bg_opa(reader_box, LV_OPA_COVER, 0);
+    lv_obj_move_to_index(reader_box, 0);  // under the status bar
+    const struct {
+        const lv_font_t *font;
+        int32_t y;
+        const char *text;
+    } lines[] = {
+        {&lv_font_montserrat_32, 60, "SD card reader"},
+        {&lv_font_montserrat_24, 140, "The microSD card is a drive on the computer."},
+        {&lv_font_montserrat_20, 260,
+         "Eject it there, then Finish: the card comes back here. The vault is locked "
+         "meanwhile: the PIN after."},
+    };
+    for (const auto &line : lines) {
+        lv_obj_t *l = Label(reader_box, line.font);
+        lv_label_set_long_mode(l, LV_LABEL_LONG_MODE_WRAP);
+        lv_obj_set_width(l, kRowWidth - 40);
+        lv_obj_set_style_text_align(l, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_align(l, LV_ALIGN_TOP_MID, 0, line.y);
+        lv_label_set_text(l, line.text);
+    }
+    lv_obj_t *done = AskButton(reader_box, kRowWidth - 48, "Finish");
+    lv_obj_align(done, LV_ALIGN_BOTTOM_MID, 0, -16);
+    lv_obj_add_event_cb(done, OnReaderFinish, LV_EVENT_CLICKED, nullptr);
+}
+
 // --- the ui task's timers ------------------------------------------------------------
 
 // Buttons, swipes, the vault's changes, the codes, the hidden passwords.
@@ -4195,6 +4249,21 @@ void EndUpdate(const char *error) {
         lv_label_set_text(update_note, "The running firmware stays.");
         lv_timer_t *t = lv_timer_create(CloseUpdate, kUpdateFailedMs, nullptr);
         lv_timer_set_repeat_count(t, 1);
+    }
+    Unlock();
+}
+
+void ShowCardReader(bool on, void (*finish)()) {
+    if (!HasDisplay()) {
+        return;
+    }
+    Lock();
+    reader_finish = finish;
+    if (on && reader_box == nullptr) {
+        OpenReader();
+    } else if (!on && reader_box != nullptr) {
+        lv_obj_delete(reader_box);
+        reader_box = nullptr;
     }
     Unlock();
 }

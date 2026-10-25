@@ -898,6 +898,12 @@ const char *DisplaySet(ui::display_view::Setting setting, uint16_t value) {
             break;
         case dv::Setting::kHoldRail: c.power.hold_rail = value == 1; break;
         case dv::Setting::kUsb: {
+            if (value == static_cast<uint16_t>(usb::Mode::kReader)) {  // for a while: not saved
+                const esp_err_t err = usb::SetMode(usb::Mode::kReader);
+                return err == ESP_OK              ? "the card is a USB drive"
+                       : err == ESP_ERR_NOT_FOUND ? "no microSD card"
+                                                  : "the card reader did not start";
+            }
             if (value > static_cast<uint16_t>(config::UsbMode::kSerialFido)) {
                 return "no such USB mode";
             }
@@ -1256,6 +1262,15 @@ extern "C" void app_main() {
     static_assert(static_cast<int>(usb::Mode::kSerialFido) ==
                   static_cast<int>(config::UsbMode::kSerialFido));
     usb::Init(static_cast<usb::Mode>(config::Get().usb.mode));
+    // The card reader: the card's files may change on the PC, so the vault
+    // (and fido.bin) let go of them; the PIN loads them again.
+    usb::SetReaderHook([](bool on) {
+        if (on) {
+            vault::Lock();
+        }
+        // Finish on the screen: the saved mode back.
+        ui::ShowCardReader(on, [] { usb::SetMode(static_cast<usb::Mode>(config::Get().usb.mode)); });
+    });
     tz::ApplyZone(config::Get().time.zone);
     // No name in config.json: the board's, put into the config so a save keeps it.
     config::Ble &ble_cfg = config::Get().ble;
