@@ -8,5 +8,6 @@
     <mapping directory="$PROJECT_DIR$/lib/lionkey/crypto/tiny-AES-c" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/lib/lionkey/crypto/tinymt" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/lib/lionkey/lib/tinycbor" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/lib/lionkey/lib/tinyusb" vcs="Git" />
   </component>
 </project>
