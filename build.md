@@ -184,6 +184,7 @@ after `usb mode jtag`, or hold BOOT).
 | `led brightness [<n> [idle]]` | show / set the brightness ceilings in percent, normal and idle (saved) |
 | `totp <base32 secret>` | local time (and UTC), seconds left in the window, the 6-digit codes of the previous, current and next 30 s window (HMAC-SHA1). Error without a believable time. The secret is not printed or logged, but stays in the up-arrow history |
 | `totp test` | RFC 6238 SHA-1 vectors through `crypto::Totp` |
+| `rng [length]` | a random lowercase hex string of `length` digits (default 64, 1..2048) from the hardware RNG; a second line warns when BLE and Wi-Fi are both off (no true random then) |
 | `pass [info]` | password store: state (why it is off), records of max, file, version and change time |
 | `pass list [filter]` | #, site / user, password set, TOTP; filter: part of site or user. Passwords are never shown |
 | `pass add <site> [user] [password] [otp]` | a record; quote values with spaces. Prints its # (a new record goes last) |

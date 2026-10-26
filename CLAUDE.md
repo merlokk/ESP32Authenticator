@@ -22,7 +22,8 @@ Firmware: C/C++ on **ESP-IDF**.
   Serial/JTAG, TinyUSB serial, serial + FIDO2/U2F over HID, the SD card reader); `config.json`; time (SNTP, time zones, `rtc::Clock`:
   BM8563 RTC on the X4 Pro, else the CPU timer); board classes chosen in `devices/config.h`; WS2812 LED (red at boot,
   green breathing when ready, blue while typing, yellow
-  blinking for the FIDO2 button); TOTP codes on the console (`totp`); buttons (Left, Right, Power, Home on the
+  blinking for the FIDO2 button); TOTP codes on the console (`totp`); hardware RNG (`devices/rng`, random hex
+  on the console: `rng`); buttons (Left, Right, Power, Home on the
   GT911) in one keypad task: click xN / long events, `keys`; frontlight (cool/warm PWM,
   off at boot, Power x2 toggles, off when idle and on at a touch, `light`); e-ink panel driver (UC8179 /
   UC8279 / SSD1677 detected, full and fast refresh, `epd`; full after

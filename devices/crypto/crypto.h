@@ -18,7 +18,7 @@ constexpr size_t kAesBlockSize = 16;
 // Initializes PSA. Safe to call more than once.
 esp_err_t Init();
 
-// Random bytes: a true RNG while the radio (BLE/Wi-Fi) is on.
+// Random bytes (rng::Fill): a true RNG while the radio (BLE/Wi-Fi) is on.
 void Random(uint8_t *out, size_t len);
 
 esp_err_t Sha256(const uint8_t *data, size_t len, uint8_t out[kSha256Size]);

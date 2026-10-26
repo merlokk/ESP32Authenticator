@@ -4,7 +4,7 @@
 #include <cstring>
 
 #include "esp_log.h"
-#include "esp_random.h"
+#include "rng.h"
 #include "psa/crypto.h"
 
 namespace crypto {
@@ -146,7 +146,7 @@ esp_err_t Pbkdf2Sha256(const uint8_t *password, size_t password_len, const uint8
 
 esp_err_t Init() { return Check(psa_crypto_init(), "init"); }
 
-void Random(uint8_t *out, size_t len) { esp_fill_random(out, len); }
+void Random(uint8_t *out, size_t len) { rng::Fill(out, len); }
 
 esp_err_t Sha256(const uint8_t *data, size_t len, uint8_t out[kSha256Size]) {
     size_t n = 0;

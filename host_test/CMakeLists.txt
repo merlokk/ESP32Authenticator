@@ -59,6 +59,7 @@ add_executable(host_test
     test_vault.cpp
     test_ota.cpp
     test_usb.cpp
+    test_rng.cpp
     fakes/fake_platform.cpp
     fakes/fake_store.cpp
 
@@ -107,6 +108,7 @@ target_include_directories(host_test PRIVATE
     ../devices/touch
     ../devices/epd
     ../devices/usb
+    ../devices/rng
     ../components/ui
     ../components/power
     ../components/pin_policy

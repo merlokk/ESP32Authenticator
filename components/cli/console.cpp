@@ -23,6 +23,7 @@
 #include "board_devices.h"
 #include "date_cmd.h"
 #include "totp_cmd.h"
+#include "rng_cmd.h"
 #include "power.h"
 #include "ui.h"
 #include "ui_logic.h"
@@ -582,6 +583,16 @@ const esp_console_cmd_t kCommands[] = {
         .help = "The board this firmware is built for (devices/config.h): devices and pins",
         .hint = nullptr,
         .func = &CmdBoard,
+        .argtable = nullptr,
+        .func_w_context = nullptr,
+        .context = nullptr,
+    },
+    {
+        .command = "rng",
+        .help = "Hardware random number generator: a random hex string of <length> digits "
+                "(default 64, up to 2048); true random while BLE or Wi-Fi is on",
+        .hint = "[length]",
+        .func = &CmdRng,
         .argtable = nullptr,
         .func_w_context = nullptr,
         .context = nullptr,
