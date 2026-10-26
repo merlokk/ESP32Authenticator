@@ -2257,7 +2257,7 @@ void ShowDisplay() {
     lv_label_set_text(b, text);
     lv_obj_align(b, LV_ALIGN_RIGHT_MID, -12, 0);
     y += 56 + 16;
-    constexpr int32_t kRow = 42;  // eleven rows
+    constexpr int32_t kRow = 40;  // eleven rows, the help above "Power off"
     for (uint8_t i = 0; i < display_view::kSettingCount; ++i, y += kRow) {
         const display_view::Setting s = display_view::kSettings[i];
         display_view::Label(s, v.value[i], text, sizeof text);
@@ -2278,7 +2278,7 @@ void ShowDisplay() {
     lv_label_set_text(help,
                       "The Power button: twice, the frontlight; three times, off and locked "
                       "(the PIN at the wake); held, off.");
-    lv_obj_set_pos(help, 12, y + 20);
+    lv_obj_set_pos(help, 12, y + 12);
     lv_obj_t *off = AskButton(content, kRowWidth - 48, "Power off");
     lv_obj_align(off, LV_ALIGN_BOTTOM_MID, 0, -16);
     lv_obj_add_event_cb(off, OnAction, LV_EVENT_CLICKED, nullptr);
