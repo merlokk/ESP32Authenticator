@@ -1,5 +1,7 @@
 #include "dialog.h"
 
+#include "ui.h"
+
 // One dialog at a time on the home screen: a full-width layer under the
 // status bar takes the taps around the box; the box is a column (flex).
 
@@ -50,8 +52,11 @@ void OnYes(lv_event_t *event) {
 }
 
 // The layer and the box with the title; the box's column is filled by the caller.
+// It comes in a full refresh (no faint box over ghosts); what changes in it
+// later goes as the plan says.
 lv_obj_t *OpenBox(const char *title) {
     Close();
+    AskRefresh(Refresh::kFull);
     layer = lv_obj_create(screen);
     lv_obj_remove_style_all(layer);
     lv_obj_add_flag(layer, LV_OBJ_FLAG_CLICKABLE);
@@ -204,6 +209,7 @@ int Poll() {
             answer = yes_answer;
         } else if (fill != shown_fill) {
             shown_fill = fill;
+            AskRefresh(Refresh::kFast);  // no full one's flash while Yes is held
             lv_obj_set_width(yes_fill, yes_width * fill / kHoldSteps);
         }
     }

@@ -46,6 +46,7 @@ constexpr size_t kBleNameSize = 30;
 constexpr uint8_t kMaxSyncHours = 168;
 constexpr uint16_t kMaxIdleMinutes = 1440;
 constexpr uint8_t kMaxKeepPinHours = 168;
+constexpr uint16_t kMaxFastRefreshes = 200;
 
 // A fixed address for one network (per network: home DHCP, office static).
 // Kept as typed; `enabled` false is DHCP and keeps the fields for later.
@@ -151,9 +152,13 @@ struct TouchCalibration {
     int16_t y_offset;
 };
 
+// The e-ink refresh (ui_logic.h RefreshPlan): fast ones leave ghosts, a
+// full one clears them (1-2 s, flashing).
 struct Display {
     WallpaperMode wallpaper;
     TouchCalibration touch;
+    uint16_t fast_refreshes;     // 0..200: fast refreshes between full ones; 0: always full
+    uint8_t full_from_percent;   // 0..100: a frame changing this much of the screen is full; 0: never
 };
 
 // Power-off on its own, and the PIN through a sleep (components/power).

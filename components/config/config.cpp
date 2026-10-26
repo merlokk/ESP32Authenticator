@@ -60,6 +60,8 @@ const char kDefaultJson[] = R"json({
   },
   "display": {
     "wallpaper": "grey",
+    "fastRefreshes": 20,
+    "fullFromPercent": 3,
     "touch": {"xScale": 1000, "xOffset": 0, "yScale": 1000, "yOffset": 0}
   },
   "power": {
@@ -281,10 +283,16 @@ bool GetInt(const cJSON *obj, const char *key, int32_t min, int32_t max, int16_t
 }
 
 bool ParseDisplay(const cJSON *section, Display *out, char *error, size_t size) {
+    uint32_t fast = out->fast_refreshes;
+    uint32_t full_from = out->full_from_percent;
     if (!GetMode(section, "wallpaper", ParseWallpaperMode, &out->wallpaper, "grey, bw", "display",
-                 error, size)) {
+                 error, size) ||
+        !GetUint(section, "fastRefreshes", 0, kMaxFastRefreshes, &fast, "display", error, size) ||
+        !GetUint(section, "fullFromPercent", 0, 100, &full_from, "display", error, size)) {
         return false;
     }
+    out->fast_refreshes = static_cast<uint16_t>(fast);
+    out->full_from_percent = static_cast<uint8_t>(full_from);
     const cJSON *touch = cJSON_GetObjectItemCaseSensitive(section, "touch");
     if (touch == nullptr) {
         return true;
@@ -803,6 +811,8 @@ size_t Serialize(const Data &d, char *out, size_t size) {
     cJSON_AddNumberToObject(light, "offMinutesUsb", d.frontlight.off_minutes_usb);
     cJSON *display = cJSON_AddObjectToObject(root, "display");
     cJSON_AddStringToObject(display, "wallpaper", Name(d.display.wallpaper));
+    cJSON_AddNumberToObject(display, "fastRefreshes", d.display.fast_refreshes);
+    cJSON_AddNumberToObject(display, "fullFromPercent", d.display.full_from_percent);
     cJSON *touch = cJSON_AddObjectToObject(display, "touch");
     cJSON_AddNumberToObject(touch, "xScale", d.display.touch.x_scale);
     cJSON_AddNumberToObject(touch, "xOffset", d.display.touch.x_offset);

@@ -79,7 +79,8 @@ Portrait, 480x800. The panel scans landscape (hardware.md): `ui_logic.h` turns t
   `power.holdRail`, off loses the kept PIN): a tap lists the choices with a check at
   the one in use, a tap keeps one (config.json); USB port (Serial/JTAG
   (debug) / Serial port / Serial port + FIDO2, saved; SD card reader, for a
-  while); Touchscreen (its calibration);
+  while); Fast refreshes (always full / 5 .. 100) and Full refresh from
+  (never / 1 .. 50 % changed); Touchscreen (its calibration);
   what the Power button does;
   Power off. Date & time: the clock big with the date and the offset; Time
   zone (a region, then its cities A to Z, 9 a page with < 1 / 3 >), Sync (never ..
@@ -116,8 +117,10 @@ Portrait, 480x800. The panel scans landscape (hardware.md): `ui_logic.h` turns t
   See PIN below.
 
 E-ink: 1-bit LVGL, redraw at most every 200 ms; fast refreshes for list and
-status changes, a full one every 20th or for a big change against ghosting
-(`ui::RefreshPlan`).
+status changes, a full one after N fast or for a big change against ghosting
+(Devices: Fast refreshes, Full refresh from; `ui::RefreshPlan`). Dialogs, the
+PIN pad and the FIDO2 prompt appear in a full one, their dots and the held
+Yes go fast; hiding a password is full (no ghost).
 
 ## PIN
 

@@ -228,7 +228,10 @@ sign in, U2F), the site and the account(s).
   and kept; or *SD card reader* for a while: the card is a drive on the
   computer until you eject it there (or unplug the cable, or *Finish* on
   the screen), then the port is as before; the vault locks, the PIN after;
-  *Touchscreen* (calibration: tap five crosses); *Power off*.
+  *Fast refreshes* (how many quick redraws before a full one with a flash
+  that clears the ghosts; *Always full*) and *Full refresh from* (a change
+  this big is redrawn fully anyway; *Never*), also on the site (Settings >
+  Screen); *Touchscreen* (calibration: tap five crosses); *Power off*.
 - **Frontlight**: Settings, at the top (switch, Level, Warmth). It goes off
   after *Light off after* and comes on again at a touch or a button.
 - **Reset** (the small button on the top edge, on the right): restarts the

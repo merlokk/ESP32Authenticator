@@ -883,6 +883,8 @@ void DisplayView(ui::display_view::View *out) {
                 break;
             case dv::Setting::kHoldRail: out->value[i] = c.power.hold_rail ? 1 : 0; break;
             case dv::Setting::kUsb: out->value[i] = static_cast<uint16_t>(usb::GetMode()); break;
+            case dv::Setting::kFastRefreshes: out->value[i] = c.display.fast_refreshes; break;
+            case dv::Setting::kFullFrom: out->value[i] = c.display.full_from_percent; break;
         }
     }
 }
@@ -901,6 +903,12 @@ const char *DisplaySet(ui::display_view::Setting setting, uint16_t value) {
             c.display.wallpaper = value == 1 ? config::WallpaperMode::kBw : config::WallpaperMode::kGrey;
             break;
         case dv::Setting::kHoldRail: c.power.hold_rail = value == 1; break;
+        case dv::Setting::kFastRefreshes:
+            c.display.fast_refreshes = value < config::kMaxFastRefreshes ? value : config::kMaxFastRefreshes;
+            break;
+        case dv::Setting::kFullFrom:
+            c.display.full_from_percent = static_cast<uint8_t>(value < 100 ? value : 100);
+            break;
         case dv::Setting::kUsb: {
             if (value == static_cast<uint16_t>(usb::Mode::kReader)) {  // for a while: not saved
                 const esp_err_t err = usb::SetMode(usb::Mode::kReader);
@@ -923,6 +931,13 @@ const char *DisplaySet(ui::display_view::Setting setting, uint16_t value) {
 }
 
 const ui::DisplayHooks kDisplayHooks = {DisplayView, DisplaySet};
+
+// The e-ink refresh plan, read before each refresh: changes apply at once.
+void RefreshSource(uint16_t *fast, uint8_t *full_from_percent) {
+    const config::Display &d = config::Get().display;
+    *fast = d.fast_refreshes;
+    *full_from_percent = d.full_from_percent;
+}
 
 // --- The Date & time window (ui::TimeHooks) ------------------------------------------
 
@@ -1297,6 +1312,7 @@ extern "C" void app_main() {
     ui::SetWifiHooks(&kWifiHooks);
     ui::SetBleHooks(&kBleHooks);
     ui::SetDisplayHooks(&kDisplayHooks);
+    ui::SetRefreshSource(RefreshSource);
     ui::SetTimeHooks(&kTimeHooks);
     ui::SetSecurityHooks(&kSecurityHooks);
     ui::SetWebHooks(&kWebHooks);

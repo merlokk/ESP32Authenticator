@@ -505,6 +505,20 @@ void test_parse_display() {
     AssertParseFails(R"({"display": 1})", "display: expected an object");
     AssertParseFails(R"({"display": {"wallpaper": "gray"}})", "display.wallpaper");
 
+    // The refresh plan: 20 fast, full from 3 %, kept through a save.
+    TEST_ASSERT_EQUAL_UINT16(20, out.display.fast_refreshes);
+    TEST_ASSERT_EQUAL_UINT8(3, out.display.full_from_percent);
+    TEST_ASSERT_TRUE_MESSAGE(
+        ParseText(R"({"display": {"fastRefreshes": 0, "fullFromPercent": 25}})", &d, error, sizeof error),
+        error);
+    TEST_ASSERT_GREATER_THAN(0, config::Serialize(d, json, sizeof json));
+    config::FillDefaults(&out);
+    TEST_ASSERT_TRUE_MESSAGE(ParseText(json, &out, error, sizeof error), error);
+    TEST_ASSERT_EQUAL_UINT16(0, out.display.fast_refreshes);
+    TEST_ASSERT_EQUAL_UINT8(25, out.display.full_from_percent);
+    AssertParseFails(R"({"display": {"fastRefreshes": 201}})", "display.fastRefreshes");
+    AssertParseFails(R"({"display": {"fullFromPercent": 101}})", "display.fullFromPercent");
+
     // The touch's calibration: 1000 / 0 by default, kept through a save.
     TEST_ASSERT_EQUAL_INT16(1000, out.display.touch.x_scale);
     TEST_ASSERT_EQUAL_INT16(0, out.display.touch.y_offset);

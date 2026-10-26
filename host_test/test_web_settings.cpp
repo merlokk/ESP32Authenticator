@@ -239,6 +239,21 @@ void test_display_wallpaper(void) {
                   "display.wallpaper");
     AssertRefused(R"({"display": {"wallpaper": 1}})", WriteResult::kBadValue, "display.wallpaper");
     AssertRefused(R"({"display": {"other": "bw"}})", WriteResult::kUnknownField, "display.other");
+    out = Apply(R"({"display": {"fastRefreshes": 0, "fullFromPercent": 100}})", &d);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(WriteResult::kOk), static_cast<int>(out.result));
+    TEST_ASSERT_EQUAL_UINT16(0, d.display.fast_refreshes);
+    TEST_ASSERT_EQUAL_UINT8(100, d.display.full_from_percent);
+    out = Apply(R"({"display": {"fastRefreshes": 200, "fullFromPercent": 0}})", &d);
+    TEST_ASSERT_EQUAL_UINT16(200, d.display.fast_refreshes);
+    TEST_ASSERT_EQUAL_UINT8(0, d.display.full_from_percent);
+    AssertRefused(R"({"display": {"fastRefreshes": 201}})", WriteResult::kBadValue,
+                  "display.fastRefreshes");
+    AssertRefused(R"({"display": {"fastRefreshes": 1.5}})", WriteResult::kBadValue,
+                  "display.fastRefreshes");
+    AssertRefused(R"({"display": {"fullFromPercent": 101}})", WriteResult::kBadValue,
+                  "display.fullFromPercent");
+    AssertRefused(R"({"display": {"fullFromPercent": "3"}})", WriteResult::kBadValue,
+                  "display.fullFromPercent");
     AssertRefused(R"({"display": "bw"})", WriteResult::kBadValue, "display");
     // A refusal elsewhere drops it too.
     d = Base();

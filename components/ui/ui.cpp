@@ -57,10 +57,13 @@ uint8_t *screen = nullptr;   // LVGL's portrait buffer (PSRAM)
 uint8_t *pending = nullptr;  // the last flush, turned for the panel (PSRAM)
 uint8_t *frame = nullptr;    // the one on the glass, or going there (PSRAM)
 RefreshPlan plan;
+void (*refresh_source)(uint16_t *fast, uint8_t *full_from_percent) = nullptr;
+Refresh asked = Refresh::kAuto;  // for the next flush (ui task, or under Lock)
 uint32_t refreshes = 0;
 uint32_t skipped = 0;  // flushes that changed no pixel
 uint32_t last_changed = 0;  // pixels the last refresh changed
 bool last_full = false;
+Refresh last_ask = Refresh::kAuto;
 uint32_t last_rotate_us = 0;
 esp_err_t last_err = ESP_OK;
 
@@ -78,6 +81,7 @@ StaticSemaphore_t pending_storage;
 SemaphoreHandle_t panel_mutex = nullptr;    // held for a refresh; HoldPanel waits on it
 StaticSemaphore_t panel_storage;
 bool have_pending = false;
+Refresh pending_ask = Refresh::kAuto;  // the frames merged into `pending`
 bool frame_on_glass = false;  // `frame` is what the panel shows
 volatile bool held = false;   // HoldPanel: frames stay off the panel
 
@@ -110,6 +114,8 @@ void Flush(lv_display_t *disp, const lv_area_t *, uint8_t *px_map) {
         const int64_t start = esp_timer_get_time();
         ToPanel(px_map + kPaletteBytes, pending);
         last_rotate_us = static_cast<uint32_t>(esp_timer_get_time() - start);
+        pending_ask = have_pending ? Merge(pending_ask, asked) : asked;
+        asked = Refresh::kAuto;
         have_pending = true;
         xSemaphoreGive(pending_mutex);
         xTaskNotifyGive(push_task);
@@ -118,7 +124,8 @@ void Flush(lv_display_t *disp, const lv_area_t *, uint8_t *px_map) {
 }
 
 // Draws the latest pending frame; one that changes nothing on the glass is
-// dropped (a pressed key that looks the same makes one).
+// dropped (a pressed key that looks the same makes one). Nothing known on the
+// glass (a wallpaper drawn over it): a full one.
 void PushTask(void *) {
     bool panel_on = false;
     for (;;) {
@@ -133,7 +140,9 @@ void PushTask(void *) {
         xSemaphoreTake(pending_mutex, portMAX_DELAY);
         bool draw = have_pending && !held;
         uint32_t changed = 0;
+        Refresh ask = Refresh::kAuto;
         if (draw) {
+            ask = frame_on_glass ? pending_ask : Refresh::kFull;
             changed = frame_on_glass ? ChangedPixels(pending, frame, epd::kFrameBytes)
                                      : epd::kWidth * epd::kHeight;
             draw = changed != 0;
@@ -143,7 +152,14 @@ void PushTask(void *) {
         }
         xSemaphoreGive(pending_mutex);
         if (draw) {
-            last_full = plan.NextIsFull(changed);
+            if (refresh_source != nullptr) {
+                uint16_t fast = RefreshPlan::kDefaultFast;
+                uint8_t full_from = RefreshPlan::kDefaultFullFromPercent;
+                refresh_source(&fast, &full_from);
+                plan.Set(fast, full_from);
+            }
+            last_full = plan.NextIsFull(changed, ask);
+            last_ask = ask;
             last_changed = changed;
             last_err = epd::Refresh(frame, last_full ? epd::Mode::kFull : epd::Mode::kFast, true);
             panel_on = last_err == ESP_OK;
@@ -349,6 +365,12 @@ void SetTouchCalibration(const touch_cal::Calibration &c,
 
 void SetPressHook(void (*hook)()) { press_hook = hook; }
 
+void AskRefresh(Refresh ask) { asked = Merge(asked, ask); }
+
+void SetRefreshSource(void (*source)(uint16_t *fast, uint8_t *full_from_percent)) {
+    refresh_source = source;
+}
+
 void HoldPanel(bool hold) {
     if (push_task == nullptr) {
         return;
@@ -413,11 +435,13 @@ void PrintInfo() {
         printf("ui: no display\n");
         return;
     }
-    printf("ui: %ux%u portrait, %" PRIu32 " refreshes (full every %u or from %" PRIu32
-           " px changed), %" PRIu32 " unchanged dropped, last %s %s, %" PRIu32
+    printf("ui: %ux%u portrait, %" PRIu32 " refreshes (full after %u fast or from %" PRIu32
+           " px changed), %" PRIu32 " unchanged dropped, last %s (%s) %s, %" PRIu32
            " px, turn %" PRIu32 " us, stack free %u B (push %u B)%s\n",
-           kWidth, kHeight, refreshes, RefreshPlan::kFullEvery, RefreshPlan::kBigChange, skipped,
-           last_full ? "full" : "fast", esp_err_to_name(last_err), last_changed,
+           kWidth, kHeight, refreshes, static_cast<unsigned>(plan.fast()), plan.full_from(),
+           skipped, last_full ? "full" : "fast",
+           last_ask == Refresh::kFull ? "asked full" : last_ask == Refresh::kFast ? "asked fast" : "auto",
+           esp_err_to_name(last_err), last_changed,
            last_rotate_us, static_cast<unsigned>(uxTaskGetStackHighWaterMark(task)),
            static_cast<unsigned>(uxTaskGetStackHighWaterMark(push_task)),
            held ? ", panel held" : "");

@@ -83,25 +83,57 @@ constexpr uint32_t ChangedPixels(const uint8_t *a, const uint8_t *b, size_t byte
     return n;
 }
 
-// Fast refreshes leave ghosts: every kFullEvery-th refresh is a full one
-// (and the first, though the driver forces that itself). A fast refresh only
-// nudges the pixels: a new screen in one (the PIN pad over the boot screen)
-// came out faint and darkened tap by tap (29524 px changed; a tap changes a
-// dot, ~600 px, and a line), so a frame that changes kBigChange
-// pixels or more is a full one too, and the count starts over.
+// What a frame asks of the panel. Frames that pile up while the panel
+// draws go out as one: Merge keeps the strongest ask (a dialog's full is
+// not lost to a dot's fast after it; fast only when every frame asked it).
+enum class Refresh : uint8_t {
+    kFast,  // fast whatever the plan (a PIN dot, a slider dragged)
+    kAuto,  // the plan decides
+    kFull,  // full whatever the plan (a dialog or the PIN pad appearing)
+};
+
+constexpr Refresh Merge(Refresh a, Refresh b) { return a > b ? a : b; }
+
+// Fast refreshes leave ghosts: after `fast` of them the next is a full one
+// (config.json display.fastRefreshes; 0: every one full), and the first is
+// full too (the driver forces that itself). A fast refresh only nudges the
+// pixels: a new screen in one (the PIN pad over the boot screen) came out
+// faint and darkened tap by tap (29524 px changed; a tap changes a dot,
+// ~600 px, and a line), so a frame that changes `full_from_percent` of the
+// screen or more is a full one too (display.fullFromPercent; 0: never), and
+// the count starts over. An asked fast still counts: the full one it owes
+// comes with the next frame left to the plan.
 class RefreshPlan {
    public:
-    static constexpr uint16_t kFullEvery = 20;
-    static constexpr uint32_t kBigChange = epd::kWidth * epd::kHeight / 32;  // 12000
+    static constexpr uint16_t kDefaultFast = 20;
+    static constexpr uint8_t kDefaultFullFromPercent = 3;
 
-    bool NextIsFull(uint32_t changed = 0) {
-        const bool full = count_ == 0 || changed >= kBigChange;
-        count_ = static_cast<uint16_t>(((full ? 0 : count_) + 1) % kFullEvery);
+    void Set(uint16_t fast, uint8_t full_from_percent) {
+        fast_ = fast;
+        full_from_ = full_from_percent == 0 ? 0
+                     : full_from_percent >= 100
+                         ? kAll
+                         : static_cast<uint32_t>(kAll / 100 * full_from_percent);
+    }
+
+    uint16_t fast() const { return fast_; }
+    uint32_t full_from() const { return full_from_; }  // pixels; 0: never
+
+    bool NextIsFull(uint32_t changed = 0, Refresh ask = Refresh::kAuto) {
+        const bool full = ask == Refresh::kFull ||
+                          (ask == Refresh::kAuto &&
+                           (!started_ || done_ >= fast_ || (full_from_ != 0 && changed >= full_from_)));
+        started_ |= full;
+        done_ = full ? 0 : static_cast<uint16_t>(done_ < UINT16_MAX ? done_ + 1 : done_);
         return full;
     }
 
    private:
-    uint16_t count_ = 0;
+    static constexpr uint32_t kAll = static_cast<uint32_t>(epd::kWidth) * epd::kHeight;
+    uint16_t fast_ = kDefaultFast;
+    uint32_t full_from_ = kAll / 100 * kDefaultFullFromPercent;
+    uint16_t done_ = 0;     // fast refreshes since the last full one
+    bool started_ = false;  // a full one went out
 };
 
 }  // namespace ui

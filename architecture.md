@@ -101,7 +101,7 @@ An example (the built-in default has no networks):
   "time": {"zone": "UTC", "server": "pool.ntp.org", "syncHours": 6},
   "led": {"brightness": 15, "idleBrightness": 7},
   "frontlight": {"brightness": 20, "warmth": 50, "offMinutes": 2, "offMinutesUsb": 0},
-  "display": {"wallpaper": "grey", "touch": {"xScale": 1000, "xOffset": 0, "yScale": 1000, "yOffset": 0}},
+  "display": {"wallpaper": "grey", "fastRefreshes": 20, "fullFromPercent": 3, "touch": {"xScale": 1000, "xOffset": 0, "yScale": 1000, "yOffset": 0}},
   "power": {"idleMinutes": 10, "idleMinutesUsb": 0, "keepPinHours": 0, "holdRail": true},
   "pin": {"lockMinutes": 10, "wipe": "", "complexity": true},
   "usb": {"mode": "jtag"},
@@ -292,8 +292,14 @@ redraws dirty areas in place). On the last flushed area `ui_logic.h` (pure,
 host-tested) turns the screen 90 degrees clockwise into the 800x480 panel
 frame (portrait top = frame left, as held as a book; the bezel insets carry
 over) into a pending frame; the `ui_push` task (4 KB) draws the latest one
-with `epd::Refresh` (fast; full every 20th or for a change of 12000 px or
-more, `RefreshPlan`; a frame equal to the glass is dropped), so the ui task keeps reading the touch through the second a
+with `epd::Refresh` (`RefreshPlan`: full after `display.fastRefreshes` fast
+ones, 0 always full, or for a change of `display.fullFromPercent` of the
+screen, 0 never; read before each refresh; a frame equal to the glass is
+dropped). A screen may ask for its frame (`ui::AskRefresh`): full when a
+dialog, the PIN pad or the FIDO2 prompt appears and when a shown password is
+hidden (no ghost of it), fast for PIN dots, the held Yes and a dragged
+slider (counted: the full one owed comes with the next frame); frames merged
+while the panel draws keep the strongest ask, so the ui task keeps reading the touch through the second a
 refresh takes (no tap lost). `ui::HoldPanel` keeps frames off the panel (a
 wallpaper on it). `ui` task (8 KB stack, priority 3) runs `lv_timer_handler`; other tasks touch widgets only
 inside `ui::Lock` / `ui::Unlock`. Measured on the X4 Pro (UC8179): turn 61 ms,
@@ -528,7 +534,7 @@ and never starts without lwIP (an assert).
 | `GET /api/status` | firmware, heap, SPIFFS, Wi-Fi (IP, MAC, internet), AP, BLE, FIDO (readiness, requests, credentials stored of max, store bytes, PIN set and attempts, signature counter, file version and modification time; `fido_store` false while a request holds the store, `fido_off` why FIDO2 is off), wallpaper, frontlight (present, on, level), `idle_minutes`, `hold_rail`, microSD (`sd`: mount outcome or `none`, CID name, card and FAT bytes, free), vault (`vault` state, records, wrong PINs, PIN lock left). No secrets |
 | `GET /api/devstatus` | the console's `devstatus` dump (stdout swapped for the request) |
 | `GET /api/hwinfo` | the console's `hwinfo` dump, the same way (eFuse key purposes and flags only, no NVS values) |
-| `GET /api/settings`, `POST /api/settings` | GET: writable, limits, Wi-Fi state, mode, AP, networks (with `ip`), `ble.name` (the rest comes from `/api/status`). POST: `wifi` {`mode` (`off` = `wifi.active` false, `client`, `ap`, `apsta`), `ap`, `networks` (with `ip`; absent `ip` keeps the current one)}, `ble.name` (not empty; applied to the radio at once), `display.wallpaper` (`grey` / `bw`), `frontlight` {`brightness` 1..100, `warmth` 0..100} (applied to the light at once), `power` {`idleMinutes`, `holdRail`; not `keepPinHours`}; the settings page saves each. Whitelist; passwords write-only (absent/null keeps, `""` clears); all-or-nothing; memory only |
+| `GET /api/settings`, `POST /api/settings` | GET: writable, limits, Wi-Fi state, mode, AP, networks (with `ip`), `ble.name` (the rest comes from `/api/status`). POST: `wifi` {`mode` (`off` = `wifi.active` false, `client`, `ap`, `apsta`), `ap`, `networks` (with `ip`; absent `ip` keeps the current one)}, `ble.name` (not empty; applied to the radio at once), `display` {`wallpaper` (`grey` / `bw`), `fastRefreshes` 0..200, `fullFromPercent` 0..100}, `frontlight` {`brightness` 1..100, `warmth` 0..100} (applied to the light at once), `power` {`idleMinutes`, `holdRail`; not `keepPinHours`}; the settings page saves each. Whitelist; passwords write-only (absent/null keeps, `""` clears); all-or-nothing; memory only |
 | `GET /api/wifi/scan` | access points (hidden/duplicate names dropped) |
 | `POST /api/action?do=save\|reload\|retry\|light-on\|light-off` | save config.json / reload it / put Wi-Fi settings on the radio / the frontlight on or off (not saved) |
 | `POST /api/reboot?confirm=reboot` | restart |

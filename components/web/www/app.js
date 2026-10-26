@@ -333,6 +333,8 @@
       follow("ble-name", d.ble_name || "");
 
       mark("wallpaper", "data-mode", d.wallpaper);
+      follow("fast-refreshes", d.fast_refreshes);
+      follow("full-from", d.full_from_percent);
       by("light-box").hidden = !d.light;
       if (!d.light) said("this board has no frontlight", "", "said-light");
       mark("light-state", "data-on", d.light_on ? "1" : "0");
@@ -363,6 +365,28 @@
                  mode === "grey" ? "4 grey levels, saved; a panel without them draws black and white"
                                  : "black and white, saved",
                  function () { mark("wallpaper", "data-mode", mode); });
+    });
+
+    // config.json display.fastRefreshes / fullFromPercent: read at each refresh.
+    [["fast-refreshes", "fastRefreshes", 200, function (n) {
+       return n ? n + " fast refreshes between full ones, saved" : "always full, saved"; }],
+     ["full-from", "fullFromPercent", 100, function (n) {
+       return n ? "full from " + n + "% of the screen changed, saved"
+                : "a big change is no reason for a full one, saved"; }]
+    ].forEach(function (f) {
+      var id = f[0];
+      by(id).addEventListener("input", function () { edited[id] = true; });
+      by(id + "-set").addEventListener("click", function () {
+        var n = Number(by(id).value);
+        if (by(id).value === "" || !(n >= 0 && n <= f[2]) || n % 1) {
+          said("0.." + f[2], "bad", "said-refresh");
+          return;
+        }
+        var display = {};
+        display[f[1]] = n;
+        setAndSave({ display: display }, "said-refresh", f[3](n),
+                   function () { edited[id] = false; });
+      });
     });
 
     // The light on / off: a state now, not saved.

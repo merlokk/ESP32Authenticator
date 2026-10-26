@@ -44,7 +44,10 @@ bool lock_shown = false;
 
 char check_pin[pinpad::kDigits + 1];  // the check task's copy, wiped after
 
+// A dot is a fast refresh (taps come several a second); the pad itself came
+// in a full one (Open).
 void ShowDots() {
+    AskRefresh(Refresh::kFast);
     for (uint8_t i = 0; i < pinpad::kDigits; ++i) {
         lv_obj_set_style_bg_opa(dots[i], i < pad.count() ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
     }
@@ -231,6 +234,7 @@ void Open() {
     ShowTitle();
     ShowDots();
     ShowState(info, nullptr);
+    AskRefresh(Refresh::kFull);
     lv_screen_load(pad_screen);
     ESP_LOGI(TAG, "shown (%s)", new_store ? "a new PIN" : "the PIN");
 }

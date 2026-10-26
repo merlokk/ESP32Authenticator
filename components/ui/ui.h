@@ -18,6 +18,7 @@
 #include "web_view_logic.h"
 #include "fido_prompt_logic.h"
 #include "touch_cal_logic.h"
+#include "ui_logic.h"
 
 namespace ui {
 
@@ -45,6 +46,14 @@ void HoldPanel(bool hold);
 // waits for it; `shown` is the file. The device stays on; the next LVGL
 // change draws over it.
 esp_err_t PreviewWallpaper(bool grey, const char **shown);
+
+// The next frame's refresh (ui_logic.h Refresh: full when a dialog appears,
+// fast for a PIN dot), merged with the frames that go out with it. ui task,
+// or under Lock; before the change that makes the frame.
+void AskRefresh(Refresh ask);
+// The refresh plan's numbers (config.json display.fastRefreshes,
+// fullFromPercent), read before each refresh in the panel's task. Quick.
+void SetRefreshSource(void (*source)(uint16_t *fast, uint8_t *full_from_percent));
 
 // The status bar's source (status_logic.h): called in the ui task every 2 s,
 // fills what the board reports. Keep it quick (cache slow reads).

@@ -40,6 +40,20 @@ body{padding:0 16px 40px}</style>
   <button type="button" data-mode="bw">black and white</button>
 </div>
 <div class="notice" id="said-wallpaper" hidden></div>
+<div class="field">
+  <label for="fast-refreshes">fast refreshes</label>
+  <input id="fast-refreshes" type="number" min="0" max="200" inputmode="numeric">
+  <button class="btn small" type="button" id="fast-refreshes-set">Set</button>
+</div>
+<div class="field">
+  <label for="full-from">full from, %</label>
+  <input id="full-from" type="number" min="0" max="100" inputmode="numeric">
+  <button class="btn small" type="button" id="full-from-set">Set</button>
+</div>
+<p class="hint">Fast refreshes between full ones (0: always full), and the share
+of the screen a change takes to be full anyway (0: never). Fast ones leave
+ghosts; a full one clears them, with a flash.</p>
+<div class="notice" id="said-refresh" hidden></div>
 
 <h2>Frontlight</h2>
 <div id="light-box">

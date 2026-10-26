@@ -77,20 +77,70 @@ void test_ui_to_panel_every_pixel_once(void) {
 }
 
 void test_ui_refresh_plan(void) {
-    ui::RefreshPlan plan;
+    using ui::Refresh;
+    using ui::RefreshPlan;
+    constexpr uint32_t kAll = epd::kWidth * epd::kHeight;
+    RefreshPlan plan;
+    TEST_ASSERT_EQUAL_UINT16(RefreshPlan::kDefaultFast, plan.fast());
+    TEST_ASSERT_EQUAL_UINT32(kAll / 100 * 3, plan.full_from());
+    // The first is full, then `fast` fast ones, then full again.
     TEST_ASSERT_TRUE(plan.NextIsFull());
-    for (int i = 1; i < ui::RefreshPlan::kFullEvery; ++i) {
+    for (int i = 0; i < RefreshPlan::kDefaultFast; ++i) {
         TEST_ASSERT_FALSE(plan.NextIsFull());
     }
     TEST_ASSERT_TRUE(plan.NextIsFull());
     TEST_ASSERT_FALSE(plan.NextIsFull());
     // A new screen is a full refresh, and the count starts over from it.
-    TEST_ASSERT_FALSE(plan.NextIsFull(ui::RefreshPlan::kBigChange - 1));
-    TEST_ASSERT_TRUE(plan.NextIsFull(ui::RefreshPlan::kBigChange));
-    for (int i = 1; i < ui::RefreshPlan::kFullEvery; ++i) {
+    TEST_ASSERT_FALSE(plan.NextIsFull(plan.full_from() - 1));
+    TEST_ASSERT_TRUE(plan.NextIsFull(plan.full_from()));
+    for (int i = 0; i < RefreshPlan::kDefaultFast; ++i) {
         TEST_ASSERT_FALSE(plan.NextIsFull(10));
     }
     TEST_ASSERT_TRUE(plan.NextIsFull(10));
+
+    // 0 fast: every one full; 0 percent: size never decides.
+    plan.Set(0, 3);
+    TEST_ASSERT_TRUE(plan.NextIsFull(1));
+    TEST_ASSERT_TRUE(plan.NextIsFull(1));
+    plan.Set(3, 0);
+    TEST_ASSERT_EQUAL_UINT32(0, plan.full_from());
+    for (int i = 0; i < 3; ++i) {
+        TEST_ASSERT_FALSE(plan.NextIsFull(kAll));
+    }
+    TEST_ASSERT_TRUE(plan.NextIsFull(1));
+    plan.Set(3, 100);
+    TEST_ASSERT_EQUAL_UINT32(kAll, plan.full_from());
+    plan.Set(3, 10);
+    TEST_ASSERT_EQUAL_UINT32(kAll / 10, plan.full_from());
+
+    // Asked: full at once (the count starts over); fast whatever the size or
+    // the count, but counted: the full one owed comes with the next auto frame.
+    TEST_ASSERT_TRUE(plan.NextIsFull(1, Refresh::kFull));
+    TEST_ASSERT_FALSE(plan.NextIsFull(kAll, Refresh::kFast));
+    TEST_ASSERT_FALSE(plan.NextIsFull(1));
+    TEST_ASSERT_FALSE(plan.NextIsFull(1, Refresh::kFast));
+    TEST_ASSERT_FALSE(plan.NextIsFull(1, Refresh::kFast));
+    TEST_ASSERT_FALSE(plan.NextIsFull(1, Refresh::kFast));
+    TEST_ASSERT_TRUE(plan.NextIsFull(1));
+    plan.Set(0, 0);
+    TEST_ASSERT_FALSE(plan.NextIsFull(1, Refresh::kFast));  // fast even when every one is full
+
+    // A fresh plan's first frame: full, unless asked fast (the driver forces it anyway).
+    RefreshPlan fresh;
+    TEST_ASSERT_FALSE(fresh.NextIsFull(1, Refresh::kFast));
+    TEST_ASSERT_TRUE(fresh.NextIsFull(1));
+}
+
+// Frames that go out as one keep the strongest ask.
+void test_ui_refresh_merge(void) {
+    using ui::Merge;
+    using ui::Refresh;
+    TEST_ASSERT_TRUE(Merge(Refresh::kFull, Refresh::kFast) == Refresh::kFull);
+    TEST_ASSERT_TRUE(Merge(Refresh::kFast, Refresh::kFull) == Refresh::kFull);
+    TEST_ASSERT_TRUE(Merge(Refresh::kFast, Refresh::kAuto) == Refresh::kAuto);
+    TEST_ASSERT_TRUE(Merge(Refresh::kAuto, Refresh::kFast) == Refresh::kAuto);
+    TEST_ASSERT_TRUE(Merge(Refresh::kFast, Refresh::kFast) == Refresh::kFast);
+    TEST_ASSERT_TRUE(Merge(Refresh::kAuto, Refresh::kAuto) == Refresh::kAuto);
 }
 
 void test_ui_changed_pixels(void) {
@@ -766,7 +816,23 @@ void test_display_view(void) {
     dv::Label(dv::Setting::kUsb, 2, text, sizeof text);
     TEST_ASSERT_EQUAL_STRING("Serial port + FIDO2", text);
     TEST_ASSERT_EQUAL_INT(0, dv::Index(dv::Setting::kUsb, 0));
-    dv::View a = {50, false, {2, 0, 10, 0, 8, 0, 1, 0}};
+    dv::Label(dv::Setting::kFastRefreshes, 0, text, sizeof text);
+    TEST_ASSERT_EQUAL_STRING("Always full", text);
+    dv::Label(dv::Setting::kFastRefreshes, 7, text, sizeof text);
+    TEST_ASSERT_EQUAL_STRING("7", text);  // set on the site
+    dv::Label(dv::Setting::kFullFrom, 0, text, sizeof text);
+    TEST_ASSERT_EQUAL_STRING("Never", text);
+    dv::Label(dv::Setting::kFullFrom, 7, text, sizeof text);
+    TEST_ASSERT_EQUAL_STRING("7% changed", text);
+    TEST_ASSERT_EQUAL_INT(3, dv::Index(dv::Setting::kFastRefreshes, 20));
+    TEST_ASSERT_EQUAL_INT(2, dv::Index(dv::Setting::kFullFrom, 3));
+    for (const dv::Option &o : dv::kFastRefreshes) {
+        TEST_ASSERT_TRUE(o.value <= 200);
+    }
+    for (const dv::Option &o : dv::kFullFrom) {
+        TEST_ASSERT_TRUE(o.value <= 100);
+    }
+    dv::View a = {50, false, {2, 0, 10, 0, 8, 0, 1, 0, 20, 3}};
     dv::View b = a;
     TEST_ASSERT_TRUE(dv::Equal(a, b));
     b.value[1] = 4;
@@ -1124,7 +1190,7 @@ void test_wifi_settings(void) {
 
     namespace dv = ui::display_view;
     char text[24];
-    TEST_ASSERT_EQUAL_UINT8(8, dv::kSettingCount);
+    TEST_ASSERT_EQUAL_UINT8(10, dv::kSettingCount);
     dv::Label(dv::Setting::kLightOff, 2, text, sizeof text);
     TEST_ASSERT_EQUAL_STRING("2 min", text);
     dv::Label(dv::Setting::kIdleUsb, 0, text, sizeof text);
@@ -1188,6 +1254,7 @@ void RegisterUiTests(void) {
     RUN_TEST(test_ui_corners);
     RUN_TEST(test_ui_to_panel_every_pixel_once);
     RUN_TEST(test_ui_refresh_plan);
+    RUN_TEST(test_ui_refresh_merge);
     RUN_TEST(test_ui_changed_pixels);
     RUN_TEST(test_ui_touch_to_screen);
     RUN_TEST(test_pin_pad_keys);

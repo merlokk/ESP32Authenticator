@@ -349,6 +349,7 @@ esp_err_t StatusApi(httpd_req_t *request) {
         ",\"fido_counter\":%" PRIu32 ",\"fido_version\":%" PRIu32 ",\"fido_modified\":%lld"
         ",\"time_utc\":%lld,\"time_offset\":%d,\"time_zone\":\"%s\",\"time_sync\":\"%s\""
         ",\"time_sync_ago_s\":%ld,\"ble_name\":\"%s\",\"wallpaper\":\"%s\""
+        ",\"fast_refreshes\":%u,\"full_from_percent\":%u"
         ",\"light\":%s,\"light_on\":%s,\"light_brightness\":%u,\"light_warmth\":%u"
         ",\"idle_minutes\":%u,\"hold_rail\":%s"
         ",\"sd\":\"%s\",\"sd_name\":\"%s\",\"sd_bytes\":%llu,\"sd_total\":%llu,\"sd_free\":%llu"
@@ -374,6 +375,8 @@ esp_err_t StatusApi(httpd_req_t *request) {
         time_set ? tz::OffsetSeconds(now) : 0, zone, sync_state,
         sync.since_last_ms == timesync::kNever ? -1L : static_cast<long>(sync.since_last_ms / 1000),
         ble_name, config::Name(config::Get().display.wallpaper),
+        static_cast<unsigned>(config::Get().display.fast_refreshes),
+        static_cast<unsigned>(config::Get().display.full_from_percent),
         frontlight::Present() ? "true" : "false", frontlight::IsOn() ? "true" : "false",
         static_cast<unsigned>(config::Get().frontlight.brightness),
         static_cast<unsigned>(config::Get().frontlight.warmth),

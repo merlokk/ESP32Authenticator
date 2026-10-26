@@ -23,11 +23,14 @@ enum class Setting : uint8_t {
     kLightOffUsb,  // frontlight.offMinutesUsb: the same on USB power
     kUsb,          // usb.mode: 0 Serial/JTAG, 1 serial port, 2 serial port + FIDO2;
                    // 3 the card reader (for a while, not saved)
+    kFastRefreshes,  // display.fastRefreshes: fast refreshes between full ones, 0 always full
+    kFullFrom,       // display.fullFromPercent: a change this big is full, 0 never
 };
 
-inline constexpr Setting kSettings[] = {Setting::kLightOff, Setting::kLightOffUsb, Setting::kIdle,
-                                        Setting::kIdleUsb,  Setting::kKeepPin,     Setting::kWallpaper,
-                                        Setting::kHoldRail, Setting::kUsb};
+inline constexpr Setting kSettings[] = {
+    Setting::kLightOff, Setting::kLightOffUsb,    Setting::kIdle,     Setting::kIdleUsb,
+    Setting::kKeepPin,  Setting::kWallpaper,      Setting::kHoldRail, Setting::kUsb,
+    Setting::kFastRefreshes, Setting::kFullFrom};
 inline constexpr uint8_t kSettingCount = sizeof kSettings / sizeof kSettings[0];
 
 struct Option {
@@ -48,6 +51,12 @@ inline constexpr Option kHoldRail[] = {{1, "Kept"}, {0, "Off"}};
 // config::UsbMode's order. Switched at once: the console moves with it.
 inline constexpr Option kUsb[] = {{0, "Serial/JTAG (debug)"}, {1, "Serial port"},
                                   {2, "Serial port + FIDO2"}, {3, "SD card reader"}};
+// Fast refreshes leave ghosts, a full one clears them with a flash.
+inline constexpr Option kFastRefreshes[] = {{0, "Always full"}, {5, "5"},   {10, "10"},
+                                            {20, "20"},          {50, "50"}, {100, "100"}};
+inline constexpr Option kFullFrom[] = {{0, "Never"},  {1, "1% changed"},   {3, "3% changed"},
+                                       {5, "5% changed"}, {10, "10% changed"}, {25, "25% changed"},
+                                       {50, "50% changed"}};
 
 constexpr const Option *Options(Setting s, size_t *count) {
     switch (s) {
@@ -59,6 +68,10 @@ constexpr const Option *Options(Setting s, size_t *count) {
         case Setting::kLightOff:
         case Setting::kLightOffUsb: *count = sizeof kLight / sizeof kLight[0]; return kLight;
         case Setting::kUsb: *count = sizeof kUsb / sizeof kUsb[0]; return kUsb;
+        case Setting::kFastRefreshes:
+            *count = sizeof kFastRefreshes / sizeof kFastRefreshes[0];
+            return kFastRefreshes;
+        case Setting::kFullFrom: *count = sizeof kFullFrom / sizeof kFullFrom[0]; return kFullFrom;
     }
     *count = 0;
     return nullptr;
@@ -72,6 +85,8 @@ constexpr const char *Title(Setting s) {
            : s == Setting::kLightOff  ? "Light off after"
            : s == Setting::kLightOffUsb ? "On USB, light off after"
            : s == Setting::kUsb         ? "USB port"
+           : s == Setting::kFastRefreshes ? "Fast refreshes"
+           : s == Setting::kFullFrom      ? "Full refresh from"
                                      : "Power in sleep";
 }
 
@@ -100,6 +115,10 @@ constexpr void Label(Setting s, uint16_t value, char *out, size_t size) {
         t.Number(value).Add(" min");
     } else if (s == Setting::kKeepPin) {
         t.Add("After ").Number(value).Add(" hours");
+    } else if (s == Setting::kFastRefreshes) {
+        t.Number(value);
+    } else if (s == Setting::kFullFrom) {
+        t.Number(value).Add("% changed");
     } else {
         t.Add("?");
     }

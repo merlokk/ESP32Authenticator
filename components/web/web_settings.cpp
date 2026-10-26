@@ -267,29 +267,6 @@ bool ReadBle(const cJSON *ble, config::Data *into, WriteOutcome *out) {
     return true;
 }
 
-// `display`: {"wallpaper": "grey" | "bw"}, nothing else.
-bool ReadDisplay(const cJSON *display, config::Data *into, WriteOutcome *out) {
-    if (!cJSON_IsObject(display)) {
-        Say(out, WriteResult::kBadValue, "display");
-        return false;
-    }
-    for (const cJSON *item = display->child; item != nullptr; item = item->next) {
-        const char *key = item->string != nullptr ? item->string : "";
-        if (std::strcmp(key, "wallpaper") != 0) {
-            char detail[sizeof out->detail];
-            std::snprintf(detail, sizeof detail, "display.%s", key);
-            Say(out, WriteResult::kUnknownField, detail);
-            return false;
-        }
-        if (!cJSON_IsString(item) || item->valuestring == nullptr ||
-            !config::ParseWallpaperMode(item->valuestring, &into->display.wallpaper)) {
-            Say(out, WriteResult::kBadValue, "display.wallpaper");
-            return false;
-        }
-    }
-    return true;
-}
-
 // A whole number in lo..hi.
 bool ReadNumber(const cJSON *item, uint32_t lo, uint32_t hi, uint32_t *value) {
     if (!cJSON_IsNumber(item) || item->valuedouble < lo || item->valuedouble > hi ||
@@ -297,6 +274,44 @@ bool ReadNumber(const cJSON *item, uint32_t lo, uint32_t hi, uint32_t *value) {
         return false;
     }
     *value = static_cast<uint32_t>(item->valuedouble);
+    return true;
+}
+
+// `display`: {"wallpaper": "grey" | "bw", "fastRefreshes": 0..200,
+// "fullFromPercent": 0..100}, nothing else.
+bool ReadDisplay(const cJSON *display, config::Data *into, WriteOutcome *out) {
+    if (!cJSON_IsObject(display)) {
+        Say(out, WriteResult::kBadValue, "display");
+        return false;
+    }
+    for (const cJSON *item = display->child; item != nullptr; item = item->next) {
+        const char *key = item->string != nullptr ? item->string : "";
+        char detail[sizeof out->detail];
+        std::snprintf(detail, sizeof detail, "display.%s", key);
+        uint32_t value = 0;
+        if (std::strcmp(key, "wallpaper") == 0) {
+            if (!cJSON_IsString(item) || item->valuestring == nullptr ||
+                !config::ParseWallpaperMode(item->valuestring, &into->display.wallpaper)) {
+                Say(out, WriteResult::kBadValue, detail);
+                return false;
+            }
+        } else if (std::strcmp(key, "fastRefreshes") == 0) {
+            if (!ReadNumber(item, 0, config::kMaxFastRefreshes, &value)) {
+                Say(out, WriteResult::kBadValue, detail);
+                return false;
+            }
+            into->display.fast_refreshes = static_cast<uint16_t>(value);
+        } else if (std::strcmp(key, "fullFromPercent") == 0) {
+            if (!ReadNumber(item, 0, 100, &value)) {
+                Say(out, WriteResult::kBadValue, detail);
+                return false;
+            }
+            into->display.full_from_percent = static_cast<uint8_t>(value);
+        } else {
+            Say(out, WriteResult::kUnknownField, detail);
+            return false;
+        }
+    }
     return true;
 }
 

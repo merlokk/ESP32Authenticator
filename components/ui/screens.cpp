@@ -258,6 +258,7 @@ void PromptHint(lv_obj_t *parent, const char *text, lv_align_t align, int32_t y,
 // whom, and the buttons' hints by the buttons.
 void ShowPrompt() {
     const fido_prompt::Request &r = fido_request;
+    AskRefresh(Refresh::kFull);
     prompt = lv_obj_create(lv_layer_top());
     lv_obj_remove_style_all(prompt);
     lv_obj_add_flag(prompt, LV_OBJ_FLAG_CLICKABLE);  // the page under it takes no taps
@@ -412,7 +413,9 @@ void UpdateCodes(int64_t now) {
     }
 }
 
+// A fast refresh would leave the password's ghost: a full one.
 void HidePassword(Row &r) {
+    AskRefresh(Refresh::kFull);
     SetWiped(r.pass, kMask);
     lv_obj_set_pos(r.pass, kRowWidth / 2 + 6, kUserY);
     lv_obj_set_size(r.pass, kRowWidth / 2 - 18, kUserLine);
@@ -957,6 +960,7 @@ void OnLightSlider(lv_event_t *event) {
         warmth = settings::Warmth(v);
     }
     settings_hooks->set_light(true, brightness, warmth);  // moved: lit
+    AskRefresh(Refresh::kFast);  // no full one's flash while dragged
     lv_obj_add_state(light_switch, LV_STATE_CHECKED);
     ShowPercent(which, which == 0 ? brightness : warmth);
 }
@@ -2253,7 +2257,7 @@ void ShowDisplay() {
     lv_label_set_text(b, text);
     lv_obj_align(b, LV_ALIGN_RIGHT_MID, -12, 0);
     y += 56 + 16;
-    constexpr int32_t kRow = 46;  // nine rows
+    constexpr int32_t kRow = 42;  // eleven rows
     for (uint8_t i = 0; i < display_view::kSettingCount; ++i, y += kRow) {
         const display_view::Setting s = display_view::kSettings[i];
         display_view::Label(s, v.value[i], text, sizeof text);
@@ -2814,7 +2818,9 @@ void ShowSecurityPin() {
     lv_obj_add_event_cb(keys, OnFlowKey, LV_EVENT_VALUE_CHANGED, nullptr);
 }
 
+// The PIN pad's page comes in a full refresh, its dots in fast ones.
 void StartFlow(security_view::Flow f) {
+    AskRefresh(Refresh::kFull);
     pin_flow.Start(f);
     flow_key = false;
 }
@@ -2892,6 +2898,7 @@ bool PollSecurity() {
             SendAndWipe(job);
             changed |= nav_state.Back();
         } else if (r != security_view::Result::kNone && flow_title != nullptr) {
+            AskRefresh(Refresh::kFast);
             lv_label_set_text(flow_title, pin_flow.Title());
             lv_label_set_text(flow_message, r == security_view::Result::kMismatch
                                                 ? "the two differ: the new one again"
@@ -3547,6 +3554,7 @@ void ShowList() {
 void Show() {
     for (uint8_t i = 0; i < row_count; ++i) {
         if (rows[i].shown) {
+            AskRefresh(Refresh::kFull);  // no ghost of the password left
             SetWiped(rows[i].pass, "");
         }
     }
