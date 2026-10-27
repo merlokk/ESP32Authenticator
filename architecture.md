@@ -752,7 +752,8 @@ account on the authentication server (`config.json` `server.host`).
   key (32 bytes from `rng::Fill`, drawn again when PSA refuses the scalar)
   and a 20-byte TOTP secret replace the old ones in `/spiffs/server.bin`
   (plain, as `seed.txt`; written `.new`, remove, rename). Then
-  `GET https://<host>/register?token=<JWT>`: ES256, header
+  `POST https://<host>/register`, `Content-Type: application/jwt`, the JWT
+  as the body (not in the URL: servers log URLs): ES256, header
   `{"alg":"ES256","typ":"JWT"}`, payload `{"email", "serial"` (eFuse
   OPTIONAL_UNIQUE_ID, hex), `"mac"` (base MAC), `"totp"` (the secret, base32),
   `"pub"` (0x04||X||Y, base64url), `"iat"}`, signed by the new key (it
@@ -767,7 +768,7 @@ account on the authentication server (`config.json` `server.host`).
 - Requests run one at a time in a task of their own (10 KB stack); TLS
   through the certificate bundle, mbedTLS allocates in PSRAM
   (`CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC`: internal RAM beside BLE and Wi-Fi
-  ran out in `mbedtls_ssl_setup`). The URL is never logged: it carries the
+  ran out in `mbedtls_ssl_setup`). The token is never logged: it carries the
   TOTP secret.
 
 ## Flash layout

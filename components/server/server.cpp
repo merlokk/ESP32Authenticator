@@ -38,7 +38,7 @@ Status status = {};
 char path[kPathSize] = "";
 char temp_path[kPathSize + 4] = "";
 
-struct Request {
+struct Job {
     bool register_device;
     char host[kHostSize];
     char email[kEmailSize];
@@ -128,23 +128,25 @@ void Mac(char out[18]) {
              mac[5]);
 }
 
-esp_err_t last_error = ESP_OK;  // the last GET's, for what to say
+esp_err_t last_error = ESP_OK;  // the last request's, for what to say
 
-// The HTTP status of a GET, or -1 with no answer. The URL is never logged
-// (the registration's carries the TOTP secret).
-
-int Get(const char *url) {
+// The HTTP status of a GET, or of a POST of `body` (a JWT: it carries the
+// TOTP secret, never logged); -1 with no answer.
+int Request(const char *url, const char *body = nullptr, size_t body_len = 0) {
     esp_http_client_config_t cfg = {};
     cfg.url = url;
-    cfg.method = HTTP_METHOD_GET;
+    cfg.method = body != nullptr ? HTTP_METHOD_POST : HTTP_METHOD_GET;
     cfg.timeout_ms = kTimeoutMs;
     cfg.crt_bundle_attach = esp_crt_bundle_attach;
-    cfg.buffer_size_tx = 2048;  // the request line holds the token
     cfg.disable_auto_redirect = true;
     esp_http_client_handle_t client = esp_http_client_init(&cfg);
     if (client == nullptr) {
         last_error = ESP_ERR_NO_MEM;
         return -1;
+    }
+    if (body != nullptr) {
+        esp_http_client_set_header(client, "Content-Type", "application/jwt");
+        esp_http_client_set_post_field(client, body, static_cast<int>(body_len));
     }
     const esp_err_t err = esp_http_client_perform(client);
     const int code = err == ESP_OK ? esp_http_client_get_status_code(client) : -1;
@@ -162,8 +164,9 @@ void Answered(int code) {
     status.link = code > 0 ? Link::kOk : Link::kFailed;
 }
 
-// The token, signed by the new key; false (and what to say) when it fails.
-bool BuildUrl(const Request &r, const State &s, psa_key_id_t id, char *url, size_t url_size) {
+// The token, signed by the new key, into `token` (kTokenSize); its length,
+// 0 when it fails.
+size_t BuildToken(const Job &r, const State &s, psa_key_id_t id, char *token) {
     char serial[2 * kSerialSize + 1];
     char mac[18];
     char totp[Base32Length(kTotpSize) + 1];
@@ -172,35 +175,31 @@ bool BuildUrl(const Request &r, const State &s, psa_key_id_t id, char *url, size
     Mac(mac);
     Base32(s.totp, kTotpSize, totp, sizeof totp);
     if (!ExportPublic(id, pub, sizeof pub)) {
-        return false;
+        Wipe(totp, sizeof totp);
+        return 0;
     }
     char *payload = static_cast<char *>(malloc(kPayloadSize));
-    char *token = static_cast<char *>(malloc(kTokenSize));
-    bool ok = payload != nullptr && token != nullptr;
     const Claims claims = {r.email, serial, mac, totp, pub, static_cast<int64_t>(time(nullptr))};
-    const size_t payload_len = ok ? Payload(claims, payload, kPayloadSize) : 0;
+    const size_t payload_len = payload != nullptr ? Payload(claims, payload, kPayloadSize) : 0;
     const size_t input_len = payload_len != 0 ? SigningInput(payload, payload_len, token, kTokenSize) : 0;
     uint8_t signature[kSignatureSize];
     size_t signature_len = 0;
-    ok = input_len != 0 &&
-         psa_sign_message(id, kAlg, reinterpret_cast<const uint8_t *>(token), input_len, signature,
-                          sizeof signature, &signature_len) == PSA_SUCCESS &&
-         signature_len == kSignatureSize &&
-         AppendSignature(token, input_len, kTokenSize, signature) != 0 &&
-         RegisterUrl(r.host, token, url, url_size);
+    const size_t length =
+        input_len != 0 &&
+                psa_sign_message(id, kAlg, reinterpret_cast<const uint8_t *>(token), input_len,
+                                 signature, sizeof signature, &signature_len) == PSA_SUCCESS &&
+                signature_len == kSignatureSize
+            ? AppendSignature(token, input_len, kTokenSize, signature)
+            : 0;
     Wipe(totp, sizeof totp);
     if (payload != nullptr) {
         Wipe(payload, kPayloadSize);
         free(payload);
     }
-    if (token != nullptr) {
-        Wipe(token, kTokenSize);
-        free(token);
-    }
-    return ok;
+    return length;
 }
 
-void Register(const Request &r) {
+void Register(const Job &r) {
     State s = {};
     const psa_key_id_t id = NewKey(s.key);
     if (id == 0) {
@@ -226,19 +225,22 @@ void Register(const Request &r) {
         Say("server.bin is not written");
         return;
     }
-    constexpr size_t kUrlSize = kTokenSize + kHostSize + 32;
-    char *url = static_cast<char *>(malloc(kUrlSize));
-    const bool built = url != nullptr && BuildUrl(r, s, id, url, kUrlSize);
+    char url[kHostSize + 24];
+    char *token = static_cast<char *>(malloc(kTokenSize));
+    const size_t length = token != nullptr ? BuildToken(r, s, id, token) : 0;
     psa_destroy_key(id);
-    if (!built) {
-        free(url);
+    if (length == 0 || !RegisterUrl(r.host, url, sizeof url)) {
+        if (token != nullptr) {
+            Wipe(token, kTokenSize);
+            free(token);
+        }
         Wipe(&s, sizeof s);
         Say("cannot sign the token");
         return;
     }
-    const int code = Get(url);
-    Wipe(url, kUrlSize);
-    free(url);
+    const int code = Request(url, token, length);
+    Wipe(token, kTokenSize);
+    free(token);
     Answered(code);
     if (code >= 200 && code < 300) {
         const int64_t now = time(nullptr);
@@ -263,10 +265,10 @@ void Register(const Request &r) {
     Wipe(&s, sizeof s);
 }
 
-void Check(const Request &r) {
+void Check(const Job &r) {
     char url[kHostSize + 16];
     snprintf(url, sizeof url, "https://%s/", r.host);
-    const int code = Get(url);
+    const int code = Request(url);
     Answered(code);
     Locked l;
     if (code > 0 && state.registered) {
@@ -282,7 +284,7 @@ void Check(const Request &r) {
 }
 
 void Task(void *arg) {
-    auto *r = static_cast<Request *>(arg);
+    auto *r = static_cast<Job *>(arg);
     if (r->register_device) {
         Register(*r);
     } else {
@@ -314,7 +316,7 @@ esp_err_t Start(bool register_device, const char *host, const char *email) {
         snprintf(status.said, sizeof status.said, "%s",
                  register_device ? "registering..." : "connecting...");
     }
-    auto *r = static_cast<Request *>(calloc(1, sizeof(Request)));
+    auto *r = static_cast<Job *>(calloc(1, sizeof(Job)));
     if (r != nullptr) {
         r->register_device = register_device;
         snprintf(r->host, sizeof r->host, "%s", host);

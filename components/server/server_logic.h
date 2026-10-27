@@ -7,7 +7,8 @@
 // Registration: a new ECDSA P-256 key and TOTP secret (the hardware RNG), then
 // a JWT (ES256, RFC 7515/7519) signed by that key, carrying the e-mail typed
 // on the device, the chip's serial number, its MAC, the TOTP secret (base32)
-// and the public key; the device opens https://<host>/register?token=<JWT>.
+// and the public key; the device POSTs it to https://<host>/register
+// (Content-Type: application/jwt, the token as the body).
 // The server checks the signature and keeps the device id and its public
 // key; the user signs in there with the TOTP code the device shows.
 
@@ -286,12 +287,12 @@ constexpr size_t AppendSignature(char *token, size_t length, size_t size,
     return s == 0 ? 0 : length + 1 + s;
 }
 
-// "https://<host>/register?token=<token>" (base64url needs no escaping).
-// False when it does not fit.
-constexpr bool RegisterUrl(const char *host, const char *token, char *out, size_t size) {
+// "https://<host>/register": the token goes in the POST's body (never in the
+// URL: servers log those). False when it does not fit.
+constexpr bool RegisterUrl(const char *host, char *out, size_t size) {
     size_t n = 0;
     return host[0] != '\0' && PutRaw("https://", out, size, &n) && PutRaw(host, out, size, &n) &&
-           PutRaw("/register?token=", out, size, &n) && PutRaw(token, out, size, &n);
+           PutRaw("/register", out, size, &n);
 }
 
 // --- What Settings > Server says ----------------------------------------------

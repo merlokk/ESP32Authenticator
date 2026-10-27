@@ -110,10 +110,10 @@ void test_server_token(void) {
     TEST_ASSERT_EQUAL_CHAR('.', token[input]);
 
     char url[160];
-    TEST_ASSERT_TRUE(server::RegisterUrl("auth.merlokk.com", "x.y.z", url, sizeof url));
-    TEST_ASSERT_EQUAL_STRING("https://auth.merlokk.com/register?token=x.y.z", url);
-    TEST_ASSERT_FALSE(server::RegisterUrl("", "x.y.z", url, sizeof url));
-    TEST_ASSERT_FALSE(server::RegisterUrl("auth.merlokk.com", "x.y.z", url, 20));
+    TEST_ASSERT_TRUE(server::RegisterUrl("auth.merlokk.com", url, sizeof url));
+    TEST_ASSERT_EQUAL_STRING("https://auth.merlokk.com/register", url);
+    TEST_ASSERT_FALSE(server::RegisterUrl("", url, sizeof url));
+    TEST_ASSERT_FALSE(server::RegisterUrl("auth.merlokk.com", url, 20));
 }
 
 void test_server_token_fits(void) {

@@ -32,7 +32,7 @@ Status Get();
 bool Code(int64_t unix_seconds, uint32_t *code);
 
 // A new key and TOTP secret (the old ones gone: the device is not registered
-// from here), saved, then https://<host>/register?token=... in the task.
+// from here), saved, then POSTed as a JWT to https://<host>/register in the task.
 // ESP_ERR_INVALID_STATE: a request is under way; ESP_ERR_INVALID_ARG: no host
 // or e-mail. The caller sees the outcome in Get().
 esp_err_t StartRegister(const char *host, const char *email);
