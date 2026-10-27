@@ -60,6 +60,7 @@ add_executable(host_test
     test_ota.cpp
     test_usb.cpp
     test_rng.cpp
+    test_server.cpp
     fakes/fake_platform.cpp
     fakes/fake_store.cpp
 
@@ -109,6 +110,7 @@ target_include_directories(host_test PRIVATE
     ../devices/epd
     ../devices/usb
     ../devices/rng
+    ../components/server
     ../components/ui
     ../components/power
     ../components/pin_policy

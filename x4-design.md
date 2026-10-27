@@ -52,9 +52,9 @@ Portrait, 480x800. The panel scans landscape (hardware.md): `ui_logic.h` turns t
   up or Home closes it. As on a phone: the frontlight on top (a switch,
   Level and Warmth sliders: lit at once, saved when let go), then a row per
   page with its summary and ">": Wi-Fi, Bluetooth, Devices,
-  Security, Date & time, About. A page lists "label  value" lines (looked at every
+  Security, Server, Date & time, About. A page lists "label  value" lines (looked at every
   2 s) and may have one button: Power off, Lock now, Sync the time now,
-  Restart, Reset FIDO2; its
+  Restart, Reset FIDO2, Register; its
   arrow goes back to Settings. Wi-Fi is a window of its own: a switch, the
   state, Mode and access point (the mode: client / access point / both; the
   access point's name, password, channel, after how many rounds it opens
@@ -97,7 +97,10 @@ Portrait, 480x800. The panel scans landscape (hardware.md): `ui_logic.h` turns t
   PIN erased). About: the name and the model big, then
   firmware, build, ESP-IDF, LVGL, chip, flash and PSRAM, the MACs, the web
   site, uptime, free memory, SD card (a snapshot), Restart (asked first: the
-  PIN after it). Wi-Fi > Web site: running or why not, the address and its QR code,
+  PIN after it). Server: registered or not, connected (checked every
+  minute while shown), the last sync, the TOTP code for the server, the
+  host, the e-mail, the last outcome; Register (asked first: a new key and
+  TOTP secret, then the e-mail on the keyboard). Wi-Fi > Web site: running or why not, the address and its QR code,
   Runs (off / on / on the device's access point), Changes from the site
   (web.write), Login (set on the keyboard, the user then the password; or
   off).

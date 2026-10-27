@@ -185,6 +185,8 @@ after `usb mode jtag`, or hold BOOT).
 | `totp <base32 secret>` | local time (and UTC), seconds left in the window, the 6-digit codes of the previous, current and next 30 s window (HMAC-SHA1). Error without a believable time. The secret is not printed or logged, but stays in the up-arrow history |
 | `totp test` | RFC 6238 SHA-1 vectors through `crypto::Totp` |
 | `rng [length]` | a random lowercase hex string of `length` digits (default 64, 1..2048) from the hardware RNG; a second line warns when BLE and Wi-Fi are both off (no true random then) |
+| `server` | the host, e-mail, registered or not, the link (HTTP status), the last sync, the last outcome, the public key (base64url) |
+| `server check` / `server register [email]` / `server code` / `server host <name>` | ask `https://<host>/` / a new key and TOTP secret, then the registration (the e-mail saved) / the TOTP code for the server / set `server.host` (saved) |
 | `pass [info]` | password store: state (why it is off), records of max, file, version and change time |
 | `pass list [filter]` | #, site / user, password set, TOTP; filter: part of site or user. Passwords are never shown |
 | `pass add <site> [user] [password] [otp]` | a record; quote values with spaces. Prints its # (a new record goes last) |

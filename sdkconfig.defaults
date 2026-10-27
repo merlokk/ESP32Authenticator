@@ -72,3 +72,7 @@ CONFIG_TINYUSB_HID_COUNT=1
 # The card reader (usb reader): the microSD card as a drive, 8 KB a transfer.
 CONFIG_TINYUSB_MSC_ENABLED=y
 CONFIG_TINYUSB_MSC_BUFSIZE=8192
+
+# mbedTLS (the HTTPS client of components/server) allocates in PSRAM: its
+# ~20 KB per TLS session does not fit in the internal RAM beside BLE and Wi-Fi.
+CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC=y

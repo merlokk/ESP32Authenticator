@@ -47,6 +47,7 @@ constexpr uint8_t kMaxSyncHours = 168;
 constexpr uint16_t kMaxIdleMinutes = 1440;
 constexpr uint8_t kMaxKeepPinHours = 168;
 constexpr uint16_t kMaxFastRefreshes = 200;
+constexpr size_t kEmailSize = 65;    // 64 chars + NUL
 
 // A fixed address for one network (per network: home DHCP, office static).
 // Kept as typed; `enabled` false is DHCP and keeps the fields for later.
@@ -191,6 +192,13 @@ struct Usb {
     UsbMode mode;
 };
 
+// The authentication server (components/server): where the device registers
+// and the e-mail it registers with (typed on the device).
+struct Server {
+    char host[kHostSize];    // "auth.merlokk.com"; empty: none (HTTPS, no port)
+    char email[kEmailSize];  // empty: not typed yet
+};
+
 // Development and testing aids. Plain text in config.json: never on a
 // device that holds real secrets.
 struct Test {
@@ -210,6 +218,7 @@ struct Data {
     Power power;
     Pin pin;
     Usb usb;
+    Server server;
     Test test;
 };
 
@@ -252,6 +261,7 @@ bool ValidWipe(const char *wipe);            // empty or "<32 hex>:<64 hex>"
 bool ValidZone(const char *zone);            // a known zone name or a POSIX rule
 bool ValidHost(const char *host);            // empty, or a host name / IPv4: a-z 0-9 '-' '.'
 bool ValidBleName(const char *name);        // empty, or 1..29 bytes of UTF-8, no control chars
+bool ValidEmail(const char *email);         // empty, or "a@b.c": 3..64 printable ASCII, no spaces
 
 // Dotted quad to esp_netif's form (first octet in the low byte). Strict:
 // four decimal octets 0..255, no leading zeros ("010" is octal elsewhere),

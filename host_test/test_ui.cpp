@@ -578,7 +578,21 @@ void test_settings_pages(void) {
     TEST_ASSERT_EQUAL_UINT8(0, n.settings_page());
 
     TEST_ASSERT_EQUAL_STRING("Wi-Fi", st::Title(st::kRows[0]));
-    TEST_ASSERT_EQUAL_UINT8(6, st::kRowCount);
+    TEST_ASSERT_EQUAL_UINT8(7, st::kRowCount);
+    TEST_ASSERT_TRUE(st::kRows[4] == st::Page::kServer);
+    TEST_ASSERT_TRUE(st::PageAction(st::Page::kServer) == st::Action::kServerRegister);
+    TEST_ASSERT_EQUAL_STRING("Register", st::ActionText(st::Action::kServerRegister));
+    TEST_ASSERT_TRUE(st::Parent(st::Page::kServerEmail) == st::Page::kServer);
+    TEST_ASSERT_TRUE(st::Parent(st::Page::kServer) == st::Page::kMain);
+    TEST_ASSERT_TRUE(st::PageAction(st::Page::kServerEmail) == st::Action::kNone);
+    TEST_ASSERT_TRUE(st::EmailOk("me@example.org"));
+    TEST_ASSERT_TRUE(st::EmailOk("a@b"));
+    TEST_ASSERT_FALSE(st::EmailOk(""));
+    TEST_ASSERT_FALSE(st::EmailOk("me.example.org"));
+    TEST_ASSERT_FALSE(st::EmailOk("@example.org"));
+    TEST_ASSERT_FALSE(st::EmailOk("me@"));
+    TEST_ASSERT_FALSE(st::EmailOk("me@a@b"));
+    TEST_ASSERT_FALSE(st::EmailOk("me @b.c"));
     TEST_ASSERT_TRUE(st::PageAction(st::Page::kSecurity) == st::Action::kLockNow);
     TEST_ASSERT_TRUE(st::PageAction(st::Page::kWifi) == st::Action::kNone);
     TEST_ASSERT_TRUE(st::PageAction(st::Page::kAbout) == st::Action::kRestart);

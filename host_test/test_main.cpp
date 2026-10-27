@@ -34,6 +34,7 @@ void RegisterVaultTests(void);
 void RegisterOtaTests(void);
 void RegisterUsbTests(void);
 void RegisterRngTests(void);
+void RegisterServerTests(void);
 
 void setUp(void) {}
 
@@ -91,5 +92,6 @@ int main(int argc, char **argv) {
     if (Wanted("ota")) RegisterOtaTests();
     if (Wanted("usb")) RegisterUsbTests();
     if (Wanted("rng")) RegisterRngTests();
+    if (Wanted("server")) RegisterServerTests();
     return UNITY_END();
 }

@@ -15,6 +15,7 @@ Target and status. Screen design and the open questions: [x4-design.md](x4-desig
 | Store file header (version, modification time) and rollback check (highest version in NVS) | done (`storefile`) |
 | Encrypted stores: `vault.bin` and `fido.bin`, AES-256-GCM with a key from the PIN and the seed phrase (the same on every device with both and the files), loaded whole into PSRAM | done |
 | Sync over the internet, the later modification time wins | not yet; service not chosen |
+| Authentication server (`auth.merlokk.com`): registration, sign-in with the device's TOTP | device side done (Settings > Server, console `server`); the server is being written |
 | X4 Pro screen: status bar, credential list, pages, settings | status bar, the password list (pages, typing, TOTP), swipes, PIN pad, the U2F / FIDO2 list, Settings done |
 | Settings: frontlight, Wi-Fi | on the screen: frontlight, Wi-Fi (and the web site), Bluetooth, Devices (power, display, USB, touch calibration), security, date & time, about; also the console and the site |
 | Time: SNTP, zones, clock | done |
@@ -39,7 +40,7 @@ Reference ESP-IDF + LVGL project: `../../ai-remote/approver-esp32` ([GitHub](htt
 | Path | Contents |
 |---|---|
 | `main/` | `app_main`: OTA trial boot, NVS, SPIFFS, config, console, Wi-Fi manager + web server, BLE autostart |
-| `components/` | app components (`cli`: USB command line; `config`: config.json; `wifimgr`: Wi-Fi policy + manager; `web`: configuration site, see Wi-Fi and web; `fido_ctap`: CTAP 2.3 core, see FIDO2; `timesync`, `timezone`: see Time; `totp`: Base32 / Base64 secrets and the previous/current/next windows, codes from `crypto::Totp`; `ui`: LVGL and the power-off wallpaper, see UI; `power`: power-off, see UI; `pin_policy`: PIN complexity rules (pure C); `storefile`: store file header, load/save with the rollback check; `vault`: passwords, see Passwords; `ota`: firmware updates, see Flash layout) |
+| `components/` | app components (`cli`: USB command line; `config`: config.json; `wifimgr`: Wi-Fi policy + manager; `web`: configuration site, see Wi-Fi and web; `fido_ctap`: CTAP 2.3 core, see FIDO2; `timesync`, `timezone`: see Time; `totp`: Base32 / Base64 secrets and the previous/current/next windows, codes from `crypto::Totp`; `ui`: LVGL and the power-off wallpaper, see UI; `power`: power-off, see UI; `pin_policy`: PIN complexity rules (pure C); `storefile`: store file header, load/save with the rollback check; `vault`: passwords, see Passwords; `ota`: firmware updates, see Flash layout; `server`: the authentication server, see Server) |
 | `lib/` | third-party git submodules (`lionkey`: our fork, see FIDO2) |
 | `host_test/` | host tests (Unity, MSVC), no board: see Tests |
 | `utils/` | host-side Python tools over the USB console (`device.py`: console session; `console.py`: any command, the raw log; `spiffs.py`: ls/info/rm/get/put; `wallpaper.py`: wallpapers on the card; `firmware.py`: `/sdcard/firmware.bin`, `ota sd`; `ble.py`: ble commands, `kb` text quoting; `screenshot.py`: the screen as a PNG), see [utils/README.md](utils/README.md) |
@@ -70,6 +71,9 @@ Reference ESP-IDF + LVGL project: `../../ai-remote/approver-esp32` ([GitHub](htt
   long after a sleep a wake needs no PIN; `holdRail` (default true): GPIO1
   held high through the sleep (false: on the battery the power drops, no
   drain, the kept PIN lost).
+- `server`: `host` (default `auth.merlokk.com`; empty or a host name /
+  IPv4, HTTPS on 443) and `email` (empty or 3..64 printable ASCII with one
+  '@'), see Server.
 - `test`: development aids (`pin`, `autoPresence`), see
   [testing-on-device.md](testing-on-device.md#configjson-test). Never on a
   device with real secrets.
@@ -105,6 +109,7 @@ An example (the built-in default has no networks):
   "power": {"idleMinutes": 10, "idleMinutesUsb": 0, "keepPinHours": 0, "holdRail": true},
   "pin": {"lockMinutes": 10, "wipe": "", "complexity": true},
   "usb": {"mode": "jtag"},
+  "server": {"host": "auth.merlokk.com", "email": ""},
   "test": {"pin": "", "autoPresence": false}
 }
 ```
@@ -736,6 +741,34 @@ SPIFFS).
   Pro 500): the records, the plaintext and the file body buffers.
 - Console `pass`; passwords are never printed (list shows "set"), only typed
   in (they stay in the up-arrow history).
+
+## Server
+
+`components/server` (`server_logic.h` pure, host-tested): the device's
+account on the authentication server (`config.json` `server.host`).
+
+- Registration (Settings > Server > Register, asked first, then the e-mail on
+  the keyboard; console `server register [email]`): a new ECDSA P-256 private
+  key (32 bytes from `rng::Fill`, drawn again when PSA refuses the scalar)
+  and a 20-byte TOTP secret replace the old ones in `/spiffs/server.bin`
+  (plain, as `seed.txt`; written `.new`, remove, rename). Then
+  `GET https://<host>/register?token=<JWT>`: ES256, header
+  `{"alg":"ES256","typ":"JWT"}`, payload `{"email", "serial"` (eFuse
+  OPTIONAL_UNIQUE_ID, hex), `"mac"` (base MAC), `"totp"` (the secret, base32),
+  `"pub"` (0x04||X||Y, base64url), `"iat"}`, signed by the new key (it
+  proves holding it). 2xx: registered; anything else leaves the new key
+  unregistered. The server checks the signature and keeps the serial and the
+  public key; the user signs in there with the TOTP code the page shows.
+- `server.bin`: `SRV1`, flags (key, registered), key, TOTP secret, the
+  registration and last-sync times (int64 LE), 73 bytes.
+- Connected: `GET https://<host>/` answered (any HTTP status); while the page
+  is shown, at most once a minute, with Wi-Fi online and the clock set. Last
+  sync: the last answer to a registered device.
+- Requests run one at a time in a task of their own (10 KB stack); TLS
+  through the certificate bundle, mbedTLS allocates in PSRAM
+  (`CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC`: internal RAM beside BLE and Wi-Fi
+  ran out in `mbedtls_ssl_setup`). The URL is never logged: it carries the
+  TOTP secret.
 
 ## Flash layout
 

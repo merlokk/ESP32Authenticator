@@ -645,6 +645,47 @@ void test_valid_ble_name() {
     TEST_ASSERT_FALSE(config::ValidBleName("\xd0" "A"));       // lead + ASCII
 }
 
+void test_valid_email() {
+    TEST_ASSERT_TRUE(config::ValidEmail(""));  // not typed yet
+    TEST_ASSERT_TRUE(config::ValidEmail("a@b"));
+    TEST_ASSERT_TRUE(config::ValidEmail("user.name+tag@example.com"));
+    TEST_ASSERT_FALSE(config::ValidEmail("@example.com"));
+    TEST_ASSERT_FALSE(config::ValidEmail("user@"));
+    TEST_ASSERT_FALSE(config::ValidEmail("user.example.com"));
+    TEST_ASSERT_FALSE(config::ValidEmail("a@b@c"));
+    TEST_ASSERT_FALSE(config::ValidEmail("a b@c"));
+    TEST_ASSERT_FALSE(config::ValidEmail("\xd0\x9a@b"));
+    char long_one[config::kEmailSize + 1];
+    std::memset(long_one, 'a', sizeof long_one - 1);
+    long_one[sizeof long_one - 1] = '\0';
+    long_one[10] = '@';
+    TEST_ASSERT_FALSE(config::ValidEmail(long_one));  // 65 characters
+    long_one[config::kEmailSize - 1] = '\0';
+    TEST_ASSERT_TRUE(config::ValidEmail(long_one));  // 64
+}
+
+void test_parse_server() {
+    config::Data d;
+    char error[config::kErrorSize] = {};
+    config::FillDefaults(&d);
+    TEST_ASSERT_EQUAL_STRING("auth.merlokk.com", d.server.host);
+    TEST_ASSERT_EQUAL_STRING("", d.server.email);
+    TEST_ASSERT_TRUE_MESSAGE(
+        ParseText(R"({"server": {"host": "auth.example.org", "email": "me@example.org"}})", &d,
+                  error, sizeof error),
+        error);
+    TEST_ASSERT_EQUAL_STRING("auth.example.org", d.server.host);
+    TEST_ASSERT_EQUAL_STRING("me@example.org", d.server.email);
+    char json[config::kMaxFileSize];
+    TEST_ASSERT_GREATER_THAN(0, config::Serialize(d, json, sizeof json));
+    config::Data out;
+    TEST_ASSERT_TRUE_MESSAGE(ParseText(json, &out, error, sizeof error), error);
+    TEST_ASSERT_EQUAL_MEMORY(&d.server, &out.server, sizeof d.server);
+    AssertParseFails(R"({"server": {"host": "https://auth.example.org"}})", "server.host");
+    AssertParseFails(R"({"server": {"email": "nobody"}})", "server.email");
+    AssertParseFails(R"({"server": []})", "server");
+}
+
 // --- Serialize -------------------------------------------------------------------
 
 void test_serialize_round_trip() {
@@ -939,4 +980,6 @@ void RegisterConfigTests(void) {
     RUN_TEST(test_init_drops_stale_temp);
     RUN_TEST(test_reload_failure_keeps_values);
     RUN_TEST(test_valid_ble_name);
+    RUN_TEST(test_valid_email);
+    RUN_TEST(test_parse_server);
 }

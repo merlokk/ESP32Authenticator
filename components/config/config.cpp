@@ -78,6 +78,10 @@ const char kDefaultJson[] = R"json({
   "usb": {
     "mode": "jtag"
   },
+  "server": {
+    "host": "auth.merlokk.com",
+    "email": ""
+  },
   "test": {
     "pin": "",
     "autoPresence": false
@@ -658,6 +662,20 @@ bool ParseSections(const cJSON *root, Data *staged, char *error, size_t size) {
             return false;
         }
     }
+    const cJSON *server = cJSON_GetObjectItemCaseSensitive(root, "server");
+    if (server != nullptr) {
+        if (!cJSON_IsObject(server)) {
+            SetError(error, size, "server: expected an object");
+            return false;
+        }
+        if (!GetString(server, "host", parsed.server.host, sizeof parsed.server.host, ValidHost,
+                       "empty, or a host name / IPv4: a-z 0-9 '-' '.'", "server", error, size) ||
+            !GetString(server, "email", parsed.server.email, sizeof parsed.server.email,
+                       ValidEmail, "empty or an e-mail address, up to 64 characters", "server",
+                       error, size)) {
+            return false;
+        }
+    }
     const cJSON *test = cJSON_GetObjectItemCaseSensitive(root, "test");
     if (test != nullptr) {
         if (!cJSON_IsObject(test)) {
@@ -829,6 +847,9 @@ size_t Serialize(const Data &d, char *out, size_t size) {
     cJSON_AddBoolToObject(pin, "complexity", d.pin.complexity);
     cJSON *usb = cJSON_AddObjectToObject(root, "usb");
     cJSON_AddStringToObject(usb, "mode", Name(d.usb.mode));
+    cJSON *server = cJSON_AddObjectToObject(root, "server");
+    cJSON_AddStringToObject(server, "host", d.server.host);
+    cJSON_AddStringToObject(server, "email", d.server.email);
     cJSON *test = cJSON_AddObjectToObject(root, "test");
     cJSON_AddStringToObject(test, "pin", d.test.pin);
     cJSON_AddBoolToObject(test, "autoPresence", d.test.auto_presence);
@@ -937,6 +958,30 @@ bool ValidZone(const char *zone) {
 }
 
 // Labels of letters, digits and '-', joined by single dots.
+bool ValidEmail(const char *email) {
+    const size_t n = strlen(email);
+    if (n == 0) {
+        return true;
+    }
+    if (n < 3 || n >= kEmailSize) {
+        return false;
+    }
+    size_t at = n;
+    for (size_t i = 0; i < n; ++i) {
+        const char c = email[i];
+        if (c <= ' ' || c > '~') {
+            return false;
+        }
+        if (c == '@') {
+            if (at != n) {
+                return false;  // one '@'
+            }
+            at = i;
+        }
+    }
+    return at > 0 && at + 1 < n;
+}
+
 bool ValidBleName(const char *name) {
     const size_t n = strlen(name);
     if (n >= kBleNameSize) {

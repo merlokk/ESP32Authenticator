@@ -148,6 +148,7 @@ enum class JobKind : uint8_t {
     kWifiChoice,  // the Wi-Fi setting `which` (wifi_view::Choice) to `id`
     kWifiText,    // the Wi-Fi field `which` (wifi_view::Field) to `password`
     kWifiStatic,  // the network `ssid`'s address `static_ip`
+    kServerRegister,  // Server: a new key, registered with the e-mail `password`
 };
 
 struct Job {
@@ -3214,6 +3215,55 @@ bool PollFidoSettings() {
     return changed;
 }
 
+// --- Settings: Server ---------------------------------------------------------------
+
+// The page itself is ShowSettingsPage (the device's lines: registered,
+// connected, the last sync, the code). Register: asked first (Poll), then the
+// e-mail on the keyboard; OK sends it.
+const ServerHooks *server_hooks = nullptr;
+
+void ShowServerEmail() {
+    char email[settings::kEmailSize] = "";
+    server_hooks->email(email, sizeof email);
+    KeyboardPage("E-mail", "email", email, false, settings::kEmailSize - 1,
+                 "The e-mail you sign in to the server with. A new key and TOTP secret "
+                 "are made. " LV_SYMBOL_OK ": register, " LV_SYMBOL_KEYBOARD ": back.");
+}
+
+// Register's question and the e-mail page. True when the page is to be drawn again.
+bool PollServer() {
+    bool changed = false;
+    const auto page = static_cast<settings::Page>(nav_state.settings_page());
+    if (sheet_choice != 0 && page == settings::Page::kServer) {
+        const int choice = sheet_choice;
+        sheet_choice = 0;
+        CloseSheet();
+        if (choice == 1) {
+            changed |= nav_state.OpenSettings(static_cast<uint8_t>(settings::Page::kServerEmail));
+        }
+    }
+    if (page != settings::Page::kServerEmail) {
+        return changed;
+    }
+    if (password_cancel) {
+        password_cancel = false;
+        changed |= nav_state.Back();
+    }
+    if (password_ready && password_area != nullptr) {
+        password_ready = false;
+        const char *typed = lv_textarea_get_text(password_area);
+        if (!settings::EmailOk(typed)) {
+            Toast("not an e-mail address");
+        } else {
+            Job job = MakeJob(JobKind::kServerRegister);
+            snprintf(job.password, sizeof job.password, "%s", typed);
+            SendAndWipe(job);
+            changed |= nav_state.Back();
+        }
+    }
+    return changed;
+}
+
 // --- Settings: the touch's calibration ---------------------------------------------
 
 bool cal_active = false;  // the crosses are up: no calibration in use
@@ -3465,6 +3515,10 @@ void ShowSettings() {
                 return;
             default: break;
         }
+    }
+    if (server_hooks != nullptr && page == settings::Page::kServerEmail) {
+        ShowServerEmail();
+        return;
     }
     if (settings_hooks == nullptr) {
         TitleBar("Settings");
@@ -3774,6 +3828,7 @@ void TypeTask(void *) {
                     said = web_hooks->set_login(job.flag ? job.ssid : nullptr,
                                                 job.flag ? job.password : nullptr);
                     break;
+                case JobKind::kServerRegister: said = server_hooks->register_device(job.password); break;
                 case JobKind::kDisplaySet:
                     said = display_hooks->set(job.setting, static_cast<uint16_t>(job.id));
                     break;
@@ -4032,6 +4087,12 @@ void Poll(lv_timer_t *) {
                 const SheetButton buttons[] = {{"Restart", 1}, {"Cancel", 3}};
                 OpenSheet("Restart now? The PIN is asked again after it.", buttons, 2);
             }
+        } else if (job.action == settings::Action::kServerRegister) {
+            if (server_hooks != nullptr && !dialog::IsOpen()) {  // asked first: the old key goes
+                const SheetButton buttons[] = {{"Register", 1}, {"Cancel", 3}};
+                OpenSheet("Register on the server? A new key and TOTP secret replace the old ones.",
+                          buttons, 2);
+            }
         } else if (xQueueSend(jobs, &job, 0) != pdTRUE) {
             Toast("busy typing");
         }
@@ -4081,6 +4142,9 @@ void Poll(lv_timer_t *) {
     if (nav_state.mode() == nav::Mode::kSettings) {
         changed |= PollFidoSettings();
     }
+    if (nav_state.mode() == nav::Mode::kSettings && server_hooks != nullptr) {
+        changed |= PollServer();
+    }
     // Settings' texts (Wi-Fi joined, the clock); the switch follows Power x2.
     // Not under a dialog, nor over a password being typed or a scan.
     if (nav_state.mode() == nav::Mode::kSettings && settings_hooks != nullptr && HomeShown() &&
@@ -4098,6 +4162,7 @@ void Poll(lv_timer_t *) {
         settings_page != settings::Page::kWifiStatic &&
         settings_page != settings::Page::kWifiStaticText &&
         settings_page != settings::Page::kWifiHidden &&
+        settings_page != settings::Page::kServerEmail &&
         lv_tick_elaps(settings_looked_at) >= kSettingsMs) {
         settings_looked_at = lv_tick_get();
         if (settings_page == settings::Page::kWifi && wifi_hooks != nullptr) {
@@ -4219,6 +4284,8 @@ void SetTimeHooks(const TimeHooks *hooks) { time_hooks = hooks; }
 void SetSecurityHooks(const SecurityHooks *hooks) { security_hooks = hooks; }
 
 void SetWebHooks(const WebHooks *hooks) { web_hooks = hooks; }
+
+void SetServerHooks(const ServerHooks *hooks) { server_hooks = hooks; }
 
 void SetFidoRequest(const fido_prompt::Request &request) {
     Lock();

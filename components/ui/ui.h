@@ -163,6 +163,16 @@ struct WebHooks {
 };
 void SetWebHooks(const WebHooks *hooks);
 
+// Settings > Server's registration (the page's lines: SettingsHooks::describe).
+struct ServerHooks {
+    // The e-mail the keyboard starts with (config.json server.email). ui task.
+    void (*email)(char *out, size_t size);
+    // A new key and TOTP secret, then the registration (the e-mail saved); in
+    // the ui's own task, saying what happened.
+    const char *(*register_device)(const char *email);
+};
+void SetServerHooks(const ServerHooks *hooks);
+
 // The FIDO2 / U2F request about to run (any task, before the core takes it):
 // while the core waits for the button, a window says what it is (the site,
 // the account) and which button does what (Left or Home allow, Right refuses).

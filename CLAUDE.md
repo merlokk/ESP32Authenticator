@@ -52,7 +52,10 @@ the vault is locked, GT911 touch as the pointer, `ui`); power-off
   format 3 with a store id and a seed id), the seed phrase 12 BIP39 words in
   `/spiffs/seed.txt` (`seed`, the site's Passwords page: a new one from the
   hardware RNG), locked until `pin` (`test.pin` in config.json unlocks at
-  boot).
+  boot). Authentication server (`server.host`, default `auth.merlokk.com`):
+  Settings > Server (registered, connected, last sync, the TOTP code;
+  Register: a new ECDSA P-256 key and TOTP secret in `/spiffs/server.bin`, an
+  ES256 JWT to `https://<host>/register`), console `server`.
   PIN lockout (10 tries, `pin.lockMinutes`) and a wipe PIN (`pin wipe set`).
   LionKey fork (`merlokk/lionkey`, branch `esp32auth`): CTAP 2.3 (FIDO_2_3),
   U2F (BLE and USB), EdDSA, authenticatorConfig, minPinLength, PIN complexity,

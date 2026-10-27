@@ -35,6 +35,7 @@
 #include "ota_update.h"
 #include "power.h"
 #include "sd_card.h"
+#include "server.h"
 #include "spiffs_fs.h"
 #include "store_io.h"
 #include "timesync.h"
@@ -590,6 +591,82 @@ void DescribeFido(bool summary, char *out, size_t size) {
         config::Get().test.auto_presence ? "AUTO (config test)" : "Left / Home yes, Right no");
 }
 
+// Settings > Server: registered, connected, the last sync, the code; a check
+// of the link (https://<host>/) at most every kServerCheckUs while shown.
+constexpr int64_t kServerCheckUs = 60 * 1000000LL;
+int64_t server_checked_at = -kServerCheckUs;
+
+// Why a request cannot go now, or nullptr.
+const char *ServerBlocked() {
+    if (config::Get().server.host[0] == '\0') {
+        return "no server set (config.json server.host)";
+    }
+    if (time(nullptr) < 1704067200) {  // 2024-01-01: TLS checks the dates
+        return "the clock is not set";
+    }
+    if (wifimgr::Get().state != wifimgr::State::kOnline) {
+        return "no network: connect Wi-Fi first";
+    }
+    return nullptr;
+}
+
+void DescribeServer(bool summary, char *out, size_t size) {
+    const server::Status s = server::Get();
+    if (summary) {
+        snprintf(out, size, "%s", s.busy ? "connecting..." : server::Summary(s.registered, s.link));
+        return;
+    }
+    const config::Server &c = config::Get().server;
+    const int64_t now = time(nullptr);
+    if (!s.busy && ServerBlocked() == nullptr &&
+        esp_timer_get_time() - server_checked_at >= kServerCheckUs) {
+        server_checked_at = esp_timer_get_time();
+        server::StartCheck(c.host);
+    }
+    Put(out, size, "State", "%s",
+        s.registered ? "registered" : s.has_key ? "not registered (refused)" : "not registered");
+    Put(out, size, "Connected", "%s",
+        s.busy                            ? "asking..."
+        : s.link == server::Link::kOk     ? "yes"
+        : s.link == server::Link::kFailed ? "no"
+                                          : "not tried yet");
+    char text[24];
+    server::Ago(now, s.last_sync, text, sizeof text);
+    Put(out, size, "Last sync", "%s", text);
+    uint32_t code = 0;
+    if (s.registered && server::Code(now, &code)) {
+        char shown[8];
+        server::CodeText(code, shown);
+        Put(out, size, "Code", "%s", shown);
+    }
+    Put(out, size, "Server", "%s", c.host[0] != '\0' ? c.host : "none");
+    Put(out, size, "E-mail", "%s", c.email[0] != '\0' ? c.email : "not set");
+    if (s.said[0] != '\0') {
+        Put(out, size, "Last", "%s", s.said);
+    }
+}
+
+void ServerEmail(char *out, size_t size) { snprintf(out, size, "%s", config::Get().server.email); }
+
+const char *ServerRegister(const char *email) {
+    if (!config::ValidEmail(email) || email[0] == '\0') {
+        return "not an e-mail address";
+    }
+    if (const char *why = ServerBlocked()) {
+        return why;
+    }
+    config::Server &c = config::Get().server;
+    snprintf(c.email, sizeof c.email, "%s", email);
+    const bool saved = config::Save() == ESP_OK;
+    switch (server::StartRegister(c.host, c.email)) {
+        case ESP_OK: return saved ? "registering..." : "registering (config.json not saved)";
+        case ESP_ERR_INVALID_STATE: return "busy: a request is under way";
+        default: return "cannot register";
+    }
+}
+
+const ui::ServerHooks kServerHooks = {ServerEmail, ServerRegister};
+
 void SettingsDescribe(ui::settings::Page page, bool summary, char *out, size_t size) {
     using ui::settings::Page;
     out[0] = '\0';
@@ -600,6 +677,7 @@ void SettingsDescribe(ui::settings::Page page, bool summary, char *out, size_t s
         case Page::kSecurity: DescribeSecurity(summary, out, size); break;
         case Page::kTime: DescribeTime(summary, out, size); break;
         case Page::kAbout: DescribeAbout(summary, out, size); break;
+        case Page::kServer: DescribeServer(summary, out, size); break;
         case Page::kTouch:
             if (summary) {
                 const config::TouchCalibration &t = config::Get().display.touch;
@@ -627,7 +705,8 @@ void SettingsDescribe(ui::settings::Page page, bool summary, char *out, size_t s
         case Page::kWifiText:
         case Page::kWifiStatic:
         case Page::kWifiStaticText:
-        case Page::kWifiHidden: break;
+        case Page::kWifiHidden:
+        case Page::kServerEmail: break;
         case Page::kFido: DescribeFido(summary, out, size); break;
         case Page::kWeb:
             if (summary) {
@@ -666,6 +745,7 @@ const char *SettingsAct(ui::settings::Action action) {
                 case ESP_ERR_TIMEOUT: return "busy: a FIDO2 request is running";
                 default: return "cannot reset FIDO2";
             }
+        case Action::kServerRegister:  // the ui asks the e-mail (ServerRegister)
         case Action::kNone: break;
     }
     return "";
@@ -1277,6 +1357,8 @@ extern "C" void app_main() {
     // config.json from SPIFFS, never the card; built-in defaults if
     // missing/invalid or unmounted.
     config::Init(spiffs_fs::kBasePath);
+    // The server's key and TOTP secret (none: not registered).
+    server::Init(spiffs_fs::kBasePath);
     // The USB port as config.json has it; stdin / stdout follow it from here.
     static_assert(static_cast<int>(usb::Mode::kSerialFido) ==
                   static_cast<int>(config::UsbMode::kSerialFido));
@@ -1316,6 +1398,7 @@ extern "C" void app_main() {
     ui::SetTimeHooks(&kTimeHooks);
     ui::SetSecurityHooks(&kSecurityHooks);
     ui::SetWebHooks(&kWebHooks);
+    ui::SetServerHooks(&kServerHooks);
     {
         const config::TouchCalibration &t = config::Get().display.touch;
         ui::SetTouchCalibration({t.x_scale, t.x_offset, t.y_scale, t.y_offset}, SaveTouch);

@@ -24,6 +24,7 @@
 #include "date_cmd.h"
 #include "totp_cmd.h"
 #include "rng_cmd.h"
+#include "server_cmd.h"
 #include "power.h"
 #include "ui.h"
 #include "ui_logic.h"
@@ -593,6 +594,17 @@ const esp_console_cmd_t kCommands[] = {
                 "(default 64, up to 2048); true random while BLE or Wi-Fi is on",
         .hint = "[length]",
         .func = &CmdRng,
+        .argtable = nullptr,
+        .func_w_context = nullptr,
+        .context = nullptr,
+    },
+    {
+        .command = "server",
+        .help = "The authentication server (config.json server.host): status | check: is it "
+                "there | register [email]: a new key and TOTP secret, then the registration | "
+                "code: the TOTP code for it | host <name>: the server (saved)",
+        .hint = "[check|register [email]|code|host <name>]",
+        .func = &CmdServer,
         .argtable = nullptr,
         .func_w_context = nullptr,
         .context = nullptr,

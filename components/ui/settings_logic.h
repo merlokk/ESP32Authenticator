@@ -41,6 +41,8 @@ enum class Page : uint8_t {
     kWifiStatic,    // Wi-Fi: a saved network's IP address
     kWifiStaticText,  // Wi-Fi > IP address: a typed address
     kWifiHidden,    // Wi-Fi > Add a network: one not broadcast (its name, its password)
+    kServer,        // the authentication server: registered, connected, the code
+    kServerEmail,   // Server > Register: the e-mail on the keyboard
 };
 
 // Where a page's back arrow goes.
@@ -59,12 +61,14 @@ constexpr Page Parent(Page p) {
            : p == Page::kSecurityLock || p == Page::kSecurityPin ? Page::kSecurity
            : p == Page::kWebMode || p == Page::kWebLogin ? Page::kWeb
            : p == Page::kFido ? Page::kSecurity
+           : p == Page::kServerEmail ? Page::kServer
                                       : Page::kMain;
 }
 
 // The main page's rows, under the frontlight.
 inline constexpr Page kRows[] = {Page::kWifi,     Page::kBluetooth, Page::kDisplay,
-                                 Page::kSecurity, Page::kTime,      Page::kAbout};
+                                 Page::kSecurity, Page::kServer,    Page::kTime,
+                                 Page::kAbout};
 inline constexpr uint8_t kRowCount = sizeof kRows / sizeof kRows[0];
 
 constexpr const char *Title(Page p) {
@@ -98,6 +102,8 @@ constexpr const char *Title(Page p) {
         case Page::kWifiStatic: return "IP address";
         case Page::kWifiStaticText: return "IP address";
         case Page::kWifiHidden: return "Other network";
+        case Page::kServer: return "Server";
+        case Page::kServerEmail: return "E-mail";
     }
     return "";
 }
@@ -110,6 +116,7 @@ enum class Action : uint8_t {
     kSyncTime,  // Date & time
     kRestart,   // About (asked first: the vault locks)
     kFidoReset, // FIDO2 / U2F (held: every key and its PIN erased)
+    kServerRegister,  // Server (asked first: a new key, then the e-mail)
 };
 
 constexpr Action PageAction(Page p) {
@@ -118,6 +125,7 @@ constexpr Action PageAction(Page p) {
            : p == Page::kTime     ? Action::kSyncTime
            : p == Page::kAbout    ? Action::kRestart
            : p == Page::kFido     ? Action::kFidoReset
+           : p == Page::kServer   ? Action::kServerRegister
                                   : Action::kNone;
 }
 
@@ -127,6 +135,7 @@ constexpr const char *ActionText(Action a) {
            : a == Action::kSyncTime ? "Sync the time now"
            : a == Action::kRestart  ? "Restart"
            : a == Action::kFidoReset ? "Reset FIDO2"
+           : a == Action::kServerRegister ? "Register"
                                     : "";
 }
 
@@ -159,6 +168,26 @@ constexpr bool Line(const char *text, uint8_t index, char *label, size_t label_s
     }
     value[n] = '\0';
     return true;
+}
+
+// Server > Register's e-mail: 3..64 printable ASCII, no spaces, one '@' with
+// something on both sides (config::ValidEmail, not empty).
+inline constexpr size_t kEmailSize = 65;  // config::kEmailSize
+
+constexpr bool EmailOk(const char *email) {
+    size_t n = 0;
+    size_t at = 0;
+    size_t ats = 0;
+    for (; email[n] != '\0'; ++n) {
+        if (email[n] <= ' ' || email[n] > '~') {
+            return false;
+        }
+        if (email[n] == '@') {
+            at = n;
+            ++ats;
+        }
+    }
+    return n >= 3 && n < kEmailSize && ats == 1 && at > 0 && at + 1 < n;
 }
 
 // The frontlight's sliders: brightness 1..100 (0 is 1), warmth 0..100.
