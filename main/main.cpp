@@ -623,8 +623,8 @@ void DescribeServer(bool summary, char *out, size_t size) {
         server_checked_at = esp_timer_get_time();
         server::StartCheck(c.host);
     }
-    Put(out, size, "State", "%s",
-        s.registered ? "registered" : s.has_key ? "not registered (refused)" : "not registered");
+    // Why not: the "Last" line.
+    Put(out, size, "State", "%s", s.registered ? "registered" : "not registered");
     Put(out, size, "Connected", "%s",
         s.busy                            ? "asking..."
         : s.link == server::Link::kOk     ? "yes"
