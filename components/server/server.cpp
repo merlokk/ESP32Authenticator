@@ -57,7 +57,12 @@ class Locked {
     ~Locked() { xSemaphoreGive(lock); }
 };
 
+// The last registration failed: status.said keeps why until the next one.
+bool refused = false;
+
+// A registration that went no further.
 void Say(const char *text) {
+    refused = true;
     Locked l;
     snprintf(status.said, sizeof status.said, "%s", text);
 }
@@ -239,6 +244,7 @@ void Register(const Job &r) {
         return;
     }
     const int code = Request(url, token, length);
+    refused = code < 200 || code >= 300;
     Wipe(token, kTokenSize);
     free(token);
     Answered(code);
@@ -277,7 +283,9 @@ void Check(const Job &r) {
         Save(state);
     }
     if (code > 0) {
-        snprintf(status.said, sizeof status.said, "the server answered");
+        if (state.registered || !refused) {
+            snprintf(status.said, sizeof status.said, "the server answered");
+        }
     } else {
         snprintf(status.said, sizeof status.said, "no answer: %s", esp_err_to_name(last_error));
     }
