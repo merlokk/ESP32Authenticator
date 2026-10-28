@@ -44,7 +44,8 @@ idf.py -p COM6 flash
 
 ## Version
 
-`version.txt` + git → `PROJECT_VER`, e.g. `0.1.0-10-g060dff6[-dirty]`
+The nearest `x.y.z` git tag → `PROJECT_VER` `<tag>-<commits since it>-g<hash>[-dirty]`,
+e.g. `0.2.0-3-gabc1234` (no tag: `version.txt` and the commit count)
 (`cmake/version.cmake`). It is computed at configure time: run
 `idf.py reconfigure` to pick up a new commit.
 
