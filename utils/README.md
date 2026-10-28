@@ -19,6 +19,7 @@ All tools take `-p <port>` (e.g. `COM6`) and exit with 1 when the device reports
 | `firmware.py` | firmware update: `ota` info, an app `.bin` to `/sdcard/firmware.bin`, `ota sd confirm`, remove it |
 | `ble.py` | BLE stack, pairing, host switching, keyboard |
 | `screenshot.py` | the e-ink screen as a PNG (`ui screenshot`) |
+| `second_device.py` | a second device on the authentication server (its own key, in `~/.esp32auth/`), for the sync: `register`, `list` the account's stores, `edit` (a newer valid copy: the seed phrase and PIN asked, never stored; `--new-pin`), `corrupt` (a newer copy that must be refused), `code` |
 
 ## console.py
 
