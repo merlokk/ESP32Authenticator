@@ -762,9 +762,14 @@ account on the authentication server (`config.json` `server.host`).
   public key; the user signs in there with the TOTP code the page shows.
 - `server.bin`: `SRV1`, flags (key, registered), key, TOTP secret, the
   registration and last-sync times (int64 LE), 73 bytes.
-- Connected: `GET https://<host>/` answered (any HTTP status); while the page
-  is shown, at most once a minute, with Wi-Fi online and the clock set. Last
-  sync: the last answer to a registered device.
+- Connected: `GET https://<host>/api/device/ping` answered 200
+  `{"status":"ok","time":N}` (anything else: "not the server: HTTP n", or no
+  answer); while the page is shown, at most once a minute, with Wi-Fi online
+  and the clock set (console `server check`). `time` gives the device's clock
+  against the server's (Clock: "same" within 2 s, "12 s ahead", "3 min
+  behind"; console in seconds); over 10 min off, Register is refused (the
+  server would refuse `iat`). Last sync: the last ping of a registered device.
+  Protocol: `../ESP32AuthenticatorServer/device-protocol.md`.
 - Requests run one at a time in a task of their own (10 KB stack); TLS
   through the certificate bundle, mbedTLS allocates in PSRAM
   (`CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC`: internal RAM beside BLE and Wi-Fi

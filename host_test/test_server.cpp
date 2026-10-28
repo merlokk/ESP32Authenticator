@@ -169,9 +169,66 @@ void test_server_texts(void) {
     TEST_ASSERT_EQUAL_STRING("0fa0", hex);
 }
 
+void test_server_ping(void) {
+    char url[64];
+    TEST_ASSERT_TRUE(server::PingUrl("auth.merlokk.com", url, sizeof url));
+    TEST_ASSERT_EQUAL_STRING("https://auth.merlokk.com/api/device/ping", url);
+    TEST_ASSERT_FALSE(server::PingUrl("", url, sizeof url));
+    TEST_ASSERT_FALSE(server::PingUrl("auth.merlokk.com", url, 30));
+
+    int64_t t = 0;
+    const char ok[] = R"({"status": "ok", "time": 1793128050})";
+    TEST_ASSERT_TRUE(server::ParsePing(ok, sizeof ok - 1, &t));
+    TEST_ASSERT_TRUE(t == 1793128050);
+    const char swapped[] = "{\"time\":\n42,\"status\":\"ok\"}";
+    TEST_ASSERT_TRUE(server::ParsePing(swapped, sizeof swapped - 1, &t));
+    TEST_ASSERT_TRUE(t == 42);
+    t = 7;
+    const char *bad[] = {
+        R"({"status":"down","time":1})",          // not ok
+        R"({"status":"ok"})",                     // no time
+        R"({"status":"ok","time":"1"})",          // a string
+        R"({"status":"ok","time":-1})",           // negative
+        R"({"status":"ok","time":99999999999999999999})",  // too big
+        R"(<html>ok</html>)",                     // a web page
+        "",
+    };
+    for (const char *b : bad) {
+        TEST_ASSERT_FALSE_MESSAGE(server::ParsePing(b, std::strlen(b), &t), b);
+    }
+    TEST_ASSERT_TRUE(t == 7);  // left as it was
+    const char cut[] = R"({"status":"ok","time":17931)";  // the buffer ended
+    TEST_ASSERT_FALSE(server::ParsePing(cut, sizeof cut - 1, &t));
+}
+
+void test_server_offset(void) {
+    char out[24];
+    server::OffsetText(0, out, sizeof out);
+    TEST_ASSERT_EQUAL_STRING("same", out);
+    server::OffsetText(-2, out, sizeof out);
+    TEST_ASSERT_EQUAL_STRING("same", out);
+    server::OffsetText(12, out, sizeof out);
+    TEST_ASSERT_EQUAL_STRING("12 s ahead", out);
+    server::OffsetText(-119, out, sizeof out);
+    TEST_ASSERT_EQUAL_STRING("119 s behind", out);
+    server::OffsetText(-15 * 60, out, sizeof out);
+    TEST_ASSERT_EQUAL_STRING("15 min behind", out);
+    server::OffsetText(3 * 3600, out, sizeof out);
+    TEST_ASSERT_EQUAL_STRING("3 h ahead", out);
+    server::OffsetText(-400 * 86400LL, out, sizeof out);
+    TEST_ASSERT_EQUAL_STRING("400 days behind", out);
+
+    TEST_ASSERT_FALSE(server::ClockTooFar(600));
+    TEST_ASSERT_FALSE(server::ClockTooFar(-600));
+    TEST_ASSERT_TRUE(server::ClockTooFar(601));
+    TEST_ASSERT_TRUE(server::ClockTooFar(-601));
+}
+
 }  // namespace
 
 void RegisterServerTests(void) {
+    RUN_TEST(test_server_ping);
+    RUN_TEST(test_server_offset);
     RUN_TEST(test_server_state_round_trip);
     RUN_TEST(test_server_state_refused);
     RUN_TEST(test_server_base64url);

@@ -24,6 +24,8 @@ struct Status {
     Link link;
     bool busy;               // a request under way
     int http_status;         // the last answer's, 0: none
+    bool has_offset;         // the last ping gave the server's clock
+    int64_t offset;          // the device's clock minus the server's, seconds
     char said[48];           // the last request's outcome
 };
 Status Get();
@@ -37,7 +39,8 @@ bool Code(int64_t unix_seconds, uint32_t *code);
 // or e-mail. The caller sees the outcome in Get().
 esp_err_t StartRegister(const char *host, const char *email);
 
-// https://<host>/ asked in the task: any answer is "connected" (Link::kOk),
+// GET https://<host>/api/device/ping in the task: 200 {"status":"ok"} is
+// "connected" (Link::kOk), its "time" the server's clock (Status::offset),
 // and for a registered device the last sync. ESP_ERR_INVALID_STATE: busy.
 esp_err_t StartCheck(const char *host);
 

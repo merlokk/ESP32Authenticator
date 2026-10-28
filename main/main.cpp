@@ -591,8 +591,9 @@ void DescribeFido(bool summary, char *out, size_t size) {
         config::Get().test.auto_presence ? "AUTO (config test)" : "Left / Home yes, Right no");
 }
 
-// Settings > Server: registered, connected, the last sync, the code; a check
-// of the link (https://<host>/) at most every kServerCheckUs while shown.
+// Settings > Server: registered, connected, the clock against the server's,
+// the last sync, the code; a ping (/api/device/ping) at most every
+// kServerCheckUs while shown.
 constexpr int64_t kServerCheckUs = 60 * 1000000LL;
 int64_t server_checked_at = -kServerCheckUs;
 
@@ -631,6 +632,10 @@ void DescribeServer(bool summary, char *out, size_t size) {
         : s.link == server::Link::kFailed ? "no"
                                           : "not tried yet");
     char text[24];
+    if (s.has_offset) {
+        server::OffsetText(s.offset, text, sizeof text);
+        Put(out, size, "Clock", "%s", text);
+    }
     server::Ago(now, s.last_sync, text, sizeof text);
     Put(out, size, "Last sync", "%s", text);
     uint32_t code = 0;
@@ -654,6 +659,10 @@ const char *ServerRegister(const char *email) {
     }
     if (const char *why = ServerBlocked()) {
         return why;
+    }
+    const server::Status s = server::Get();
+    if (s.has_offset && server::ClockTooFar(s.offset)) {
+        return "the clock is over 10 min off the server's";
     }
     config::Server &c = config::Get().server;
     snprintf(c.email, sizeof c.email, "%s", email);

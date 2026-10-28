@@ -34,6 +34,10 @@ void PrintStatus() {
         printf(" (HTTP %d)", s.http_status);
     }
     printf("\n");
+    if (s.has_offset) {
+        server::OffsetText(s.offset, ago, sizeof ago);
+        printf("clock       %s (%+lld s)\n", ago, static_cast<long long>(s.offset));
+    }
     server::Ago(now, s.last_sync, ago, sizeof ago);
     printf("last sync   %s\n", ago);
     if (s.said[0] != '\0') {
@@ -116,6 +120,12 @@ int CmdServer(int argc, char **argv) {
             return 1;
         }
         if (!Ready()) {
+            return 1;
+        }
+        const server::Status s = server::Get();
+        if (s.has_offset && server::ClockTooFar(s.offset)) {
+            printf("the clock is %+lld s off the server's (10 min at most): fix it\n",
+                   static_cast<long long>(s.offset));
             return 1;
         }
         const esp_err_t err = server::StartRegister(c.host, c.email);

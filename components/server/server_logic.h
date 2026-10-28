@@ -295,13 +295,113 @@ constexpr bool RegisterUrl(const char *host, char *out, size_t size) {
            PutRaw("/register", out, size, &n);
 }
 
+// --- Ping --------------------------------------------------------------------
+
+// "https://<host>/api/device/ping" (device-protocol.md: anonymous, never
+// cached). False when it does not fit.
+constexpr bool PingUrl(const char *host, char *out, size_t size) {
+    size_t n = 0;
+    return host[0] != '\0' && PutRaw("https://", out, size, &n) && PutRaw(host, out, size, &n) &&
+           PutRaw("/api/device/ping", out, size, &n);
+}
+
+// The answer's body is read up to this (the server sends about 40 bytes).
+inline constexpr size_t kPingBodySize = 128;
+
+constexpr const char *SkipSpace(const char *p, const char *end) {
+    while (p < end && (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n')) {
+        ++p;
+    }
+    return p;
+}
+
+// The value after `"name":` in a flat JSON object, or nullptr. Good enough
+// for the ping's {"status":"ok","time":N}: no nesting, names not in values.
+constexpr const char *FindValue(const char *body, size_t len, const char *name) {
+    const char *end = body + len;
+    for (const char *p = body; p < end; ++p) {
+        if (*p != '"') {
+            continue;
+        }
+        const char *q = p + 1;
+        const char *s = name;
+        while (q < end && *s != '\0' && *q == *s) {
+            ++q;
+            ++s;
+        }
+        if (*s != '\0' || q >= end || *q != '"') {
+            continue;
+        }
+        q = SkipSpace(q + 1, end);
+        if (q < end && *q == ':') {
+            return SkipSpace(q + 1, end);
+        }
+    }
+    return nullptr;
+}
+
+// A 200 ping's body: {"status":"ok","time":<Unix seconds>}. False: anything
+// else ("no server").
+constexpr bool ParsePing(const char *body, size_t len, int64_t *server_time) {
+    const char *end = body + len;
+    const char *status = FindValue(body, len, "status");
+    if (status == nullptr || end - status < 4 || status[0] != '"' || status[1] != 'o' ||
+        status[2] != 'k' || status[3] != '"') {
+        return false;
+    }
+    const char *t = FindValue(body, len, "time");
+    if (t == nullptr || t >= end || *t < '0' || *t > '9') {
+        return false;
+    }
+    int64_t v = 0;
+    for (; t < end && *t >= '0' && *t <= '9'; ++t) {
+        if (v > (INT64_MAX - 9) / 10) {
+            return false;
+        }
+        v = v * 10 + (*t - '0');
+    }
+    if (t >= end) {
+        return false;  // cut inside the number (a body over kPingBodySize)
+    }
+    *server_time = v;
+    return true;
+}
+
+// The registration takes an `iat` within this of the server's clock.
+inline constexpr int64_t kIatWindow = 10 * 60;
+
+// Would the server refuse the registration's `iat` (device-registration.stale)?
+// `offset`: the device's clock minus the server's, from a ping.
+constexpr bool ClockTooFar(int64_t offset) { return offset > kIatWindow || offset < -kIatWindow; }
+
+// The device's clock against the server's (`offset` = device - server):
+// "same" within 2 s (the request's own delay), else "12 s ahead",
+// "3 min behind", "2 h ahead", "5 days behind".
+constexpr void OffsetText(int64_t offset, char *out, size_t size) {
+    if (size == 0) {
+        return;
+    }
+    size_t n = 0;
+    out[0] = '\0';
+    const int64_t d = offset < 0 ? -offset : offset;
+    if (d <= 2) {
+        PutRaw("same", out, size, &n);
+        return;
+    }
+    const int64_t v = d < 120 ? d : d < 2 * 3600 ? d / 60 : d < 2 * 86400 ? d / 3600 : d / 86400;
+    const char *unit = d < 120 ? " s" : d < 2 * 3600 ? " min" : d < 2 * 86400 ? " h" : " days";
+    if (PutNumber(v, out, size, &n) && PutRaw(unit, out, size, &n)) {
+        PutRaw(offset > 0 ? " ahead" : " behind", out, size, &n);
+    }
+}
+
 // --- What Settings > Server says ----------------------------------------------
 
 // The last request to the server.
 enum class Link : uint8_t {
     kNone,     // none since the boot
-    kOk,       // it answered over HTTPS
-    kFailed,   // no answer (no network, DNS, TLS, a timeout)
+    kOk,       // GET /api/device/ping: 200 {"status":"ok"}
+    kFailed,   // no answer (no network, DNS, TLS, a timeout) or not the server's
 };
 
 // How long ago: "never", "just now", "5 min ago", "3 h ago", "2 days ago".

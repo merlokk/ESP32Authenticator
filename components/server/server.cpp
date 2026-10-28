@@ -135,15 +135,37 @@ void Mac(char out[18]) {
 
 esp_err_t last_error = ESP_OK;  // the last request's, for what to say
 
+// What came back, kept up to its size (the rest is dropped).
+struct Body {
+    char *data;
+    size_t size;
+    size_t length;
+};
+
+esp_err_t OnEvent(esp_http_client_event_t *e) {
+    auto *b = static_cast<Body *>(e->user_data);
+    if (e->event_id == HTTP_EVENT_ON_DATA && b != nullptr && e->data_len > 0) {
+        const size_t room = b->size - b->length;
+        const size_t n = static_cast<size_t>(e->data_len) < room ? e->data_len : room;
+        memcpy(b->data + b->length, e->data, n);
+        b->length += n;
+    }
+    return ESP_OK;
+}
+
 // The HTTP status of a GET, or of a POST of `body` (a JWT: it carries the
-// TOTP secret, never logged); -1 with no answer.
-int Request(const char *url, const char *body = nullptr, size_t body_len = 0) {
+// TOTP secret, never logged); -1 with no answer. `answer`: the body that
+// came back, when wanted.
+int Request(const char *url, const char *body = nullptr, size_t body_len = 0,
+            Body *answer = nullptr) {
     esp_http_client_config_t cfg = {};
     cfg.url = url;
     cfg.method = body != nullptr ? HTTP_METHOD_POST : HTTP_METHOD_GET;
     cfg.timeout_ms = kTimeoutMs;
     cfg.crt_bundle_attach = esp_crt_bundle_attach;
     cfg.disable_auto_redirect = true;
+    cfg.event_handler = OnEvent;
+    cfg.user_data = answer;
     esp_http_client_handle_t client = esp_http_client_init(&cfg);
     if (client == nullptr) {
         last_error = ESP_ERR_NO_MEM;
@@ -271,24 +293,37 @@ void Register(const Job &r) {
     Wipe(&s, sizeof s);
 }
 
+// GET /api/device/ping: 200 {"status":"ok","time":N} is the server (and
+// its clock); any other answer, or none, is "no server".
 void Check(const Job &r) {
-    char url[kHostSize + 16];
-    snprintf(url, sizeof url, "https://%s/", r.host);
-    const int code = Request(url);
-    Answered(code);
+    char url[kHostSize + 24];
+    char data[kPingBodySize];
+    Body body = {data, sizeof data, 0};
+    const int code = PingUrl(r.host, url, sizeof url) ? Request(url, nullptr, 0, &body) : -1;
+    const int64_t now = time(nullptr);
+    int64_t server_time = 0;
+    const bool ok = code == 200 && ParsePing(data, body.length, &server_time);
     Locked l;
-    if (code > 0 && state.registered) {
-        state.last_sync = time(nullptr);
-        status.last_sync = state.last_sync;
+    status.http_status = code > 0 ? code : 0;
+    status.link = ok ? Link::kOk : Link::kFailed;
+    status.has_offset = ok;
+    status.offset = ok ? now - server_time : 0;
+    if (ok && state.registered) {
+        state.last_sync = now;
+        status.last_sync = now;
         Save(state);
     }
-    if (code > 0) {
+    if (ok) {
         if (state.registered || !refused) {
             snprintf(status.said, sizeof status.said, "the server answered");
         }
+    } else if (code > 0) {
+        snprintf(status.said, sizeof status.said, "not the server: HTTP %d", code);
     } else {
         snprintf(status.said, sizeof status.said, "no answer: %s", esp_err_to_name(last_error));
     }
+    ESP_LOGI(TAG, "ping: %d, the device's clock %+lld s", code,
+             static_cast<long long>(status.offset));
 }
 
 void Task(void *arg) {
