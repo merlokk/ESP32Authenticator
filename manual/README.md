@@ -54,7 +54,10 @@ At the top of every screen.
 
 - Left: **Wi-Fi** (`...` connecting, `!` no internet, `AP` the device's own
   access point), **Bluetooth** (`...` no host connected, `pair` the pairing
-  window is open), **SD card**. Something that is off is not shown.
+  window is open), **SD card**, the **sync** with the server (the two
+  arrows alone: in sync; with an up arrow: changes to send or to take; `!`:
+  waits for you, see *Sync* below; `off`: not registered). Something that is
+  off is not shown.
 - Right: the time (once the clock is set), the battery with its charge
   (a lightning bolt: charging).
 - The second line (on the password list only) says what a tap in each
@@ -89,8 +92,8 @@ or Home closes it.
 
 - **Frontlight**: the switch, Level and Warmth.
 - A row per page with its summary: Wi-Fi (and the web site), Bluetooth,
-  Devices (power, display, USB, the touchscreen's calibration), Security, Date & time, About (versions,
-  Restart).
+  Devices (power, display, USB, the touchscreen's calibration), Security,
+  Server, Date & time, About (versions, Restart).
 
 <br clear="right">
 
@@ -140,6 +143,85 @@ Settings > Wi-Fi > Web site.
 The site has the passwords (below), the FIDO2 keys, Wi-Fi and the device
 settings. Settings changed there are kept until the device restarts unless
 saved.
+
+## Server and sync
+
+<img src="img/server.png" width="240" align="right">
+
+Settings > **Server**: the authentication server (`auth.merlokk.com`). It
+keeps an encrypted copy of the passwords and the FIDO2 keys, so devices with
+the same seed phrase share them. The server cannot read them: it has neither
+the PIN nor the phrase.
+
+- The lines: registered, connected, the clock against the server's (from
+  15 s off *bad*, from 60 s *critical* for TOTP), signed in, the last status,
+  the TOTP code to sign in to the server's site with.
+- **Register**: open a registration window on the server's site first, then
+  type your e-mail. A new key and TOTP secret replace the old ones.
+- **Sync**: the state of the copies, below. **Configure**: how often.
+
+<br clear="right">
+
+<img src="img/server-config.png" width="240" align="right">
+
+### Configure
+
+- **Status report**: how often the device tells the server its firmware,
+  battery and radios.
+- **Sync**: how often the copies are compared besides the automatic times
+  (at the start, right after every change, after the PIN). *Never*: only
+  *Sync now*.
+
+<br clear="right">
+
+### Sync
+
+<img src="img/sync.png" width="240" align="right">
+
+- **Passwords**, **Passkeys** (the FIDO2 keys): *in sync* with the version,
+  *changes to send*, *newer on the server: unlock* (taken once the PIN is
+  in), *conflict*, *its PIN*, *failed* (*Last* says why; tried again in a
+  minute).
+- **Last sync**, **Automatic** (the Configure choice), **Last** (what the
+  last sync did).
+- **Other phrases**: copies on the account under another seed phrase. They
+  never open here. *ours, moved: type that phrase*: the phrase was changed on
+  another device, so give this one the new phrase too. *another device's
+  phrase*: a device set up with its own phrase. *ours, an old phrase*: old
+  copies from before this device's phrase changed.
+- **Sync now**: compares at once.
+
+When only one side changed since the last sync, it goes to the other on its
+own. When it cannot, the automatic sync stops and the store waits for you
+(`!` in the status bar).
+
+<br clear="right">
+
+<img src="img/sync-conflict.png" width="240" align="right">
+
+**A conflict**: this device and another one both changed the store since
+the last sync, or the server's copy is damaged.
+
+- **Keep mine**: this device's copy goes to the server and replaces the
+  other one there. The other device takes it at its next sync.
+- **Take server's**: the server's copy replaces this device's. **Changes
+  made here since the last sync are lost.**
+
+The server keeps the last 20 copies of each store.
+
+<br clear="right">
+
+<img src="img/sync-pin.png" width="240" align="right">
+
+**Another PIN**: the PIN was changed on the other device, so the server's
+copy opens only with that PIN.
+
+- **Type its PIN**: the copy is taken, and **this device's PIN becomes that
+  one** (the other store is re-encrypted with it). A wrong PIN counts as a
+  wrong try, as on the PIN pad.
+- **Keep mine**: this device's copy, with its own PIN, replaces the server's.
+
+<br clear="right">
 
 ## Firmware update
 
