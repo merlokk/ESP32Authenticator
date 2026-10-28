@@ -4,7 +4,9 @@
 the encrypted payload. In `/sdcard/.authenticator` on the X4 Pro, else
 `/spiffs`. Why this design: [storage-encryption.md](storage-encryption.md).
 Code: `components/storefile` (header, I/O), `components/vault` (key, records),
-`components/fido_ctap/ctap_file_storage.c` (fido.bin).
+`components/fido_ctap/ctap_file_storage.c` (fido.bin). The device's own
+files on SPIFFS, plain (never synced): [seed.txt](#seedtxt),
+[server.bin](#serverbin).
 
 ```
 | header (80) | ciphertext (length) | GCM tag (16) |
@@ -108,3 +110,43 @@ Deleted items are flagged and dropped (compaction) at load.
 - Sync: the server keeps the files as they are (it never has the key);
   copies are compared by `modified`, then `version`; `store id` and
   `seed id` tell which store and phrase a copy belongs to.
+
+## seed.txt
+
+`/spiffs/seed.txt`, plain text: the 12 BIP39 English words, lower case, one
+space apart, then `\n` (`vault.cpp` `WriteSeed`, `seed_phrase.h`).
+
+```
+abandon ability able about above absent absorb abstract absurd abuse access accident
+```
+
+- 12 words = 128 bits of entropy + a 4-bit checksum (the top bits of
+  SHA-256(entropy)); a phrase whose checksum does not match is ignored (no
+  seed). Read forgivingly: any case and spacing, a word may be cut to its
+  first 4+ letters.
+- The entropy (16 bytes) is the HKDF salt of the store key; the seed id in
+  the store headers is SHA-256(entropy)[0..4].
+- Written through `seed.txt.tmp` and a rename; on a seed change with the
+  stores, as `seed.txt.new` in the PIN-change commit (above). A new store with
+  no phrase makes a random one (hardware RNG). The wipe PIN removes it.
+
+## server.bin
+
+`/spiffs/server.bin`, plain binary, little-endian (`server_logic.h`): the
+device's identity on the authentication server.
+
+| Offset | Size | Field |
+|---|---|---|
+| 0 | 4 | magic `SRV2` |
+| 4 | 1 | flags: bit 0 a key, bit 1 registered (registered needs a key; other bits 0) |
+| 5 | 32 | ECDSA P-256 private key (the scalar); the public key is derived |
+| 37 | 20 | TOTP secret (160 bits, RFC 4226/6238) |
+| 57 | 8 | registered at, Unix seconds (int64); 0 never |
+| 65 | 8 | last status the server took, Unix seconds; 0 never |
+| 73 | 36 | client id (UUID `8-4-4-4-12`, NUL-padded; all zero: none) |
+
+- Size is exactly 109 bytes. `SRV1` (73 bytes, no client id) is still read:
+  registered, but signing in needs a new registration.
+- Written through `server.bin.new`, then remove and rename. A new
+  registration makes a new key and TOTP secret.
+- The access token from the sign-in is never stored (memory only).
