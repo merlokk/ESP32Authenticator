@@ -864,7 +864,7 @@ Outcome Take(const char *host, sync::Store s, const sync::Copy &local,
         SetWaiting(s, server, other);
         SetStore(s, sync::Phase::kNeedPin, local.version, server.version, other);
         if (t == Taken::kNeedPin) {
-            snprintf(said, said_size, "the server's %s: type its PIN", sync::StoreName(s));
+            snprintf(said, said_size, "type its PIN");
         }
         return Outcome::kWaits;
     }
