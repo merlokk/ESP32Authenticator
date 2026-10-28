@@ -185,6 +185,47 @@ void test_sync_stores(void) {
     TEST_ASSERT_EQUAL(-1, server::sync::ParseStores("{}", 2, 2, ours, &c));
 }
 
+void test_sync_others(void) {
+    const char kAnswer[] =
+        R"({"stores":[)"
+        R"({"storeId":"1111111111111111","seedId":"5eed5eed","kind":2,"version":9,)"
+        R"("nonce":"000000000000000000000000"},)"
+        R"({"storeId":"1111111111111111","seedId":"0a0b0c0d","kind":2,"version":4,)"
+        R"("nonce":"000000000000000000000000","uploadedAt":"2026-10-20T08:00:00+00:00"},)"
+        R"({"storeId":"3333333333333333","seedId":"0e0e0e0e","kind":1,"version":2,)"
+        R"("nonce":"000000000000000000000000","uploadedAt":"2026-10-21T09:30:00+00:00"},)"
+        R"({"storeId":"1111111111111111","seedId":"0f0f0f0f","kind":2,"version":12,)"
+        R"("nonce":"000000000000000000000000","uploadedAt":"2026-10-27T19:07:30+00:00"}]})";
+    const uint8_t own[4] = {0x5e, 0xed, 0x5e, 0xed};
+    const Copy ours[2] = {Make(0x11, 9, 0x01), Copy()};
+    server::sync::Others o;
+    TEST_ASSERT_TRUE(server::sync::ParseOthers(kAnswer, strlen(kAnswer), own, ours, &o));
+    TEST_ASSERT_EQUAL(3, o.count);  // not the own phrase's
+    TEST_ASSERT_TRUE(o.shown.why == server::sync::OtherKind::kMoved);  // ours, v12 > v9
+    TEST_ASSERT_EQUAL_HEX8(0x0f, o.shown.seed_id[0]);
+    TEST_ASSERT_EQUAL_UINT32(12, o.shown.version);
+    TEST_ASSERT_EQUAL_STRING("2026-10-27 19:07", o.shown.at);
+    // Without the moved one: another device's comes before an old copy.
+    const char kTwo[] =
+        R"({"stores":[{"storeId":"1111111111111111","seedId":"0a0b0c0d","kind":2,"version":4,)"
+        R"("nonce":"000000000000000000000000"},)"
+        R"({"storeId":"3333333333333333","seedId":"0e0e0e0e","kind":1,"version":2,)"
+        R"("nonce":"000000000000000000000000"}]})";
+    TEST_ASSERT_TRUE(server::sync::ParseOthers(kTwo, strlen(kTwo), own, ours, &o));
+    TEST_ASSERT_EQUAL(2, o.count);
+    TEST_ASSERT_TRUE(o.shown.why == server::sync::OtherKind::kOther);
+    TEST_ASSERT_EQUAL(1, o.shown.kind);
+    const char kOld[] =
+        R"({"stores":[{"storeId":"1111111111111111","seedId":"0a0b0c0d","kind":2,"version":4,)"
+        R"("nonce":"000000000000000000000000"}]})";
+    TEST_ASSERT_TRUE(server::sync::ParseOthers(kOld, strlen(kOld), own, ours, &o));
+    TEST_ASSERT_TRUE(o.shown.why == server::sync::OtherKind::kOld);
+    TEST_ASSERT_TRUE(server::sync::ParseOthers(R"({"stores":[]})", 13, own, ours, &o));
+    TEST_ASSERT_EQUAL(0, o.count);
+    TEST_ASSERT_FALSE(server::sync::ParseOthers("{}", 2, own, ours, &o));
+    TEST_ASSERT_EQUAL_STRING("passkeys", server::sync::KindName(1));
+}
+
 void test_sync_texts(void) {
     TEST_ASSERT_EQUAL_STRING("in sync", server::sync::PhaseText(Phase::kInSync));
     TEST_ASSERT_EQUAL_STRING("conflict", server::sync::PhaseText(Phase::kConflict));
@@ -203,5 +244,6 @@ void RegisterSyncTests(void) {
     RUN_TEST(test_sync_requests);
     RUN_TEST(test_sync_heads);
     RUN_TEST(test_sync_stores);
+    RUN_TEST(test_sync_others);
     RUN_TEST(test_sync_texts);
 }

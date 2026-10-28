@@ -72,7 +72,8 @@ the vault is locked, GT911 touch as the pointer, `ui`); power-off
   site (Device > Firmware update) or `/sdcard/firmware.bin` (button, `ota
   sd confirm`), checked while streaming (`image_check.h`), trial boot
   confirmed after 30 s, else rolled back.
-- Not yet: eFuse-bound key; the sync of another seed phrase's stores.
+- Not yet: eFuse-bound key; the sync of another seed phrase's stores (only
+  shown on Server > Sync).
 
 ## Architecture
 

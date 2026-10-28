@@ -712,6 +712,26 @@ void DescribeSync(char *out, size_t size) {
     if (s.sync_said[0] != '\0') {
         Put(out, size, "Last", "%s", s.sync_said);
     }
+    // The account's stores under other seed phrases: they never open here.
+    if (!s.others_known) {
+        return;
+    }
+    if (s.others.count == 0) {
+        Put(out, size, "Other phrases", "none");
+        return;
+    }
+    const sy::Other &o = s.others.shown;
+    Put(out, size, "Other phrases", "%u store%s", static_cast<unsigned>(s.others.count),
+        s.others.count == 1 ? "" : "s");
+    Put(out, size, "  seed", "%02x%02x%02x%02x: %s v%u", o.seed_id[0], o.seed_id[1], o.seed_id[2],
+        o.seed_id[3], sy::KindName(o.kind), static_cast<unsigned>(o.version));
+    if (o.at[0] != '\0') {
+        Put(out, size, "  sent", "%s UTC", o.at);
+    }
+    Put(out, size, "  what", "%s",
+        o.why == sy::OtherKind::kMoved   ? "ours, moved: type that phrase"
+        : o.why == sy::OtherKind::kOther ? "another device's phrase"
+                                         : "ours, an old phrase");
 }
 
 void SyncSummary(char *out, size_t size) {

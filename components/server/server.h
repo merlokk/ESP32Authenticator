@@ -46,6 +46,8 @@ struct Status {
     sync::Icon icon;         // the status bar's
     int64_t synced_at;       // the last sync that went through (Unix seconds), 0: none
     char sync_said[48];      // the last sync's outcome
+    bool others_known;       // the account's stores under other seed phrases looked at
+    sync::Others others;     // those (shown only: they never open here)
 };
 Status Get();
 
@@ -105,9 +107,10 @@ void StartSchedule(const Hooks *hooks);
 esp_err_t StartStatus();
 
 // The stores' sync now (signed in first), also while a store waits for a
-// person (it looks again). ESP_ERR_INVALID_STATE: busy or no schedule;
-// ESP_ERR_NOT_FOUND: not registered with a client id.
-esp_err_t StartSync();
+// person (it looks again). `by_hand`: the other seed phrases' stores looked
+// at too (else at most every 10 min). ESP_ERR_INVALID_STATE: busy or no
+// schedule; ESP_ERR_NOT_FOUND: not registered with a client id.
+esp_err_t StartSync(bool by_hand = true);
 
 // A store waiting for a person (sync::ByHand): keep this device's copy (its
 // version above the server's, uploaded), or take the server's (with `pin`

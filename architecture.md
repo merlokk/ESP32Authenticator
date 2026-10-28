@@ -805,7 +805,11 @@ account on the authentication server (`config.json` `server.host`).
   uploaded) or "Take server's" / "Type its PIN"; console `server sync`,
   `server sync keep|take passwords|passkeys [pin]`. Status bar: the sync
   icon (off: not registered, an arrow: changes to send or take, "!": waits
-  for you). Another seed phrase's stores are not looked at.
+  for you). Another seed phrase's stores never open here; Sync shows them
+  (`GET /api/device/stores`, every phrase's, on Sync now and at most every
+  10 min): how many, and one by its seed id: ours moved there (our store id,
+  newer: the phrase changed on another device, type it), another device's
+  own phrase, or ours under an old phrase.
 - Connected: `GET https://<host>/api/device/ping` answered 200
   `{"status":"ok","time":N}` (anything else: "not the server: HTTP n", or no
   answer); while the page is shown, at most once a minute, with Wi-Fi online

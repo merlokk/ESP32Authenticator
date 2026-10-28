@@ -87,6 +87,20 @@ void PrintStatus() {
     if (s.sync_said[0] != '\0') {
         printf("sync said   %s\n", s.sync_said);
     }
+    if (s.others_known) {
+        const server::sync::Other &o = s.others.shown;
+        if (s.others.count == 0) {
+            printf("other seeds none\n");
+        } else {
+            printf("other seeds %u store(s); seed %02x%02x%02x%02x: %s v%u%s%s, %s\n",
+                   static_cast<unsigned>(s.others.count), o.seed_id[0], o.seed_id[1],
+                   o.seed_id[2], o.seed_id[3], server::sync::KindName(o.kind),
+                   static_cast<unsigned>(o.version), o.at[0] != '\0' ? " at " : "", o.at,
+                   o.why == server::sync::OtherKind::kMoved   ? "ours, moved there: enter that phrase"
+                   : o.why == server::sync::OtherKind::kOther ? "another device's own phrase"
+                                                              : "ours under an old phrase");
+        }
+    }
     char pub[server::Base64UrlLength(server::kPublicSize) + 1];
     if (server::PublicKey(pub, sizeof pub)) {
         printf("public key  %s\n", pub);

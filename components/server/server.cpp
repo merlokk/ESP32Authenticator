@@ -67,6 +67,7 @@ struct Job {
     sync::Store store;  // kResolve
     Choice choice;
     char pin[8];        // kResolve: the server's copy's PIN, "" none (wiped after)
+    bool by_hand;       // kSync: asked for (the other phrases' stores looked at)
 };
 
 const Hooks *hooks = nullptr;  // StartSchedule
@@ -609,6 +610,8 @@ int64_t sync_tried = -1;  // monotonic seconds, -1: none
 int64_t sync_done = -1;
 uint32_t seen_version[sync::kStores] = {};
 bool seen_open = false;
+int64_t others_at = -1;  // the other phrases' stores last looked at (monotonic), -1 never
+constexpr int64_t kOthersSeconds = 10 * 60;
 
 size_t Index(sync::Store s) { return static_cast<size_t>(s); }
 
@@ -1056,6 +1059,26 @@ void Sync(const Job &r, Body &answer) {
         ++n;
     }
     SayOutcomes(o, n, said);
+    // The account's stores under other seed phrases: shown only.
+    if (r.by_hand || others_at < 0 || Uptime() - others_at >= kOthersSeconds) {
+        const uint8_t *own = nullptr;
+        for (size_t i = 0; i < sync::kStores && own == nullptr; ++i) {
+            own = local[i].has ? seed[i] : nullptr;
+        }
+        char list_url[kSyncUrlSize];
+        char why[40] = "";
+        Call call = {list_url};
+        call.answer = &answer;
+        sync::Others others;
+        if (own != nullptr && Url(r.host, "/api/device/stores", list_url, sizeof list_url) &&
+            SignedCall(call, r.host, answer, why, sizeof why) == 200 &&
+            sync::ParseOthers(answer.data, answer.length, own, local, &others)) {
+            Locked l;
+            others_at = Uptime();
+            status.others_known = true;
+            status.others = others;
+        }
+    }
     // What this sync did here is no change to sync again.
     Locked l;
     for (const sync::Store s : sync::kAll) {
@@ -1141,7 +1164,7 @@ void Task(void *arg) {
 
 esp_err_t Start(Kind kind, const char *host, const char *email, const Report *report,
                 sync::Store store = sync::Store::kVault, Choice choice = Choice::kKeepMine,
-                const char *pin = nullptr) {
+                const char *pin = nullptr, bool by_hand = false) {
     if (lock == nullptr) {
         return ESP_ERR_INVALID_STATE;
     }
@@ -1187,6 +1210,7 @@ esp_err_t Start(Kind kind, const char *host, const char *email, const Report *re
         }
         r->store = store;
         r->choice = choice;
+        r->by_hand = by_hand;
         snprintf(r->pin, sizeof r->pin, "%s", pin != nullptr ? pin : "");
     }
     if (r == nullptr || xTaskCreate(Task, "server", kTaskStack, r, 4, nullptr) != pdPASS) {
@@ -1251,7 +1275,7 @@ void Scheduler(void *) {
         }
         if (sync::SyncDue(ready, hooks->sync_minutes(), by_hand, changed, Uptime(),
                           sync_tried_now, sync_done_now)) {
-            StartSync();
+            StartSync(false);
         }
     }
 }
@@ -1364,7 +1388,7 @@ esp_err_t StartStatus() {
     return Start(Kind::kStatus, host, nullptr, &report);
 }
 
-esp_err_t StartSync() {
+esp_err_t StartSync(bool by_hand) {
     if (hooks == nullptr) {
         return ESP_ERR_INVALID_STATE;
     }
@@ -1375,7 +1399,8 @@ esp_err_t StartSync() {
         version[static_cast<size_t>(s)] = hooks->store_version(s);
     }
     const bool open = hooks->open();
-    const esp_err_t err = Start(Kind::kSync, host, nullptr, nullptr);
+    const esp_err_t err = Start(Kind::kSync, host, nullptr, nullptr, sync::Store::kVault,
+                                Choice::kKeepMine, nullptr, by_hand);
     if (err == ESP_OK) {
         Locked l;
         memcpy(seen_version, version, sizeof seen_version);

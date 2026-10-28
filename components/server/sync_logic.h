@@ -451,4 +451,83 @@ constexpr int ParseStores(const char *body, size_t len, uint8_t kind,
     return found;
 }
 
+// --- Other seed phrases' stores (shown only: they never open here) ------------
+
+enum class OtherKind : uint8_t {
+    kOld,    // one of ours under the phrase it had before (this device's phrase changed)
+    kMoved,  // one of ours, newer, under another phrase: changed on another device
+    kOther,  // another store: a device set up with its own phrase
+};
+
+struct Other {
+    OtherKind why = OtherKind::kOther;
+    uint8_t seed_id[kSeedIdSize] = {};
+    uint8_t kind = 0;
+    uint32_t version = 0;
+    char at[17] = "";  // when it reached the server (UTC), or ""
+};
+
+struct Others {
+    uint8_t count = 0;  // the stores under other phrases (as far as the answer holds)
+    Other shown;        // the one to tell: a moved one first, then another device's, then an old one
+};
+
+// GET /api/device/stores (every phrase's) against our seed id and our stores
+// (`ours[i]` the local copy of kAll[i], !has: none). False: not the answer.
+constexpr bool ParseOthers(const char *body, size_t len, const uint8_t own_seed[kSeedIdSize],
+                           const Copy (&ours)[kStores], Others *out) {
+    if (FindValue(body, len, "stores") == nullptr) {
+        return false;
+    }
+    *out = Others();
+    auto rank = [](OtherKind k) { return k == OtherKind::kMoved ? 2 : k == OtherKind::kOther ? 1 : 0; };
+    const char *at = nullptr;
+    const char *obj = nullptr;
+    size_t obj_len = 0;
+    while (NextObject(body, len, "stores", &at, &obj, &obj_len)) {
+        Other o;
+        uint8_t store_id[kStoreIdSize] = {};
+        int64_t kind = 0;
+        char seed[2 * kSeedIdSize + 1] = {};
+        if (!StoreOf(obj, obj_len, store_id, &kind) ||
+            GetString(obj, obj_len, "seedId", seed, sizeof seed) != static_cast<int>(2 * kSeedIdSize) ||
+            !FromHex(seed, 2 * kSeedIdSize, o.seed_id, kSeedIdSize) ||
+            SameBytes(o.seed_id, own_seed, kSeedIdSize)) {
+            continue;
+        }
+        Copy c;
+        CopyOf(obj, obj_len, &c);
+        o.kind = static_cast<uint8_t>(kind);
+        o.version = c.version;
+        const Copy *mine = nullptr;
+        for (size_t i = 0; i < kStores; ++i) {
+            if (ours[i].has && KindOf(kAll[i]) == kind &&
+                SameBytes(ours[i].store_id, store_id, kStoreIdSize)) {
+                mine = &ours[i];
+            }
+        }
+        o.why = mine == nullptr                ? OtherKind::kOther
+                : c.version > mine->version    ? OtherKind::kMoved
+                                               : OtherKind::kOld;
+        char when[40] = "";
+        if (GetString(obj, obj_len, "uploadedAt", when, sizeof when) >= 16) {
+            for (size_t i = 0; i < 16; ++i) {
+                o.at[i] = when[i] == 'T' ? ' ' : when[i];
+            }
+            o.at[16] = '\0';
+        }
+        if (out->count == 0 || rank(o.why) > rank(out->shown.why)) {
+            out->shown = o;
+        }
+        if (out->count < 255) {
+            ++out->count;
+        }
+    }
+    return true;
+}
+
+constexpr const char *KindName(uint8_t kind) {
+    return kind == 2 ? "passwords" : kind == 1 ? "passkeys" : "a store";
+}
+
 }  // namespace server::sync
