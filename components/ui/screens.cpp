@@ -149,6 +149,7 @@ enum class JobKind : uint8_t {
     kWifiText,    // the Wi-Fi field `which` (wifi_view::Field) to `password`
     kWifiStatic,  // the network `ssid`'s address `static_ip`
     kServerRegister,  // Server: a new key, registered with the e-mail `password`
+    kServerStatusEvery,  // Server > Configure: the status every `id` minutes
 };
 
 struct Job {
@@ -1112,10 +1113,28 @@ void ShowSettingsMain() {
 }
 
 // A page: "label  value" lines, its button at the bottom.
+lv_obj_t *ChoiceRow(int32_t y, const char *name, const char *value, bool check,
+                    lv_event_cb_t cb, int id);
+extern const ServerHooks *server_hooks;
+bool server_config_tapped = false;
+
+void OnServerConfig(lv_event_t *) {
+    if (LastWasTap()) {
+        server_config_tapped = true;
+    }
+}
+
 void ShowSettingsPage(settings::Page page) {
     TitleBar(settings::Title(page));
     const settings::Action action = settings::PageAction(page);
-    const int32_t bottom = kScreenBottom - kContentTop - (action != settings::Action::kNone ? 100 : 0);
+    int32_t bottom = kScreenBottom - kContentTop - (action != settings::Action::kNone ? 100 : 0);
+    // Server: "Configure" over the button.
+    const bool configure = page == settings::Page::kServer && server_hooks != nullptr;
+    if (configure) {
+        bottom -= 64 + 8;  // kNetRow
+        ChoiceRow(bottom + 8, "Configure", settings::StatusSummary(server_hooks->status_minutes()),
+                  false, OnServerConfig, 0);
+    }
     char label[32];
     char value[64];
     int32_t y = kTitleHeight + 8;
@@ -3221,6 +3240,39 @@ bool PollFidoSettings() {
 // connected, the last sync, the code). Register: asked first (Poll), then the
 // e-mail on the keyboard; OK sends it.
 const ServerHooks *server_hooks = nullptr;
+int status_choice_tapped = -1;
+uint8_t status_minutes_shown = 0;
+
+void OnStatusChoice(lv_event_t *event) {
+    if (LastWasTap()) {
+        status_choice_tapped =
+            static_cast<int>(reinterpret_cast<intptr_t>(lv_event_get_user_data(event)));
+    }
+}
+
+// Configure: how often the status goes, and the status now.
+void ShowServerConfig() {
+    TitleBar("Configure");
+    const int in_use = settings::StatusChoiceIndex(status_minutes_shown);
+    int32_t y = kTitleHeight;
+    lv_obj_t *head = Label(content, &lv_font_montserrat_20);
+    lv_label_set_text(head, "Status report");
+    lv_obj_set_pos(head, 12, y + 12);
+    y += 44;
+    for (uint8_t i = 0; i < settings::kStatusChoiceCount; ++i, y += kNetRow) {
+        ChoiceRow(y, settings::kStatusChoices[i].label, nullptr, i == in_use, OnStatusChoice, i);
+    }
+    lv_obj_t *note = Label(content, &lv_font_montserrat_20);
+    lv_label_set_long_mode(note, LV_LABEL_LONG_MODE_WRAP);
+    lv_obj_set_width(note, kRowWidth - 24);
+    lv_label_set_text(note, "The device tells the server its state (firmware, battery, "
+                            "radios): at the start or when Wi-Fi connects, then this often.");
+    lv_obj_set_pos(note, 12, y + 16);
+    lv_obj_t *b = AskButton(content, kRowWidth - 48,
+                            settings::ActionText(settings::Action::kServerStatus));
+    lv_obj_align(b, LV_ALIGN_BOTTOM_MID, 0, -16);
+    lv_obj_add_event_cb(b, OnAction, LV_EVENT_CLICKED, nullptr);
+}
 
 void ShowServerEmail() {
     char email[settings::kEmailSize] = "";
@@ -3234,6 +3286,25 @@ void ShowServerEmail() {
 bool PollServer() {
     bool changed = false;
     const auto page = static_cast<settings::Page>(nav_state.settings_page());
+    if (server_config_tapped) {
+        server_config_tapped = false;
+        if (page == settings::Page::kServer) {
+            status_minutes_shown = server_hooks->status_minutes();
+            changed |= nav_state.OpenSettings(static_cast<uint8_t>(settings::Page::kServerConfig));
+        }
+    }
+    if (status_choice_tapped >= 0) {
+        const int i = status_choice_tapped;
+        status_choice_tapped = -1;
+        if (page == settings::Page::kServerConfig && i < settings::kStatusChoiceCount &&
+            settings::kStatusChoices[i].minutes != status_minutes_shown) {
+            Job job = MakeJob(JobKind::kServerStatusEvery);
+            job.id = settings::kStatusChoices[i].minutes;
+            SendJob(job);
+            status_minutes_shown = settings::kStatusChoices[i].minutes;
+            changed = true;  // drawn again with the new check
+        }
+    }
     if (sheet_choice != 0 && page == settings::Page::kServer) {
         const int choice = sheet_choice;
         sheet_choice = 0;
@@ -3518,6 +3589,10 @@ void ShowSettings() {
     }
     if (server_hooks != nullptr && page == settings::Page::kServerEmail) {
         ShowServerEmail();
+        return;
+    }
+    if (server_hooks != nullptr && page == settings::Page::kServerConfig) {
+        ShowServerConfig();
         return;
     }
     if (settings_hooks == nullptr) {
@@ -3829,6 +3904,9 @@ void TypeTask(void *) {
                                                 job.flag ? job.password : nullptr);
                     break;
                 case JobKind::kServerRegister: said = server_hooks->register_device(job.password); break;
+                case JobKind::kServerStatusEvery:
+                    said = server_hooks->set_status_minutes(static_cast<uint8_t>(job.id));
+                    break;
                 case JobKind::kDisplaySet:
                     said = display_hooks->set(job.setting, static_cast<uint16_t>(job.id));
                     break;
@@ -4163,6 +4241,7 @@ void Poll(lv_timer_t *) {
         settings_page != settings::Page::kWifiStaticText &&
         settings_page != settings::Page::kWifiHidden &&
         settings_page != settings::Page::kServerEmail &&
+        settings_page != settings::Page::kServerConfig &&
         lv_tick_elaps(settings_looked_at) >= kSettingsMs) {
         settings_looked_at = lv_tick_get();
         if (settings_page == settings::Page::kWifi && wifi_hooks != nullptr) {

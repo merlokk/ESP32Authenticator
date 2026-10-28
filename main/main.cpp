@@ -636,8 +636,17 @@ void DescribeServer(bool summary, char *out, size_t size) {
         server::OffsetText(s.offset, text, sizeof text);
         Put(out, size, "Clock", "%s", text);
     }
+    if (s.registered) {
+        Put(out, size, "Signed in", "%s",
+            s.token_left > 0      ? "yes"
+            : s.has_client_id     ? "not yet"
+                                  : "no: register again");
+    }
     server::Ago(now, s.last_sync, text, sizeof text);
-    Put(out, size, "Last sync", "%s", text);
+    Put(out, size, "Status sent", "%s", text);
+    if (s.update[0] != '\0') {
+        Put(out, size, "Update", "%s", s.update);
+    }
     uint32_t code = 0;
     if (s.registered && server::Code(now, &code)) {
         char shown[8];
@@ -674,7 +683,36 @@ const char *ServerRegister(const char *email) {
     }
 }
 
-const ui::ServerHooks kServerHooks = {ServerEmail, ServerRegister};
+uint8_t ServerStatusMinutes() { return config::Get().server.status_minutes; }
+
+const char *ServerSetStatusMinutes(uint8_t minutes) {
+    if (!config::ValidStatusMinutes(minutes)) {
+        return "not a choice";
+    }
+    config::Get().server.status_minutes = minutes;
+    return config::Save() == ESP_OK ? "saved" : "in use, but config.json is not saved";
+}
+
+const ui::ServerHooks kServerHooks = {ServerEmail, ServerRegister, ServerStatusMinutes,
+                                      ServerSetStatusMinutes};
+
+// The status schedule (server::Hooks): from the scheduler's task.
+const server::Hooks kServerSchedule = {
+    .ready = [] { return ServerBlocked() == nullptr; },
+    .status_minutes = ServerStatusMinutes,
+    .host = [](char *out, size_t size) { snprintf(out, size, "%s", config::Get().server.host); },
+    .report =
+        [](server::Report *r) {
+            const time_t now = time(nullptr);
+            r->firmware = esp_app_get_description()->version;
+            r->board = boards::kBoardId == boards::BoardId::kX4Pro ? "x4pro" : "dev";
+            r->wifi = wifimgr::Get().state != wifimgr::State::kOff;
+            r->ble = ble::IsOn();
+            r->battery = battery::Level();
+            r->uptime = esp_timer_get_time() / 1000000;
+            r->time = now >= 1704067200 ? static_cast<int64_t>(now) : 0;
+        },
+};
 
 void SettingsDescribe(ui::settings::Page page, bool summary, char *out, size_t size) {
     using ui::settings::Page;
@@ -715,7 +753,8 @@ void SettingsDescribe(ui::settings::Page page, bool summary, char *out, size_t s
         case Page::kWifiStatic:
         case Page::kWifiStaticText:
         case Page::kWifiHidden:
-        case Page::kServerEmail: break;
+        case Page::kServerEmail:
+        case Page::kServerConfig: break;
         case Page::kFido: DescribeFido(summary, out, size); break;
         case Page::kWeb:
             if (summary) {
@@ -753,6 +792,16 @@ const char *SettingsAct(ui::settings::Action action) {
                 case ESP_OK: return "FIDO2 reset: no keys, no PIN";
                 case ESP_ERR_TIMEOUT: return "busy: a FIDO2 request is running";
                 default: return "cannot reset FIDO2";
+            }
+        case Action::kServerStatus:
+            if (const char *why = ServerBlocked()) {
+                return why;
+            }
+            switch (server::StartStatus()) {
+                case ESP_OK: return "sending the status";
+                case ESP_ERR_NOT_FOUND: return "not registered";
+                case ESP_ERR_INVALID_STATE: return "busy: a request is under way";
+                default: return "cannot send the status";
             }
         case Action::kServerRegister:  // the ui asks the e-mail (ServerRegister)
         case Action::kNone: break;
@@ -1441,6 +1490,8 @@ extern "C" void app_main() {
     web::SetRequestHook(power::NoteActivity);
     ESP_ERROR_CHECK(web::Init());
     ESP_ERROR_CHECK(wifimgr::Init());
+    // The status to the server once Wi-Fi is online, then every server.statusMinutes.
+    server::StartSchedule(&kServerSchedule);
     // SNTP when the internet is up; the result goes back to the board's clock.
     ESP_ERROR_CHECK(timesync::Init(&boards::Clock()));
     if (config::Get().ble.active) {

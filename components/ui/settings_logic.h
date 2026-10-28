@@ -43,6 +43,7 @@ enum class Page : uint8_t {
     kWifiHidden,    // Wi-Fi > Add a network: one not broadcast (its name, its password)
     kServer,        // the authentication server: registered, connected, the code
     kServerEmail,   // Server > Register: the e-mail on the keyboard
+    kServerConfig,  // Server > Configure: how often the status goes
 };
 
 // Where a page's back arrow goes.
@@ -61,7 +62,7 @@ constexpr Page Parent(Page p) {
            : p == Page::kSecurityLock || p == Page::kSecurityPin ? Page::kSecurity
            : p == Page::kWebMode || p == Page::kWebLogin ? Page::kWeb
            : p == Page::kFido ? Page::kSecurity
-           : p == Page::kServerEmail ? Page::kServer
+           : p == Page::kServerEmail || p == Page::kServerConfig ? Page::kServer
                                       : Page::kMain;
 }
 
@@ -104,6 +105,7 @@ constexpr const char *Title(Page p) {
         case Page::kWifiHidden: return "Other network";
         case Page::kServer: return "Server";
         case Page::kServerEmail: return "E-mail";
+        case Page::kServerConfig: return "Configure";
     }
     return "";
 }
@@ -117,6 +119,7 @@ enum class Action : uint8_t {
     kRestart,   // About (asked first: the vault locks)
     kFidoReset, // FIDO2 / U2F (held: every key and its PIN erased)
     kServerRegister,  // Server (asked first: a new key, then the e-mail)
+    kServerStatus,    // Server > Configure: the status now
 };
 
 constexpr Action PageAction(Page p) {
@@ -126,6 +129,7 @@ constexpr Action PageAction(Page p) {
            : p == Page::kAbout    ? Action::kRestart
            : p == Page::kFido     ? Action::kFidoReset
            : p == Page::kServer   ? Action::kServerRegister
+           : p == Page::kServerConfig ? Action::kServerStatus
                                   : Action::kNone;
 }
 
@@ -136,6 +140,7 @@ constexpr const char *ActionText(Action a) {
            : a == Action::kRestart  ? "Restart"
            : a == Action::kFidoReset ? "Reset FIDO2"
            : a == Action::kServerRegister ? "Register"
+           : a == Action::kServerStatus   ? "Send the status now"
                                     : "";
 }
 
@@ -188,6 +193,37 @@ constexpr bool EmailOk(const char *email) {
         }
     }
     return n >= 3 && n < kEmailSize && ats == 1 && at > 0 && at + 1 < n;
+}
+
+// Server > Configure: the status report's interval (config.json
+// server.statusMinutes, config::kStatusMinutes).
+struct StatusChoice {
+    uint8_t minutes;
+    const char *label;
+};
+inline constexpr StatusChoice kStatusChoices[] = {
+    {0, "Never"}, {1, "Every minute"}, {10, "Every 10 min"}, {30, "Every 30 min"}, {60, "Every hour"}};
+inline constexpr uint8_t kStatusChoiceCount = sizeof kStatusChoices / sizeof kStatusChoices[0];
+
+// Its row in kStatusChoices; -1: none.
+constexpr int StatusChoiceIndex(uint8_t minutes) {
+    for (uint8_t i = 0; i < kStatusChoiceCount; ++i) {
+        if (kStatusChoices[i].minutes == minutes) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+// The Configure row's value on the Server page: "status every 10 min",
+// "status never".
+constexpr const char *StatusSummary(uint8_t minutes) {
+    return minutes == 0    ? "status never"
+           : minutes == 1  ? "status every min"
+           : minutes == 10 ? "status every 10 min"
+           : minutes == 30 ? "status every 30 min"
+           : minutes == 60 ? "status every hour"
+                           : "status";
 }
 
 // The frontlight's sliders: brightness 1..100 (0 is 1), warmth 0..100.

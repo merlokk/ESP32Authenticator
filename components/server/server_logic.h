@@ -22,6 +22,7 @@ inline constexpr size_t kPublicSize = 65;     // 0x04 || X || Y
 inline constexpr size_t kSignatureSize = 64;  // r || s (JWS ES256)
 inline constexpr size_t kTotpSize = 20;       // 160 bits (RFC 4226)
 inline constexpr size_t kSerialSize = 16;     // eFuse OPTIONAL_UNIQUE_ID
+inline constexpr size_t kClientIdSize = 36;   // a UUID, "8-4-4-4-12"
 
 // What server.bin keeps (SPIFFS, plain, as seed.txt).
 struct State {
@@ -30,13 +31,33 @@ struct State {
     uint8_t key[kKeySize];
     uint8_t totp[kTotpSize];
     int64_t registered_at;  // Unix seconds, 0: never
-    int64_t last_sync;      // the last answer from the server, 0: never
+    int64_t last_sync;      // the last status the server took, 0: never
+    char client_id[kClientIdSize + 1];  // the registration's answer; empty: none
 };
 
-// "SRV1", flags (bit 0 a key, bit 1 registered), key, TOTP, the two times
-// (little-endian).
-inline constexpr size_t kFileSize = 4 + 1 + kKeySize + kTotpSize + 8 + 8;
-inline constexpr uint8_t kMagic[4] = {'S', 'R', 'V', '1'};
+// "SRV2", flags (bit 0 a key, bit 1 registered), key, TOTP, the two times
+// (little-endian), the client id (kClientIdSize, NUL-padded). "SRV1" (before
+// the client id) is still read: registered, but signing in needs a new
+// registration.
+inline constexpr size_t kFileSizeV1 = 4 + 1 + kKeySize + kTotpSize + 8 + 8;
+inline constexpr size_t kFileSize = kFileSizeV1 + kClientIdSize;
+inline constexpr uint8_t kMagic[4] = {'S', 'R', 'V', '2'};
+
+// A client id as the server gives it: 36 of 0-9 a-f A-F, '-' at 8, 13, 18, 23.
+constexpr bool ValidClientId(const char *id, size_t len) {
+    if (len != kClientIdSize) {
+        return false;
+    }
+    for (size_t i = 0; i < len; ++i) {
+        const char c = id[i];
+        const bool dash = i == 8 || i == 13 || i == 18 || i == 23;
+        const bool hex = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+        if (dash ? c != '-' : !hex) {
+            return false;
+        }
+    }
+    return true;
+}
 
 constexpr void PutTime(int64_t v, uint8_t *out) {
     const auto u = static_cast<uint64_t>(v);
@@ -67,15 +88,40 @@ constexpr void Encode(const State &s, uint8_t out[kFileSize]) {
     }
     PutTime(s.registered_at, out + n);
     PutTime(s.last_sync, out + n + 8);
+    n += 16;
+    bool end = false;
+    for (size_t i = 0; i < kClientIdSize; ++i) {
+        end = end || s.client_id[i] == '\0';
+        out[n++] = end ? 0 : static_cast<uint8_t>(s.client_id[i]);
+    }
 }
 
 // False: not a server.bin (`out` left as it is).
 constexpr bool Decode(const uint8_t *in, size_t size, State *out) {
-    if (size != kFileSize) {
+    if (size != kFileSize && size != kFileSizeV1) {
         return false;
     }
-    for (size_t i = 0; i < sizeof kMagic; ++i) {
+    for (size_t i = 0; i < 3; ++i) {
         if (in[i] != kMagic[i]) {
+            return false;
+        }
+    }
+    if (in[3] != (size == kFileSize ? '2' : '1')) {
+        return false;
+    }
+    char id[kClientIdSize + 1] = {};
+    if (size == kFileSize) {
+        size_t len = 0;
+        while (len < kClientIdSize && in[kFileSizeV1 + len] != 0) {
+            id[len] = static_cast<char>(in[kFileSizeV1 + len]);
+            ++len;
+        }
+        for (size_t i = len; i < kClientIdSize; ++i) {
+            if (in[kFileSizeV1 + i] != 0) {
+                return false;  // padding that is not
+            }
+        }
+        if (len != 0 && !ValidClientId(id, len)) {
             return false;
         }
     }
@@ -94,6 +140,9 @@ constexpr bool Decode(const uint8_t *in, size_t size, State *out) {
     }
     out->registered_at = GetTime(in + n);
     out->last_sync = GetTime(in + n + 8);
+    for (size_t i = 0; i <= kClientIdSize; ++i) {
+        out->client_id[i] = id[i];
+    }
     return true;
 }
 
@@ -263,9 +312,9 @@ constexpr size_t Payload(const Claims &c, char *out, size_t size) {
 
 // What the key signs: base64url(header) "." base64url(payload). Its length,
 // 0 when it does not fit.
-constexpr size_t SigningInput(const char *payload, size_t payload_len, char *out, size_t size) {
-    const size_t h = Base64Url(reinterpret_cast<const uint8_t *>(kHeader), sizeof kHeader - 1,
-                               out, size);
+constexpr size_t SigningInput(const char *header, size_t header_len, const char *payload,
+                              size_t payload_len, char *out, size_t size) {
+    const size_t h = Base64Url(reinterpret_cast<const uint8_t *>(header), header_len, out, size);
     if (h == 0 || h + 1 >= size) {
         return 0;
     }
@@ -273,6 +322,11 @@ constexpr size_t SigningInput(const char *payload, size_t payload_len, char *out
     const size_t p = Base64Url(reinterpret_cast<const uint8_t *>(payload), payload_len,
                                out + h + 1, size - h - 1);
     return p == 0 ? 0 : h + 1 + p;
+}
+
+// The registration token's (kHeader).
+constexpr size_t SigningInput(const char *payload, size_t payload_len, char *out, size_t size) {
+    return SigningInput(kHeader, sizeof kHeader - 1, payload, payload_len, out, size);
 }
 
 // "." base64url(signature) after the signing input (`length` of it in
@@ -340,30 +394,252 @@ constexpr const char *FindValue(const char *body, size_t len, const char *name) 
     return nullptr;
 }
 
-// A 200 ping's body: {"status":"ok","time":<Unix seconds>}. False: anything
-// else ("no server").
-constexpr bool ParsePing(const char *body, size_t len, int64_t *server_time) {
-    const char *end = body + len;
-    const char *status = FindValue(body, len, "status");
-    if (status == nullptr || end - status < 4 || status[0] != '"' || status[1] != 'o' ||
-        status[2] != 'k' || status[3] != '"') {
-        return false;
-    }
-    const char *t = FindValue(body, len, "time");
-    if (t == nullptr || t >= end || *t < '0' || *t > '9') {
+// The non-negative integer at `p` (up to `end`). False: none, too big, or cut
+// by the end (a body over its buffer).
+constexpr bool ReadNumber(const char *p, const char *end, int64_t *out) {
+    if (p == nullptr || p >= end || *p < '0' || *p > '9') {
         return false;
     }
     int64_t v = 0;
-    for (; t < end && *t >= '0' && *t <= '9'; ++t) {
+    for (; p < end && *p >= '0' && *p <= '9'; ++p) {
         if (v > (INT64_MAX - 9) / 10) {
             return false;
         }
-        v = v * 10 + (*t - '0');
+        v = v * 10 + (*p - '0');
     }
-    if (t >= end) {
-        return false;  // cut inside the number (a body over kPingBodySize)
+    if (p >= end) {
+        return false;
     }
-    *server_time = v;
+    *out = v;
+    return true;
+}
+
+// The number `"name":N` in `body`. False: none (`out` left as it is).
+constexpr bool GetNumber(const char *body, size_t len, const char *name, int64_t *out) {
+    return ReadNumber(FindValue(body, len, name), body + len, out);
+}
+
+// The string `"name":"..."` in `body` into `out` (no escapes: the server's
+// ids, codes and versions have none). Its length; -1: none, not a string,
+// an escape, or longer than `size` - 1.
+constexpr int GetString(const char *body, size_t len, const char *name, char *out, size_t size) {
+    const char *end = body + len;
+    const char *p = FindValue(body, len, name);
+    if (p == nullptr || p >= end || *p != '"' || size == 0) {
+        return -1;
+    }
+    size_t n = 0;
+    for (++p; p < end && *p != '"'; ++p) {
+        if (*p == '\\' || n + 1 >= size) {
+            return -1;
+        }
+        out[n++] = *p;
+    }
+    if (p >= end) {
+        return -1;
+    }
+    out[n] = '\0';
+    return static_cast<int>(n);
+}
+
+// A 200 ping's body: {"status":"ok","time":<Unix seconds>}. False: anything
+// else ("no server").
+constexpr bool ParsePing(const char *body, size_t len, int64_t *server_time) {
+    char status[4] = "";
+    return GetString(body, len, "status", status, sizeof status) == 2 && status[0] == 'o' &&
+           status[1] == 'k' && GetNumber(body, len, "time", server_time);
+}
+
+// --- Answers -----------------------------------------------------------------
+
+// A refusal's code: Problem Details' "type" without
+// "urn:authserver:problem:", or an OAuth "error" (/connect/token). False:
+// neither.
+constexpr bool ErrorCode(const char *body, size_t len, char *out, size_t size) {
+    constexpr const char kPrefix[] = "urn:authserver:problem:";
+    char type[96] = "";
+    const int n = GetString(body, len, "type", type, sizeof type);
+    if (n > 0) {
+        size_t i = 0;
+        while (kPrefix[i] != '\0' && type[i] == kPrefix[i]) {
+            ++i;
+        }
+        const char *code = kPrefix[i] == '\0' ? type + i : type;
+        size_t o = 0;
+        if (PutRaw(code, out, size, &o)) {
+            return true;
+        }
+    }
+    return GetString(body, len, "error", out, size) > 0;
+}
+
+// What Settings > Server says for a refusal: `status` and its code (empty:
+// none came).
+constexpr void RefusalText(int status, const char *code, char *out, size_t size) {
+    struct Known {
+        const char *code;
+        const char *text;
+    };
+    constexpr Known kKnown[] = {
+        {"device-registration.refused", "refused: no open window"},
+        {"device-registration.invalid", "refused: a malformed token"},
+        {"device-registration.stale", "refused: the clock is off"},
+        {"device.taken", "on another account"},
+        {"device-status.invalid", "status refused"},
+        {"invalid_client", "sign-in refused: register again"},
+        {"invalid_grant", "sign-in refused"},
+    };
+    size_t n = 0;
+    out[0] = '\0';
+    for (const Known &k : kKnown) {
+        size_t i = 0;
+        while (k.code[i] != '\0' && k.code[i] == code[i]) {
+            ++i;
+        }
+        if (k.code[i] == '\0' && code[i] == '\0') {
+            PutRaw(k.text, out, size, &n);
+            return;
+        }
+    }
+    if (status == 502) {
+        PutRaw("the server's backend is down", out, size, &n);
+        return;
+    }
+    PutRaw("the server said ", out, size, &n);
+    PutNumber(status, out, size, &n);
+    if (code[0] != '\0') {
+        PutRaw(": ", out, size, &n);
+        PutRaw(code, out, size, &n);
+    }
+}
+
+// --- Sign-in (POST /connect/token) -------------------------------------------
+
+inline constexpr const char kAssertionHeader[] =
+    R"({"alg":"ES256","typ":"client-authentication+jwt"})";
+inline constexpr int64_t kAssertionSeconds = 300;  // exp - iat
+
+// The client assertion's claims: iss = sub = the client id, aud
+// "https://<host>/", jti (hex), iat, exp. Its length, 0 when it does not fit.
+constexpr size_t AssertionPayload(const char *client_id, const char *host, const char *jti,
+                                  int64_t iat, char *out, size_t size) {
+    size_t n = 0;
+    const bool ok = PutRaw("{\"iss\":", out, size, &n) && PutString(client_id, out, size, &n) &&
+                    PutRaw(",\"sub\":", out, size, &n) && PutString(client_id, out, size, &n) &&
+                    PutRaw(",\"aud\":\"https://", out, size, &n) && PutRaw(host, out, size, &n) &&
+                    PutRaw("/\",\"jti\":", out, size, &n) && PutString(jti, out, size, &n) &&
+                    PutRaw(",\"iat\":", out, size, &n) && PutNumber(iat, out, size, &n) &&
+                    PutRaw(",\"exp\":", out, size, &n) &&
+                    PutNumber(iat + kAssertionSeconds, out, size, &n) &&
+                    PutRaw("}", out, size, &n);
+    return ok ? n : 0;
+}
+
+// The form: grant_type, client_id, client_assertion_type, client_assertion
+// (the id and the JWT need no escapes). Its length, 0 when it does not fit.
+constexpr size_t TokenForm(const char *client_id, const char *assertion, char *out, size_t size) {
+    size_t n = 0;
+    const bool ok =
+        PutRaw("grant_type=client_credentials&client_id=", out, size, &n) &&
+        PutRaw(client_id, out, size, &n) &&
+        PutRaw("&client_assertion_type=urn%3Aietf%3Aparams%3Aoauth%3Aclient-assertion-type%3A"
+               "jwt-bearer&client_assertion=",
+               out, size, &n) &&
+        PutRaw(assertion, out, size, &n);
+    return ok ? n : 0;
+}
+
+// "https://<host><path>". False when it does not fit.
+constexpr bool Url(const char *host, const char *path, char *out, size_t size) {
+    size_t n = 0;
+    return host[0] != '\0' && PutRaw("https://", out, size, &n) && PutRaw(host, out, size, &n) &&
+           PutRaw(path, out, size, &n);
+}
+
+// The access token's answer: {"access_token":..,"token_type":"Bearer",
+// "expires_in":N}. False: not one, or a token over `size` - 1.
+constexpr bool ParseToken(const char *body, size_t len, char *token, size_t size,
+                          int64_t *expires_in) {
+    char type[8] = "";
+    const int t = GetString(body, len, "token_type", type, sizeof type);
+    const bool bearer = t == 6 && (type[0] == 'B' || type[0] == 'b') && type[1] == 'e' &&
+                        type[2] == 'a' && type[3] == 'r' && type[4] == 'e' && type[5] == 'r';
+    return bearer && GetString(body, len, "access_token", token, size) > 0 &&
+           GetNumber(body, len, "expires_in", expires_in);
+}
+
+// Sign in again this long before the token runs out.
+inline constexpr int64_t kTokenMargin = 30;
+
+// --- Status (POST /api/device/status) ----------------------------------------
+
+// The device's state (device-protocol.md: Status).
+struct Report {
+    const char *firmware;  // esp_app_desc_t.version
+    const char *board;     // "x4pro", "dev"
+    const char *mac;
+    bool wifi;
+    bool ble;
+    int battery;      // percent; -1: none (left out)
+    int64_t uptime;   // seconds since the boot
+    int64_t time;     // the clock; 0: not set
+};
+
+inline constexpr size_t kStatusBodySize = 256;
+
+// The JSON body. Its length, 0 when it does not fit.
+constexpr size_t StatusBody(const Report &r, char *out, size_t size) {
+    size_t n = 0;
+    bool ok = PutRaw("{\"firmware\":", out, size, &n) && PutString(r.firmware, out, size, &n) &&
+              PutRaw(",\"board\":", out, size, &n) && PutString(r.board, out, size, &n) &&
+              PutRaw(",\"mac\":", out, size, &n) && PutString(r.mac, out, size, &n) &&
+              PutRaw(",\"wifi\":", out, size, &n) && PutRaw(r.wifi ? "true" : "false", out, size, &n) &&
+              PutRaw(",\"ble\":", out, size, &n) && PutRaw(r.ble ? "true" : "false", out, size, &n);
+    if (ok && r.battery >= 0) {
+        ok = PutRaw(",\"battery\":", out, size, &n) && PutNumber(r.battery, out, size, &n);
+    }
+    ok = ok && PutRaw(",\"uptime\":", out, size, &n) && PutNumber(r.uptime, out, size, &n) &&
+         PutRaw(",\"time\":", out, size, &n) && PutNumber(r.time, out, size, &n) &&
+         PutRaw("}", out, size, &n);
+    return ok ? n : 0;
+}
+
+inline constexpr size_t kVersionSize = 33;  // 1..32 characters
+
+// The answer: {"update": null | {"id", "version", ...}, "time": N}. `update`:
+// the release's version, empty for none. False: not that.
+constexpr bool ParseStatus(const char *body, size_t len, char *update, size_t size,
+                           int64_t *server_time) {
+    const char *u = FindValue(body, len, "update");
+    if (u == nullptr || u >= body + len || !GetNumber(body, len, "time", server_time)) {
+        return false;
+    }
+    update[0] = '\0';
+    if (*u == 'n') {
+        return true;  // null
+    }
+    return *u == '{' && GetString(body, len, "version", update, size) > 0;
+}
+
+// --- When the status goes ------------------------------------------------------
+
+// A failed status is tried again this soon (not the whole interval).
+inline constexpr int64_t kStatusRetrySeconds = 60;
+
+// Is a status due? `ready`: registered, Wi-Fi online, the clock set. `now`,
+// `tried`, `sent`: monotonic seconds (since the boot), `tried` the last
+// attempt (-1: none), `sent` the last one the server took (-1: none since
+// the boot). The first goes as soon as the device is ready (at the boot, or
+// when Wi-Fi first connects), then every `minutes`.
+constexpr bool StatusDue(bool ready, uint8_t minutes, int64_t now, int64_t tried, int64_t sent) {
+    if (!ready || minutes == 0) {
+        return false;
+    }
+    const int64_t interval = static_cast<int64_t>(minutes) * 60;
+    const int64_t retry = interval < kStatusRetrySeconds ? interval : kStatusRetrySeconds;
+    if (tried >= 0 && now - tried < (tried == sent ? interval : retry)) {
+        return false;
+    }
     return true;
 }
 

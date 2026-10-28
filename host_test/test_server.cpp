@@ -21,7 +21,7 @@ void test_server_state_round_trip(void) {
     in.last_sync = -2;  // any value goes through
     uint8_t bytes[server::kFileSize];
     server::Encode(in, bytes);
-    TEST_ASSERT_EQUAL_MEMORY("SRV1", bytes, 4);
+    TEST_ASSERT_EQUAL_MEMORY("SRV2", bytes, 4);
     TEST_ASSERT_EQUAL_HEX8(3, bytes[4]);
     server::State out = {};
     TEST_ASSERT_TRUE(server::Decode(bytes, sizeof bytes, &out));
@@ -224,9 +224,187 @@ void test_server_offset(void) {
     TEST_ASSERT_TRUE(server::ClockTooFar(-601));
 }
 
+void test_server_client_id(void) {
+    server::State in = {};
+    in.has_key = true;
+    in.registered = true;
+    std::strcpy(in.client_id, "01a17ec2-98d3-7bbb-a8de-9aa8e0089116");
+    uint8_t bytes[server::kFileSize];
+    server::Encode(in, bytes);
+    TEST_ASSERT_EQUAL_MEMORY("SRV2", bytes, 4);
+    server::State out = {};
+    TEST_ASSERT_TRUE(server::Decode(bytes, sizeof bytes, &out));
+    TEST_ASSERT_EQUAL_STRING(in.client_id, out.client_id);
+    // SRV1 (no client id): registered, the id empty.
+    bytes[3] = '1';
+    TEST_ASSERT_FALSE(server::Decode(bytes, sizeof bytes, &out));  // SRV1 with SRV2's length
+    TEST_ASSERT_TRUE(server::Decode(bytes, server::kFileSizeV1, &out));
+    TEST_ASSERT_TRUE(out.registered);
+    TEST_ASSERT_EQUAL_STRING("", out.client_id);
+    bytes[3] = '2';
+    bytes[server::kFileSizeV1 + 8] = 'x';  // not a UUID
+    TEST_ASSERT_FALSE(server::Decode(bytes, sizeof bytes, &out));
+    bytes[server::kFileSizeV1 + 8] = '-';
+    bytes[server::kFileSizeV1] = 0;  // empty, then something: not padding
+    TEST_ASSERT_FALSE(server::Decode(bytes, sizeof bytes, &out));
+
+    TEST_ASSERT_TRUE(server::ValidClientId("01A17EC2-98d3-7bbb-a8de-9aa8e0089116", 36));
+    TEST_ASSERT_FALSE(server::ValidClientId("01a17ec2-98d3-7bbb-a8de-9aa8e008911", 35));
+    TEST_ASSERT_FALSE(server::ValidClientId("01a17ec2x98d3-7bbb-a8de-9aa8e0089116", 36));
+}
+
+void test_server_answers(void) {
+    char out[64];
+    const char reg[] = R"({"deviceId":"01a17ec2-98d3-7bbb-a8de-9aa8e0089116",)"
+                       R"("clientId":"01a17ec2-98d3-7bbb-a8de-9aa8e0089116"})";
+    TEST_ASSERT_EQUAL_INT(36, server::GetString(reg, sizeof reg - 1, "clientId", out, sizeof out));
+    TEST_ASSERT_EQUAL_INT(-1, server::GetString(reg, sizeof reg - 1, "clientId", out, 36));  // no room
+    TEST_ASSERT_EQUAL_INT(-1, server::GetString(reg, sizeof reg - 1, "nope", out, sizeof out));
+    const char escaped[] = R"({"a":"x\"y"})";
+    TEST_ASSERT_EQUAL_INT(-1, server::GetString(escaped, sizeof escaped - 1, "a", out, sizeof out));
+
+    const char problem[] = R"({"type":"urn:authserver:problem:device-registration.stale",)"
+                           R"("title":"Stale","status":400})";
+    TEST_ASSERT_TRUE(server::ErrorCode(problem, sizeof problem - 1, out, sizeof out));
+    TEST_ASSERT_EQUAL_STRING("device-registration.stale", out);
+    const char oauth[] = R"({"error":"invalid_client","error_description":"x"})";
+    TEST_ASSERT_TRUE(server::ErrorCode(oauth, sizeof oauth - 1, out, sizeof out));
+    TEST_ASSERT_EQUAL_STRING("invalid_client", out);
+    const char blank[] = R"({"type":"about:blank","status":502})";
+    TEST_ASSERT_TRUE(server::ErrorCode(blank, sizeof blank - 1, out, sizeof out));
+    TEST_ASSERT_EQUAL_STRING("about:blank", out);
+    TEST_ASSERT_FALSE(server::ErrorCode("<html>", 6, out, sizeof out));
+
+    char text[48];
+    server::RefusalText(400, "device-registration.stale", text, sizeof text);
+    TEST_ASSERT_EQUAL_STRING("refused: the clock is off", text);
+    server::RefusalText(403, "device-registration.refused", text, sizeof text);
+    TEST_ASSERT_EQUAL_STRING("refused: no open window", text);
+    server::RefusalText(409, "device.taken", text, sizeof text);
+    TEST_ASSERT_EQUAL_STRING("on another account", text);
+    server::RefusalText(502, "about:blank", text, sizeof text);
+    TEST_ASSERT_EQUAL_STRING("the server's backend is down", text);
+    server::RefusalText(418, "teapot", text, sizeof text);
+    TEST_ASSERT_EQUAL_STRING("the server said 418: teapot", text);
+    server::RefusalText(500, "", text, sizeof text);
+    TEST_ASSERT_EQUAL_STRING("the server said 500", text);
+    server::RefusalText(400, "device-registration.stalex", text, sizeof text);  // not a prefix match
+    TEST_ASSERT_EQUAL_STRING("the server said 400: device-registration.stalex", text);
+}
+
+void test_server_sign_in(void) {
+    const char *id = "01a17ec2-98d3-7bbb-a8de-9aa8e0089116";
+    char payload[384];
+    const size_t n = server::AssertionPayload(id, "auth.merlokk.com", "00ff", 1793128050, payload,
+                                              sizeof payload);
+    TEST_ASSERT_EQUAL_STRING(
+        R"({"iss":"01a17ec2-98d3-7bbb-a8de-9aa8e0089116","sub":"01a17ec2-98d3-7bbb-a8de-9aa8e0089116",)"
+        R"("aud":"https://auth.merlokk.com/","jti":"00ff","iat":1793128050,"exp":1793128350})",
+        payload);
+    TEST_ASSERT_EQUAL_UINT(std::strlen(payload), n);
+    // The longest host still fits.
+    char host[64];
+    std::memset(host, 'a', 63);
+    host[63] = '\0';
+    char jti[33];
+    std::memset(jti, 'f', 32);
+    jti[32] = '\0';
+    TEST_ASSERT_GREATER_THAN(0, server::AssertionPayload(id, host, jti, 4102444800, payload,
+                                                         sizeof payload));
+
+    char token[server::kTokenSize];
+    const size_t input = server::SigningInput(server::kAssertionHeader,
+                                              sizeof server::kAssertionHeader - 1, "{}", 2, token,
+                                              sizeof token);
+    TEST_ASSERT_EQUAL_STRING("eyJhbGciOiJFUzI1NiIsInR5cCI6ImNsaWVudC1hdXRoZW50aWNhdGlvbitqd3QifQ.e30",
+                             token);
+    TEST_ASSERT_EQUAL_UINT(std::strlen(token), input);
+
+    char form[256];
+    TEST_ASSERT_GREATER_THAN(0, server::TokenForm(id, "a.b.c", form, sizeof form));
+    TEST_ASSERT_EQUAL_STRING(
+        "grant_type=client_credentials&client_id=01a17ec2-98d3-7bbb-a8de-9aa8e0089116"
+        "&client_assertion_type=urn%3Aietf%3Aparams%3Aoauth%3Aclient-assertion-type%3Ajwt-bearer"
+        "&client_assertion=a.b.c",
+        form);
+    TEST_ASSERT_EQUAL_UINT(0, server::TokenForm(id, "a.b.c", form, 40));
+
+    char url[64];
+    TEST_ASSERT_TRUE(server::Url("h.example", "/connect/token", url, sizeof url));
+    TEST_ASSERT_EQUAL_STRING("https://h.example/connect/token", url);
+
+    char access[16];
+    int64_t expires = 0;
+    const char ok[] = R"({"access_token":"eyJabc","token_type":"Bearer","expires_in":3600})";
+    TEST_ASSERT_TRUE(server::ParseToken(ok, sizeof ok - 1, access, sizeof access, &expires));
+    TEST_ASSERT_EQUAL_STRING("eyJabc", access);
+    TEST_ASSERT_TRUE(expires == 3600);
+    TEST_ASSERT_FALSE(server::ParseToken(ok, sizeof ok - 1, access, 4, &expires));  // too long
+    const char other[] = R"({"access_token":"x","token_type":"mac","expires_in":1})";
+    TEST_ASSERT_FALSE(server::ParseToken(other, sizeof other - 1, access, sizeof access, &expires));
+}
+
+void test_server_status(void) {
+    const server::Report r = {"0.5.0-174-g2f84ffa", "x4pro", "aa:bb:cc:dd:ee:ff", true, false, 87,
+                              3600, 1793128050};
+    char body[server::kStatusBodySize];
+    const size_t n = server::StatusBody(r, body, sizeof body);
+    TEST_ASSERT_EQUAL_STRING(
+        R"({"firmware":"0.5.0-174-g2f84ffa","board":"x4pro","mac":"aa:bb:cc:dd:ee:ff",)"
+        R"("wifi":true,"ble":false,"battery":87,"uptime":3600,"time":1793128050})",
+        body);
+    TEST_ASSERT_EQUAL_UINT(std::strlen(body), n);
+    server::Report none = r;
+    none.battery = -1;
+    none.time = 0;
+    server::StatusBody(none, body, sizeof body);
+    TEST_ASSERT_NULL(std::strstr(body, "battery"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body, R"("time":0})"));
+    // The longest firmware version fits.
+    char version[33];
+    std::memset(version, 'v', 32);
+    version[32] = '\0';
+    none.firmware = version;
+    TEST_ASSERT_GREATER_THAN(0, server::StatusBody(none, body, sizeof body));
+
+    char update[server::kVersionSize];
+    int64_t t = 0;
+    const char offered[] = R"({"update": {"id": "01a17f4a", "version": "0.6.0-0-gabc1234",)"
+                           R"( "size": 1843200, "sha256": "9f2c"}, "time": 1793128051})";
+    TEST_ASSERT_TRUE(server::ParseStatus(offered, sizeof offered - 1, update, sizeof update, &t));
+    TEST_ASSERT_EQUAL_STRING("0.6.0-0-gabc1234", update);
+    TEST_ASSERT_TRUE(t == 1793128051);
+    const char current[] = R"({"update":null,"time":1793128051})";
+    TEST_ASSERT_TRUE(server::ParseStatus(current, sizeof current - 1, update, sizeof update, &t));
+    TEST_ASSERT_EQUAL_STRING("", update);
+    const char bad[] = R"({"time":1})";
+    TEST_ASSERT_FALSE(server::ParseStatus(bad, sizeof bad - 1, update, sizeof update, &t));
+}
+
+void test_server_status_due(void) {
+    // Not ready, or never: nothing.
+    TEST_ASSERT_FALSE(server::StatusDue(false, 10, 100, -1, -1));
+    TEST_ASSERT_FALSE(server::StatusDue(true, 0, 100, -1, -1));
+    // The first as soon as ready.
+    TEST_ASSERT_TRUE(server::StatusDue(true, 10, 5, -1, -1));
+    // Sent at 100: the next at 700.
+    TEST_ASSERT_FALSE(server::StatusDue(true, 10, 699, 100, 100));
+    TEST_ASSERT_TRUE(server::StatusDue(true, 10, 700, 100, 100));
+    // Failed at 100 (sent at 0, or never): again in a minute.
+    TEST_ASSERT_FALSE(server::StatusDue(true, 10, 159, 100, 0));
+    TEST_ASSERT_TRUE(server::StatusDue(true, 10, 160, 100, -1));
+    // Every minute: the retry is no longer than the interval.
+    TEST_ASSERT_TRUE(server::StatusDue(true, 1, 160, 100, 100));
+}
+
 }  // namespace
 
 void RegisterServerTests(void) {
+    RUN_TEST(test_server_client_id);
+    RUN_TEST(test_server_answers);
+    RUN_TEST(test_server_sign_in);
+    RUN_TEST(test_server_status);
+    RUN_TEST(test_server_status_due);
     RUN_TEST(test_server_ping);
     RUN_TEST(test_server_offset);
     RUN_TEST(test_server_state_round_trip);

@@ -585,6 +585,16 @@ void test_settings_pages(void) {
     TEST_ASSERT_TRUE(st::Parent(st::Page::kServerEmail) == st::Page::kServer);
     TEST_ASSERT_TRUE(st::Parent(st::Page::kServer) == st::Page::kMain);
     TEST_ASSERT_TRUE(st::PageAction(st::Page::kServerEmail) == st::Action::kNone);
+    TEST_ASSERT_TRUE(st::Parent(st::Page::kServerConfig) == st::Page::kServer);
+    TEST_ASSERT_EQUAL_STRING("Configure", st::Title(st::Page::kServerConfig));
+    TEST_ASSERT_TRUE(st::PageAction(st::Page::kServerConfig) == st::Action::kServerStatus);
+    TEST_ASSERT_EQUAL_STRING("Send the status now", st::ActionText(st::Action::kServerStatus));
+    TEST_ASSERT_EQUAL_UINT8(5, st::kStatusChoiceCount);
+    TEST_ASSERT_EQUAL_INT(2, st::StatusChoiceIndex(10));
+    TEST_ASSERT_EQUAL_INT(0, st::StatusChoiceIndex(0));
+    TEST_ASSERT_EQUAL_INT(-1, st::StatusChoiceIndex(5));
+    TEST_ASSERT_EQUAL_STRING("status every 10 min", st::StatusSummary(10));
+    TEST_ASSERT_EQUAL_STRING("status never", st::StatusSummary(0));
     TEST_ASSERT_TRUE(st::EmailOk("me@example.org"));
     TEST_ASSERT_TRUE(st::EmailOk("a@b"));
     TEST_ASSERT_FALSE(st::EmailOk(""));

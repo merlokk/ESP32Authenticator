@@ -72,8 +72,9 @@ Reference ESP-IDF + LVGL project: `../../ai-remote/approver-esp32` ([GitHub](htt
   held high through the sleep (false: on the battery the power drops, no
   drain, the kept PIN lost).
 - `server`: `host` (default `auth.merlokk.com`; empty or a host name /
-  IPv4, HTTPS on 443) and `email` (empty or 3..64 printable ASCII with one
-  '@'), see Server.
+  IPv4, HTTPS on 443), `email` (empty or 3..64 printable ASCII with one
+  '@') and `statusMinutes` (0, 1, 10, 30, 60; default 10, 0: never), see
+  Server.
 - `test`: development aids (`pin`, `autoPresence`), see
   [testing-on-device.md](testing-on-device.md#configjson-test). Never on a
   device with real secrets.
@@ -109,7 +110,7 @@ An example (the built-in default has no networks):
   "power": {"idleMinutes": 10, "idleMinutesUsb": 0, "keepPinHours": 0, "holdRail": true},
   "pin": {"lockMinutes": 10, "wipe": "", "complexity": true},
   "usb": {"mode": "jtag"},
-  "server": {"host": "auth.merlokk.com", "email": ""},
+  "server": {"host": "auth.merlokk.com", "email": "", "statusMinutes": 10},
   "test": {"pin": "", "autoPresence": false}
 }
 ```
@@ -757,24 +758,45 @@ account on the authentication server (`config.json` `server.host`).
   `{"alg":"ES256","typ":"JWT"}`, payload `{"email", "serial"` (eFuse
   OPTIONAL_UNIQUE_ID, hex), `"mac"` (base MAC), `"totp"` (the secret, base32),
   `"pub"` (0x04||X||Y, base64url), `"iat"}`, signed by the new key (it
-  proves holding it). 2xx: registered; anything else leaves the new key
-  unregistered. The server checks the signature and keeps the serial and the
-  public key; the user signs in there with the TOTP code the page shows.
-- `server.bin`: `SRV1`, flags (key, registered), key, TOTP secret, the
-  registration and last-sync times (int64 LE), 73 bytes.
+  proves holding it). 2xx: registered, the answer's `clientId` kept;
+  anything else leaves the new key unregistered, the refusal's Problem
+  Details `type` (or OAuth `error`) on the Last line ("refused: no open
+  window", "refused: the clock is off", "on another account", 502 "the
+  server's backend is down"). The server checks the signature and keeps the
+  serial and the public key; the user signs in there with the TOTP code the
+  page shows.
+- `server.bin`: `SRV2`, flags (key, registered), key, TOTP secret, the
+  registration and last-status times (int64 LE), the client id (36, NUL
+  padded), 109 bytes. `SRV1` (73 bytes, no client id) still loads:
+  registered, but no sign-in until registered again.
+- Sign-in: `POST /connect/token` (form: `client_credentials`, the client id,
+  a client assertion: ES256, `typ` `client-authentication+jwt`, iss = sub =
+  the client id, aud `https://<host>/`, a random jti, exp = iat + 300 s,
+  signed by the device's key). The access token stays in PSRAM until
+  `expires_in` (30 s early: signed in again), never logged; a 401 signs in
+  again once.
+- Status: `POST /api/device/status` (`firmware`, `board` `x4pro` / `dev`,
+  `mac`, `wifi`, `ble`, `battery`, `uptime`, `time`), signed in first. Its
+  own task (`server_due`, 4 KB, a look every 5 s): the first once registered
+  with a client id, Wi-Fi online and the clock set (at the boot, or when
+  Wi-Fi first connects), then every `server.statusMinutes` (0 never, 1, 10,
+  30, 60; default 10), a failed one again in a minute. The answer's `time`
+  sets Clock, its `update` the Update line. Settings > Server > Configure:
+  the interval (saved) and "Send the status now"; console `server report`.
 - Connected: `GET https://<host>/api/device/ping` answered 200
   `{"status":"ok","time":N}` (anything else: "not the server: HTTP n", or no
   answer); while the page is shown, at most once a minute, with Wi-Fi online
   and the clock set (console `server check`). `time` gives the device's clock
   against the server's (Clock: "same" within 2 s, "12 s ahead", "3 min
   behind"; console in seconds); over 10 min off, Register is refused (the
-  server would refuse `iat`). Last sync: the last ping of a registered device.
+  server would refuse `iat`). Status sent: the last status the server took.
   Protocol: `../ESP32AuthenticatorServer/device-protocol.md`.
 - Requests run one at a time in a task of their own (10 KB stack); TLS
   through the certificate bundle, mbedTLS allocates in PSRAM
   (`CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC`: internal RAM beside BLE and Wi-Fi
-  ran out in `mbedtls_ssl_setup`). The token is never logged: it carries the
-  TOTP secret.
+  ran out in `mbedtls_ssl_setup`); answers are read into a PSRAM buffer. The
+  JWTs and the access token are never logged: the registration's carries
+  the TOTP secret.
 
 ## Flash layout
 

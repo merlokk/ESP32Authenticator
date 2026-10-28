@@ -670,12 +670,15 @@ void test_parse_server() {
     config::FillDefaults(&d);
     TEST_ASSERT_EQUAL_STRING("auth.merlokk.com", d.server.host);
     TEST_ASSERT_EQUAL_STRING("", d.server.email);
+    TEST_ASSERT_EQUAL_UINT8(10, d.server.status_minutes);
     TEST_ASSERT_TRUE_MESSAGE(
-        ParseText(R"({"server": {"host": "auth.example.org", "email": "me@example.org"}})", &d,
-                  error, sizeof error),
+        ParseText(R"({"server": {"host": "auth.example.org", "email": "me@example.org",)"
+                  R"( "statusMinutes": 0}})",
+                  &d, error, sizeof error),
         error);
     TEST_ASSERT_EQUAL_STRING("auth.example.org", d.server.host);
     TEST_ASSERT_EQUAL_STRING("me@example.org", d.server.email);
+    TEST_ASSERT_EQUAL_UINT8(0, d.server.status_minutes);
     char json[config::kMaxFileSize];
     TEST_ASSERT_GREATER_THAN(0, config::Serialize(d, json, sizeof json));
     config::Data out;
@@ -684,6 +687,8 @@ void test_parse_server() {
     AssertParseFails(R"({"server": {"host": "https://auth.example.org"}})", "server.host");
     AssertParseFails(R"({"server": {"email": "nobody"}})", "server.email");
     AssertParseFails(R"({"server": []})", "server");
+    AssertParseFails(R"({"server": {"statusMinutes": 5}})", "server.statusMinutes");
+    AssertParseFails(R"({"server": {"statusMinutes": 61}})", "server.statusMinutes");
 }
 
 // --- Serialize -------------------------------------------------------------------

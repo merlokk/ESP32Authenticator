@@ -38,8 +38,27 @@ void PrintStatus() {
         server::OffsetText(s.offset, ago, sizeof ago);
         printf("clock       %s (%+lld s)\n", ago, static_cast<long long>(s.offset));
     }
+    char id[server::kClientIdSize + 1];
+    if (server::ClientId(id, sizeof id)) {
+        printf("client id   %s\n", id);
+    } else if (s.registered) {
+        printf("client id   none: register again to sign in\n");
+    }
+    if (s.token_left > 0) {
+        printf("signed in   %lld s left\n", static_cast<long long>(s.token_left));
+    } else {
+        printf("signed in   no\n");
+    }
     server::Ago(now, s.last_sync, ago, sizeof ago);
-    printf("last sync   %s\n", ago);
+    printf("status sent %s", ago);
+    if (c.status_minutes != 0) {
+        printf(" (every %u min)\n", static_cast<unsigned>(c.status_minutes));
+    } else {
+        printf(" (never: server.statusMinutes 0)\n");
+    }
+    if (s.update[0] != '\0') {
+        printf("update      %s\n", s.update);
+    }
     if (s.said[0] != '\0') {
         printf("last        %s%s\n", s.said, s.busy ? " (under way)" : "");
     }
@@ -103,6 +122,17 @@ int CmdServer(int argc, char **argv) {
                                      : err == ESP_ERR_INVALID_STATE ? "busy" : esp_err_to_name(err));
         return err == ESP_OK ? 0 : 1;
     }
+    if (strcmp(sub, "report") == 0 && argc == 2) {
+        if (!Ready()) {
+            return 1;
+        }
+        const esp_err_t err = server::StartStatus();
+        printf("%s\n", err == ESP_OK                ? "sending the status: `server` shows the outcome"
+                       : err == ESP_ERR_NOT_FOUND     ? "not registered (or no client id): register"
+                       : err == ESP_ERR_INVALID_STATE ? "busy"
+                                                      : esp_err_to_name(err));
+        return err == ESP_OK ? 0 : 1;
+    }
     if (strcmp(sub, "register") == 0 && argc <= 3) {
         config::Server &c = config::Get().server;
         if (argc == 3) {
@@ -133,7 +163,7 @@ int CmdServer(int argc, char **argv) {
                                      : err == ESP_ERR_INVALID_STATE ? "busy" : esp_err_to_name(err));
         return err == ESP_OK ? 0 : 1;
     }
-    printf("usage: server [check | register [email] | code | host <name>]\n");
+    printf("usage: server [check | report | register [email] | code | host <name>]\n");
     return 1;
 }
 

@@ -170,6 +170,11 @@ struct ServerHooks {
     // A new key and TOTP secret, then the registration (the e-mail saved); in
     // the ui's own task, saying what happened.
     const char *(*register_device)(const char *email);
+    // Configure: the status report's interval (config.json
+    // server.statusMinutes; 0 never) and setting it (saved). ui task / the
+    // ui's own task.
+    uint8_t (*status_minutes)();
+    const char *(*set_status_minutes)(uint8_t minutes);
 };
 void SetServerHooks(const ServerHooks *hooks);
 
