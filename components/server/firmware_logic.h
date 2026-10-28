@@ -198,6 +198,10 @@ constexpr bool RangeHeader(uint32_t offset, uint32_t total, char *out, size_t si
            PutRaw("-", out, size, &n) && PutNumber(last, out, size, &n);
 }
 
+// A piece's answer worth asking again: the server or its proxy busy (5xx),
+// a timeout, too many requests. Any other refusal ends the download.
+constexpr bool Transient(int status) { return status >= 500 || status == 408 || status == 429; }
+
 // "bytes a-b/total": its first byte. False: another shape.
 constexpr bool RangeStart(const char *text, uint32_t *first) {
     const char *p = text;

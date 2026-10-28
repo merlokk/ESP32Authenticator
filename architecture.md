@@ -819,7 +819,8 @@ account on the authentication server (`config.json` `server.host`).
   "new: <version>" on the Server page's Firmware row. A release tapped:
   asked (Yes held), then `GET /api/device/firmware/{id}/image` in 64 KB
   `Range` pieces on one connection, each from where the slot stands (a cut
-  one costs its rest; 3 in a row with nothing: given up), into
+  one costs its rest; a 5xx, 408, 429 or no answer asked again 2 s later,
+  5 in a row with nothing: given up; any other refusal ends it), into
   `ota::Begin(kServer)` (its check as it streams, the progress window); the
   SHA-256 must be the release's, then `ota::End` and the restart (trial
   boot). Any release can go in, an older one too (asked as such); console

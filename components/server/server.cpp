@@ -522,7 +522,8 @@ int SignedCall(Call call, const char *host, Body &answer, char *said, size_t siz
 
 constexpr size_t kFirmwareUrlSize = 8 + kHostSize + 80;
 constexpr size_t kListSize = 16 * 1024;  // the list's answer (every release of the board)
-constexpr int kMaxStalls = 3;            // pieces in a row that brought nothing
+constexpr int kMaxStalls = 5;            // pieces in a row that brought nothing
+constexpr uint32_t kStallPauseMs = 2000;  // before asking for it again
 
 // This board's releases, newest first (under lock); PSRAM, kMaxReleases.
 firmware::Release *releases = nullptr;
@@ -688,15 +689,21 @@ const char *Fetch(const Job &r, Body &answer, char *said, size_t size) {
             DropToken();  // signed in again for the next piece
         } else if (code == 404) {
             why = "the release is gone from the server";
-        } else if (code > 0 && code != 206) {
+        } else if (code > 0 && code != 206 && !firmware::Transient(code)) {
             SayFailed(code, answer, said, size);
             why = said;
         }
         stalls = d.offset > before ? 0 : stalls + 1;
         if (why == nullptr && stalls >= kMaxStalls) {
-            snprintf(said, size, "download stalled: %s",
-                     code > 0 ? "no piece came" : esp_err_to_name(err));
+            if (code > 0 && code != 206) {
+                SayFailed(code, answer, said, size);  // the last refusal, e.g. a 502
+            } else {
+                snprintf(said, size, "download stalled: %s",
+                         code > 0 ? "no piece came" : esp_err_to_name(err));
+            }
             why = said;
+        } else if (why == nullptr && stalls > 0) {
+            vTaskDelay(pdMS_TO_TICKS(kStallPauseMs));  // a busy proxy, a dropped link: again
         }
     }
     if (client != nullptr) {

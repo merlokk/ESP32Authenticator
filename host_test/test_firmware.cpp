@@ -99,6 +99,13 @@ void test_firmware_requests(void) {
     TEST_ASSERT_EQUAL_STRING("bytes=65536-99999", out);
     TEST_ASSERT_FALSE(fw::RangeHeader(100000, 100000, out, sizeof out));
 
+    TEST_ASSERT_TRUE(fw::Transient(502));
+    TEST_ASSERT_TRUE(fw::Transient(503));
+    TEST_ASSERT_TRUE(fw::Transient(408));
+    TEST_ASSERT_TRUE(fw::Transient(429));
+    TEST_ASSERT_FALSE(fw::Transient(403));
+    TEST_ASSERT_FALSE(fw::Transient(416));
+
     uint32_t first = 0;
     TEST_ASSERT_TRUE(fw::RangeStart("bytes 65536-99999/100000", &first));
     TEST_ASSERT_EQUAL_UINT32(65536, first);
