@@ -156,6 +156,18 @@ esp_err_t fido_ctap_stage_key(const fido_ctap_key_t *key);
 esp_err_t fido_ctap_commit_key(void);
 void fido_ctap_unstage_key(void);
 
+// The sync (server/sync_logic.h): `from`, a copy of the store the vault
+// checked (it opens with `key`), over the store file, then loaded with `key`
+// and the core started again (a running request finishes first). `force`:
+// its version kept in NVS as it is, also a lower one (another store taken).
+esp_err_t fido_ctap_adopt(const char *from, const fido_ctap_key_t *key, bool force);
+// The store file written again with a version of at least `min_version`
+// (this device's copy kept over the server's). ESP_ERR_INVALID_STATE: not
+// running.
+esp_err_t fido_ctap_rewrite(uint32_t min_version);
+// The loaded store file's version, 0 when not running. Quick (no lock).
+uint32_t fido_ctap_file_version(void);
+
 // The wipe PIN: the store file and its kept version gone, the core stopped.
 // Starts empty with the next key.
 void fido_ctap_wipe(void);

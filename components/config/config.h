@@ -198,9 +198,10 @@ struct Server {
     char host[kHostSize];    // "auth.merlokk.com"; empty: none (HTTPS, no port)
     char email[kEmailSize];  // empty: not typed yet
     uint8_t status_minutes;  // the status report's interval, kStatusMinutes; 0: never
+    uint8_t sync_minutes;    // the store sync's interval, kStatusMinutes; 0: never
 };
 
-// server.statusMinutes' values (default 10).
+// server.statusMinutes' and syncMinutes' values (default 10).
 inline constexpr uint8_t kStatusMinutes[] = {0, 1, 10, 30, 60};
 constexpr bool ValidStatusMinutes(uint32_t m) {
     for (const uint8_t v : kStatusMinutes) {

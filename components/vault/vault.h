@@ -28,6 +28,7 @@
 #include "pin_guard.h"
 #include "records.h"
 #include "seed_phrase.h"
+#include "store_io.h"
 
 namespace vault {
 
@@ -85,7 +86,9 @@ void SetPolicy(const Policy &policy);
 // vault's lock; stage / commit / unstage inside a PIN change (fido.bin.new
 // with the new key, then over fido.bin). wipe: quietly (it looks like a
 // wrong PIN). stage returns ESP_ERR_INVALID_STATE for a file it cannot
-// re-key (not loaded): the change is refused.
+// re-key (not loaded): the change is refused. adopt (inside the lock): the
+// sync's copy of fido.bin, checked, from `from` over the file and loaded
+// with `key` (`force`: its version kept as it is, another store taken).
 struct Hooks {
     void (*key_in)(const Key &key);
     void (*key_gone)();
@@ -93,6 +96,7 @@ struct Hooks {
     void (*commit)();
     void (*unstage)();
     void (*wipe)();
+    esp_err_t (*adopt)(const char *from, const Key &key, bool force);
 };
 void SetHooks(const Hooks &hooks);
 
@@ -161,6 +165,31 @@ Error Remove(uint32_t id);
 // or all by site, then user.
 Error Move(uint32_t id, size_t position);
 Error SortByName();
+
+// --- The sync (server/sync_logic.h)
+
+// vault.bin's File (path, kind, NVS), for the sync to read it.
+const storefile::File &StoreFile();
+// The loaded vault.bin's version, 0 while not open. Quick (no lock).
+uint32_t Version();
+
+// A copy of a store from the server, downloaded to `from`, put in place of
+// `target` (StoreFile() or fido.bin's): checked first, the kind, our seed
+// phrase (kWrongSeed), `store_id` (the one asked for), a version above the
+// kept one (unless `other_store`: an account's store taken instead of ours,
+// its version kept as it is), the key: ours, or the one `pin` gives with
+// the copy's salt (no `pin`: kNeedPin; a wrong one counted as ever:
+// kWrongPin / kPinLocked), the GCM tag (kBadCopy). Another key: this device
+// takes it, the other store re-keyed with it as a PIN change does, so this
+// device's PIN becomes the copy's. vault.bin reloaded; fido.bin through
+// Hooks::adopt. Needs the store open (kLocked). `from` is removed, but kept
+// on kNeedPin / kWrongPin (for the PIN typed next).
+Error Adopt(const storefile::File &target, const char *from,
+            const uint8_t store_id[storefile::kStoreIdSize], bool other_store, const char *pin);
+
+// vault.bin written again with a version of at least `min_version` (this
+// device's copy kept over the server's). kLocked: not open.
+Error Rewrite(uint32_t min_version);
 
 // Every record gone: an empty store written over the file. With the key in,
 // `pin` is not needed; without, `pin` makes a new key (new salt): fido.bin,

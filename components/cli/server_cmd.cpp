@@ -62,6 +62,31 @@ void PrintStatus() {
     if (s.said[0] != '\0') {
         printf("last        %s%s\n", s.said, s.busy ? " (under way)" : "");
     }
+    for (const server::sync::Store store : server::sync::kAll) {
+        const server::StoreStatus &t = s.stores[static_cast<size_t>(store)];
+        printf("%-11s %s", server::sync::StoreName(store), server::sync::PhaseText(t.phase));
+        if (t.local_version != 0) {
+            printf(", v%u here", static_cast<unsigned>(t.local_version));
+        }
+        if (t.server_version != 0) {
+            printf(", v%u %s", static_cast<unsigned>(t.server_version),
+                   t.other_store ? "in another store" : "on the server");
+        }
+        if (t.server_at[0] != '\0') {
+            printf(" (%s UTC)", t.server_at);
+        }
+        printf("\n");
+    }
+    server::Ago(now, s.synced_at, ago, sizeof ago);
+    printf("synced      %s", ago);
+    if (c.sync_minutes != 0) {
+        printf(" (on changes, every %u min)\n", static_cast<unsigned>(c.sync_minutes));
+    } else {
+        printf(" (never on its own: server.syncMinutes 0)\n");
+    }
+    if (s.sync_said[0] != '\0') {
+        printf("sync said   %s\n", s.sync_said);
+    }
     char pub[server::Base64UrlLength(server::kPublicSize) + 1];
     if (server::PublicKey(pub, sizeof pub)) {
         printf("public key  %s\n", pub);
@@ -133,6 +158,38 @@ int CmdServer(int argc, char **argv) {
                                                       : esp_err_to_name(err));
         return err == ESP_OK ? 0 : 1;
     }
+    if (strcmp(sub, "sync") == 0 && argc == 2) {
+        if (!Ready()) {
+            return 1;
+        }
+        const esp_err_t err = server::StartSync();
+        printf("%s\n", err == ESP_OK                ? "syncing: `server` shows the outcome"
+                       : err == ESP_ERR_NOT_FOUND     ? "not registered (or no client id): register"
+                       : err == ESP_ERR_INVALID_STATE ? "busy"
+                                                      : esp_err_to_name(err));
+        return err == ESP_OK ? 0 : 1;
+    }
+    if (strcmp(sub, "sync") == 0 && (argc == 4 || argc == 5) &&
+        (strcmp(argv[2], "keep") == 0 || strcmp(argv[2], "take") == 0)) {
+        const bool passwords = strcmp(argv[3], "passwords") == 0;
+        if (!passwords && strcmp(argv[3], "passkeys") != 0) {
+            printf("usage: server sync keep|take passwords|passkeys [pin]\n");
+            return 1;
+        }
+        if (!Ready()) {
+            return 1;
+        }
+        const bool take = argv[2][0] == 't';
+        const esp_err_t err = server::StartResolve(
+            passwords ? server::sync::Store::kVault : server::sync::Store::kFido,
+            take ? server::Choice::kTakeServer : server::Choice::kKeepMine,
+            argc == 5 ? argv[4] : nullptr);
+        printf("%s\n", err == ESP_OK                ? "resolving: `server` shows the outcome"
+                       : err == ESP_ERR_NOT_FOUND     ? "not registered"
+                       : err == ESP_ERR_INVALID_STATE ? "busy, or that store does not wait"
+                                                      : esp_err_to_name(err));
+        return err == ESP_OK ? 0 : 1;
+    }
     if (strcmp(sub, "register") == 0 && argc <= 3) {
         config::Server &c = config::Get().server;
         if (argc == 3) {
@@ -163,7 +220,8 @@ int CmdServer(int argc, char **argv) {
                                      : err == ESP_ERR_INVALID_STATE ? "busy" : esp_err_to_name(err));
         return err == ESP_OK ? 0 : 1;
     }
-    printf("usage: server [check | report | register [email] | code | host <name>]\n");
+    printf("usage: server [check | report | sync [keep|take passwords|passkeys [pin]] |\n"
+           "               register [email] | code | host <name>]\n");
     return 1;
 }
 

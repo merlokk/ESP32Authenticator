@@ -150,6 +150,8 @@ enum class JobKind : uint8_t {
     kWifiStatic,  // the network `ssid`'s address `static_ip`
     kServerRegister,  // Server: a new key, registered with the e-mail `password`
     kServerStatusEvery,  // Server > Configure: the status every `id` minutes
+    kServerSyncEvery,    // Server > Configure: the sync every `id` minutes
+    kServerResolve,      // Server > Sync: store `which`, take it (`flag`) or keep ours; PIN `password`
 };
 
 struct Job {
@@ -1117,6 +1119,7 @@ lv_obj_t *ChoiceRow(int32_t y, const char *name, const char *value, bool check,
                     lv_event_cb_t cb, int id);
 extern const ServerHooks *server_hooks;
 bool server_config_tapped = false;
+bool server_sync_tapped = false;
 
 void OnServerConfig(lv_event_t *) {
     if (LastWasTap()) {
@@ -1124,16 +1127,58 @@ void OnServerConfig(lv_event_t *) {
     }
 }
 
+void OnServerSync(lv_event_t *) {
+    if (LastWasTap()) {
+        server_sync_tapped = true;
+    }
+}
+
+int store_sync_tapped = -1;  // settings::SyncTap
+
+void OnSyncTap(lv_event_t *event) {
+    if (LastWasTap()) {
+        store_sync_tapped = static_cast<int>(reinterpret_cast<intptr_t>(lv_event_get_user_data(event)));
+    }
+}
+
 void ShowSettingsPage(settings::Page page) {
     TitleBar(settings::Title(page));
     const settings::Action action = settings::PageAction(page);
     int32_t bottom = kScreenBottom - kContentTop - (action != settings::Action::kNone ? 100 : 0);
-    // Server: "Configure" over the button.
+    // Server: "Sync" and "Configure" over the button.
     const bool configure = page == settings::Page::kServer && server_hooks != nullptr;
     if (configure) {
         bottom -= 64 + 8;  // kNetRow
         ChoiceRow(bottom + 8, "Configure", settings::StatusSummary(server_hooks->status_minutes()),
                   false, OnServerConfig, 0);
+        char summary[40];
+        server_hooks->sync_summary(summary, sizeof summary);
+        bottom -= 64 + 8;
+        ChoiceRow(bottom + 8, "Sync", summary, false, OnServerSync, 0);
+    }
+    // Sync: each store that waits, its two choices over the button.
+    const uint8_t waits =
+        page == settings::Page::kServerSync && server_hooks != nullptr ? server_hooks->sync_waits() : 0;
+    for (uint8_t i = settings::kSyncStores; i-- > 0;) {
+        const bool conflict = settings::SyncConflict(waits, i);
+        const bool pin = settings::SyncPinAsked(waits, i);
+        if (!conflict && !pin) {
+            continue;
+        }
+        bottom -= 112;
+        lv_obj_t *head = Label(content, &lv_font_montserrat_20);
+        lv_label_set_text_fmt(head, "%s: %s", settings::SyncStoreTitle(i),
+                              conflict ? "both changed" : "another PIN on the server's copy");
+        lv_obj_set_pos(head, 12, bottom + 8);
+        const int32_t w = (kRowWidth - 24 - 12) / 2;
+        lv_obj_t *keep = AskButton(content, w, "Keep mine");
+        lv_obj_set_pos(keep, 12, bottom + 40);
+        lv_obj_add_event_cb(keep, OnSyncTap, LV_EVENT_CLICKED,
+                            reinterpret_cast<void *>(static_cast<intptr_t>(settings::SyncTap(i, false))));
+        lv_obj_t *take = AskButton(content, w, conflict ? "Take server's" : "Type its PIN");
+        lv_obj_set_pos(take, 12 + w + 12, bottom + 40);
+        lv_obj_add_event_cb(take, OnSyncTap, LV_EVENT_CLICKED,
+                            reinterpret_cast<void *>(static_cast<intptr_t>(settings::SyncTap(i, true))));
     }
     char label[32];
     char value[64];
@@ -3254,28 +3299,79 @@ void OnStatusChoice(lv_event_t *event) {
     }
 }
 
-// Configure: how often the status goes, and the status now.
+// A row of the interval's choices, the one in use filled; a tap gives
+// `base` + its index.
+void ChoiceButtons(int32_t y, int in_use, int base) {
+    constexpr int32_t kGap = 8;
+    const int32_t w =
+        (kRowWidth - 24 - (settings::kStatusChoiceCount - 1) * kGap) / settings::kStatusChoiceCount;
+    for (uint8_t i = 0; i < settings::kStatusChoiceCount; ++i) {
+        const bool on = i == in_use;
+        lv_obj_t *b = lv_obj_create(content);
+        lv_obj_remove_style_all(b);
+        lv_obj_add_flag(b, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_set_size(b, w, 56);
+        lv_obj_set_pos(b, 12 + i * (w + kGap), y);
+        lv_obj_set_style_radius(b, 8, 0);
+        lv_obj_set_style_border_width(b, 2, 0);
+        lv_obj_set_style_border_color(b, lv_color_black(), 0);
+        lv_obj_set_style_bg_opa(b, LV_OPA_COVER, 0);
+        lv_obj_set_style_bg_color(b, on ? lv_color_black() : lv_color_white(), 0);
+        lv_obj_t *l = Label(b, &lv_font_montserrat_20);
+        lv_label_set_text(l, settings::kStatusChoices[i].short_label);
+        lv_obj_set_style_text_color(l, on ? lv_color_white() : lv_color_black(), 0);
+        lv_obj_center(l);
+        lv_obj_add_event_cb(b, OnStatusChoice, LV_EVENT_CLICKED,
+                            reinterpret_cast<void *>(static_cast<intptr_t>(base + i)));
+    }
+}
+
+uint8_t sync_minutes_shown = 0;
+
+// Configure: how often the status and the sync go, and the status now.
 void ShowServerConfig() {
     TitleBar("Configure");
-    const int in_use = settings::StatusChoiceIndex(status_minutes_shown);
     int32_t y = kTitleHeight;
-    lv_obj_t *head = Label(content, &lv_font_montserrat_20);
+    lv_obj_t *head = Label(content, &lv_font_montserrat_24);
     lv_label_set_text(head, "Status report");
     lv_obj_set_pos(head, 12, y + 12);
-    y += 44;
-    for (uint8_t i = 0; i < settings::kStatusChoiceCount; ++i, y += kNetRow) {
-        ChoiceRow(y, settings::kStatusChoices[i].label, nullptr, i == in_use, OnStatusChoice, i);
-    }
+    y += 48;
+    ChoiceButtons(y, settings::StatusChoiceIndex(status_minutes_shown), 0);
+    y += 64;
     lv_obj_t *note = Label(content, &lv_font_montserrat_20);
     lv_label_set_long_mode(note, LV_LABEL_LONG_MODE_WRAP);
     lv_obj_set_width(note, kRowWidth - 24);
     lv_label_set_text(note, "The device tells the server its state (firmware, battery, "
                             "radios): at the start or when Wi-Fi connects, then this often.");
-    lv_obj_set_pos(note, 12, y + 16);
+    lv_obj_set_pos(note, 12, y + 4);
+    y += 112;
+    head = Label(content, &lv_font_montserrat_24);
+    lv_label_set_text(head, "Sync");
+    lv_obj_set_pos(head, 12, y + 12);
+    y += 48;
+    ChoiceButtons(y, settings::StatusChoiceIndex(sync_minutes_shown), settings::kSyncChoiceBase);
+    y += 64;
+    note = Label(content, &lv_font_montserrat_20);
+    lv_label_set_long_mode(note, LV_LABEL_LONG_MODE_WRAP);
+    lv_obj_set_width(note, kRowWidth - 24);
+    lv_label_set_text(note, "The passwords and passkeys with the server's copy: at the start, "
+                            "after each change, then this often. Never: only Sync now.");
+    lv_obj_set_pos(note, 12, y + 4);
     lv_obj_t *b = AskButton(content, kRowWidth - 48,
                             settings::ActionText(settings::Action::kServerStatus));
     lv_obj_align(b, LV_ALIGN_BOTTOM_MID, 0, -16);
     lv_obj_add_event_cb(b, OnAction, LV_EVENT_CLICKED, nullptr);
+}
+
+// Sync > the PIN of the server's copy.
+uint8_t sync_pin_store = 0;
+
+void ShowServerSyncPin() {
+    lv_obj_t *kb = KeyboardPage("The copy's PIN", "PIN", "", true, 6,
+                                "The server's copy was written under another PIN (changed on "
+                                "another device). Its PIN: this device takes it. "
+                                LV_SYMBOL_OK ": take, " LV_SYMBOL_KEYBOARD ": back.");
+    lv_keyboard_set_mode(kb, LV_KEYBOARD_MODE_NUMBER);
 }
 
 void ShowServerEmail() {
@@ -3294,20 +3390,65 @@ bool PollServer() {
         server_config_tapped = false;
         if (page == settings::Page::kServer) {
             status_minutes_shown = server_hooks->status_minutes();
+            sync_minutes_shown = server_hooks->sync_minutes();
             changed |= nav_state.OpenSettings(static_cast<uint8_t>(settings::Page::kServerConfig));
         }
     }
+    if (server_sync_tapped) {
+        server_sync_tapped = false;
+        if (page == settings::Page::kServer) {
+            changed |= nav_state.OpenSettings(static_cast<uint8_t>(settings::Page::kServerSync));
+        }
+    }
     if (status_choice_tapped >= 0) {
-        const int i = status_choice_tapped;
+        const int tap = status_choice_tapped;
         status_choice_tapped = -1;
+        const bool sync = tap >= settings::kSyncChoiceBase;
+        const int i = sync ? tap - settings::kSyncChoiceBase : tap;
+        uint8_t &shown = sync ? sync_minutes_shown : status_minutes_shown;
         if (page == settings::Page::kServerConfig && i < settings::kStatusChoiceCount &&
-            settings::kStatusChoices[i].minutes != status_minutes_shown) {
-            Job job = MakeJob(JobKind::kServerStatusEvery);
+            settings::kStatusChoices[i].minutes != shown) {
+            Job job = MakeJob(sync ? JobKind::kServerSyncEvery : JobKind::kServerStatusEvery);
             job.id = settings::kStatusChoices[i].minutes;
             SendJob(job);
-            status_minutes_shown = settings::kStatusChoices[i].minutes;
-            changed = true;  // drawn again with the new check
+            shown = settings::kStatusChoices[i].minutes;
+            changed = true;  // drawn again with the new choice
         }
+    }
+    if (store_sync_tapped >= 0) {
+        const int tap = store_sync_tapped;
+        store_sync_tapped = -1;
+        const uint8_t store = static_cast<uint8_t>(tap / 2);
+        const bool take = tap % 2 == 1;
+        const uint8_t waits = server_hooks->sync_waits();
+        if (page == settings::Page::kServerSync && store < settings::kSyncStores) {
+            if (take && settings::SyncPinAsked(waits, store)) {
+                sync_pin_store = store;
+                changed |= nav_state.OpenSettings(static_cast<uint8_t>(settings::Page::kServerSyncPin));
+            } else {
+                Job job = MakeJob(JobKind::kServerResolve);
+                job.which = store;
+                job.flag = take;
+                SendJob(job);
+            }
+        }
+    }
+    if (page == settings::Page::kServerSyncPin) {
+        if (password_cancel) {
+            password_cancel = false;
+            changed |= nav_state.Back();
+        }
+        if (password_ready && password_area != nullptr) {
+            password_ready = false;
+            Job job = MakeJob(JobKind::kServerResolve);
+            job.which = sync_pin_store;
+            job.flag = true;
+            snprintf(job.password, sizeof job.password, "%s", lv_textarea_get_text(password_area));
+            lv_textarea_set_text(password_area, "");
+            SendAndWipe(job);
+            changed |= nav_state.Back();
+        }
+        return changed;
     }
     if (sheet_choice != 0 && page == settings::Page::kServer) {
         const int choice = sheet_choice;
@@ -3597,6 +3738,10 @@ void ShowSettings() {
     }
     if (server_hooks != nullptr && page == settings::Page::kServerConfig) {
         ShowServerConfig();
+        return;
+    }
+    if (server_hooks != nullptr && page == settings::Page::kServerSyncPin) {
+        ShowServerSyncPin();
         return;
     }
     if (settings_hooks == nullptr) {
@@ -3910,6 +4055,12 @@ void TypeTask(void *) {
                 case JobKind::kServerRegister: said = server_hooks->register_device(job.password); break;
                 case JobKind::kServerStatusEvery:
                     said = server_hooks->set_status_minutes(static_cast<uint8_t>(job.id));
+                    break;
+                case JobKind::kServerSyncEvery:
+                    said = server_hooks->set_sync_minutes(static_cast<uint8_t>(job.id));
+                    break;
+                case JobKind::kServerResolve:
+                    said = server_hooks->resolve(job.which, job.flag, job.password);
                     break;
                 case JobKind::kDisplaySet:
                     said = display_hooks->set(job.setting, static_cast<uint16_t>(job.id));
@@ -4246,6 +4397,7 @@ void Poll(lv_timer_t *) {
         settings_page != settings::Page::kWifiHidden &&
         settings_page != settings::Page::kServerEmail &&
         settings_page != settings::Page::kServerConfig &&
+        settings_page != settings::Page::kServerSyncPin &&
         lv_tick_elaps(settings_looked_at) >= kSettingsMs) {
         settings_looked_at = lv_tick_get();
         if (settings_page == settings::Page::kWifi && wifi_hooks != nullptr) {

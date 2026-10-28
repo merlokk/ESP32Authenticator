@@ -175,6 +175,16 @@ struct ServerHooks {
     // ui's own task.
     uint8_t (*status_minutes)();
     const char *(*set_status_minutes)(uint8_t minutes);
+    // Configure: the stores' sync interval (server.syncMinutes), as above.
+    uint8_t (*sync_minutes)();
+    const char *(*set_sync_minutes)(uint8_t minutes);
+    // The Sync row's value on the Server page ("in sync", "conflict"). ui task.
+    void (*sync_summary)(char *out, size_t size);
+    // Which stores wait for a person (settings::SyncConflict / SyncPinAsked). ui task.
+    uint8_t (*sync_waits)();
+    // A store that waits: this device's copy kept, or the server's taken
+    // (`pin`: its PIN, "" none). The ui's own task, saying what happened.
+    const char *(*resolve)(uint8_t store, bool take, const char *pin);
 };
 void SetServerHooks(const ServerHooks *hooks);
 

@@ -77,7 +77,7 @@ on this device again.
   the GCM associated data. A random nonce per write: never reused with the
   same key.
 - Rollback to an older valid file is not detected by GCM: the header's
-  version is checked against the highest one kept in NVS (both stores). Sync: the later modification time wins (x4-design.md).
+  version is checked against the highest one kept in NVS (both stores). Sync: by version, a conflict resolved by hand (architecture.md: Server).
 
 ## Speed
 

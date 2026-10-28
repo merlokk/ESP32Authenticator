@@ -63,6 +63,16 @@ ctap_storage_status_t ctap_file_storage_stage(const ctap_storage_t *storage);
 ctap_storage_status_t ctap_file_storage_commit(const ctap_storage_t *storage);
 void ctap_file_storage_unstage(const ctap_storage_t *storage);
 
+// The sync: `from` (a store file the vault checked) over the file, the RAM
+// log untouched (init loads it next); `force`: its version set in NVS as it
+// is, also below the kept one (another store taken).
+ctap_storage_status_t ctap_file_storage_install_copy(const ctap_storage_t *storage,
+                                                    const char *from, bool force);
+// The file written again from the RAM log with a version of at least
+// `min_version` ("keep this device's copy" over the server's).
+ctap_storage_status_t ctap_file_storage_rewrite(const ctap_storage_t *storage,
+                                               uint32_t min_version);
+
 // The wipe: the RAM log, the file, its .tmp and the kept version gone (the
 // next init starts empty). The "was encrypted" mark stays.
 void ctap_file_storage_forget(const ctap_storage_t *storage);

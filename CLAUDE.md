@@ -59,7 +59,10 @@ the vault is locked, GT911 touch as the pointer, `ui`); power-off
   POSTed to `https://<host>/register`, the `clientId` kept; refusals by their
   Problem Details `type`; sign-in by a client assertion to `/connect/token`;
   `POST /api/device/status` once Wi-Fi is up, then every
-  `server.statusMinutes`, set on Server > Configure), console `server`.
+  `server.statusMinutes`, set on Server > Configure; `vault.bin` and
+  `fido.bin` synced by their headers: on each change and every
+  `server.syncMinutes`, a conflict or another PIN resolved on Server > Sync,
+  the sync icon in the status bar), console `server`.
   PIN lockout (10 tries, `pin.lockMinutes`) and a wipe PIN (`pin wipe set`).
   LionKey fork (`merlokk/lionkey`, branch `esp32auth`): CTAP 2.3 (FIDO_2_3),
   U2F (BLE and USB), EdDSA, authenticatorConfig, minPinLength, PIN complexity,
@@ -69,7 +72,7 @@ the vault is locked, GT911 touch as the pointer, `ui`); power-off
   site (Device > Firmware update) or `/sdcard/firmware.bin` (button, `ota
   sd confirm`), checked while streaming (`image_check.h`), trial boot
   confirmed after 30 s, else rolled back.
-- Not yet: eFuse-bound key, sync over Wi-Fi.
+- Not yet: eFuse-bound key; the sync of another seed phrase's stores.
 
 ## Architecture
 

@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include <sys/stat.h>
 
 #include "crypto.h"
 #include "esp_crt_bundle.h"
@@ -17,8 +18,10 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
+#include "nvs.h"
 #include "psa/crypto.h"
 #include "rng.h"
+#include "store_header.h"
 
 namespace server {
 
@@ -54,14 +57,19 @@ int64_t access_until = 0;  // monotonic seconds
 int64_t status_tried = -1;
 int64_t status_sent = -1;
 
-enum class Kind : uint8_t { kCheck, kRegister, kStatus };
+enum class Kind : uint8_t { kCheck, kRegister, kStatus, kSync, kResolve };
 
 struct Job {
     Kind kind;
     char host[kHostSize];
     char email[kEmailSize];
     Report report;  // kStatus; its texts static
+    sync::Store store;  // kResolve
+    Choice choice;
+    char pin[8];        // kResolve: the server's copy's PIN, "" none (wiped after)
 };
+
+const Hooks *hooks = nullptr;  // StartSchedule
 
 void Wipe(void *p, size_t n) {
     volatile auto *b = static_cast<volatile uint8_t *>(p);
@@ -180,21 +188,33 @@ void Mac(char out[18]) {
 
 esp_err_t last_error = ESP_OK;  // the last request's, for what to say
 
-// What came back, kept up to its size (the rest is dropped).
+// What came back, kept up to its size (the rest is dropped); or written to
+// `file` (a store's copy), up to kMaxCopy.
 struct Body {
     char *data;
     size_t size;
     size_t length;
+    FILE *file = nullptr;
+    bool failed = false;  // `file`: not written, or too long
 };
+
+constexpr size_t kMaxCopy = sync::kMaxFileBytes;
 
 esp_err_t OnEvent(esp_http_client_event_t *e) {
     auto *b = static_cast<Body *>(e->user_data);
-    if (e->event_id == HTTP_EVENT_ON_DATA && b != nullptr && e->data_len > 0) {
-        const size_t room = b->size - b->length;
-        const size_t n = static_cast<size_t>(e->data_len) < room ? e->data_len : room;
-        memcpy(b->data + b->length, e->data, n);
-        b->length += n;
+    if (e->event_id != HTTP_EVENT_ON_DATA || b == nullptr || e->data_len <= 0) {
+        return ESP_OK;
     }
+    const size_t len = static_cast<size_t>(e->data_len);
+    if (b->file != nullptr) {
+        b->length += len;
+        b->failed |= b->length > kMaxCopy || fwrite(e->data, 1, len, b->file) != len;
+        return ESP_OK;
+    }
+    const size_t room = b->size - b->length;
+    const size_t n = len < room ? len : room;
+    memcpy(b->data + b->length, e->data, n);
+    b->length += n;
     return ESP_OK;
 }
 
@@ -469,6 +489,30 @@ bool SignIn(const char *host, Body &answer, char *said, size_t size) {
     return true;
 }
 
+bool Fresh() {
+    Locked l;
+    return access != nullptr && access[0] != '\0' && Uptime() < access_until - kTokenMargin;
+}
+
+// `call` with the access token, signed in first when it is out (`answer` is
+// the sign-in's buffer); a 401 signs in again once. -2: no sign-in (`said`
+// says why).
+int SignedCall(Call call, const char *host, Body &answer, char *said, size_t size) {
+    int code = 401;
+    for (int attempt = 0; attempt < 2 && code == 401; ++attempt) {
+        if (!Fresh() && !SignIn(host, answer, said, size)) {
+            return -2;
+        }
+        call.bearer = access;  // the job task alone writes it
+        code = Request(call);
+        Answered(code);
+        if (code == 401) {
+            DropToken();  // expired or revoked: once more, signed in again
+        }
+    }
+    return code;
+}
+
 // POST /api/device/status (signed in first when the token is out); a 401
 // signs in again once. The answer: the server's clock and the update.
 void SendStatus(const Job &r, Body &answer) {
@@ -482,29 +526,14 @@ void SendStatus(const Job &r, Body &answer) {
     char said[sizeof status.said] = "";
     bool ok = body_len != 0 && Url(r.host, "/api/device/status", url, sizeof url);
     int code = -1;
-    for (int attempt = 0; ok && attempt < 2; ++attempt) {
-        bool fresh;
-        {
-            Locked l;
-            fresh = access != nullptr && access[0] != '\0' &&
-                    Uptime() < access_until - kTokenMargin;
-        }
-        if (!fresh && !SignIn(r.host, answer, said, sizeof said)) {
-            ok = false;
-            break;
-        }
+    if (ok) {
         Call call = {url};
         call.type = "application/json";
         call.body = body;
         call.body_len = body_len;
-        call.bearer = access;  // the job task alone writes it
         call.answer = &answer;
-        code = Request(call);
-        Answered(code);
-        if (code != 401) {
-            break;
-        }
-        DropToken();  // expired or revoked: once more, signed in again
+        code = SignedCall(call, r.host, answer, said, sizeof said);
+        ok = code != -2;
     }
     const int64_t now = time(nullptr);
     char update[kVersionSize] = "";
@@ -563,6 +592,524 @@ void Check(const Job &r, Body &answer) {
              static_cast<long long>(status.offset));
 }
 
+// --- The stores' sync (sync_logic.h) -----------------------------------------------
+
+constexpr const char *kSyncNvs = "srvsync";  // "s0", "s1": the synced copies
+constexpr size_t kSyncUrlSize = 8 + kHostSize + 80;
+
+// Under lock.
+sync::Copy synced[sync::kStores] = {};
+// The server's side of a store that waits for a person.
+struct Waiting {
+    sync::Copy server;
+    bool other_store;
+};
+Waiting waiting[sync::kStores] = {};
+int64_t sync_tried = -1;  // monotonic seconds, -1: none
+int64_t sync_done = -1;
+uint32_t seen_version[sync::kStores] = {};
+bool seen_open = false;
+
+size_t Index(sync::Store s) { return static_cast<size_t>(s); }
+
+void LoadSynced() {
+    nvs_handle_t h;
+    if (nvs_open(kSyncNvs, NVS_READONLY, &h) != ESP_OK) {
+        return;
+    }
+    for (size_t i = 0; i < sync::kStores; ++i) {
+        const char key[3] = {'s', static_cast<char>('0' + i), '\0'};
+        uint8_t bytes[sync::kSyncedSize];
+        size_t n = sizeof bytes;
+        if (nvs_get_blob(h, key, bytes, &n) == ESP_OK && n == sizeof bytes) {
+            Locked l;
+            synced[i] = sync::DecodeSynced(bytes);
+        }
+    }
+    nvs_close(h);
+}
+
+// The write both sides have now.
+void SaveSynced(sync::Store s, const sync::Copy &c) {
+    const size_t i = Index(s);
+    {
+        Locked l;
+        if (sync::SameWrite(synced[i], c)) {
+            return;
+        }
+        synced[i] = c;
+    }
+    uint8_t bytes[sync::kSyncedSize];
+    sync::EncodeSynced(c, bytes);
+    const char key[3] = {'s', static_cast<char>('0' + i), '\0'};
+    nvs_handle_t h;
+    esp_err_t err = nvs_open(kSyncNvs, NVS_READWRITE, &h);
+    if (err == ESP_OK) {
+        err = nvs_set_blob(h, key, bytes, sizeof bytes);
+        if (err == ESP_OK) {
+            err = nvs_commit(h);
+        }
+        nvs_close(h);
+    }
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "sync: the synced copy not kept: %s", esp_err_to_name(err));
+    }
+}
+
+// Our file's header: the copy, its seed id and the file's size. False: no
+// file here, or not an encrypted store.
+bool ReadLocal(sync::Store s, sync::Copy *out, uint8_t seed_id[sync::kSeedIdSize],
+               size_t *size) {
+    *out = sync::Copy();
+    const char *path = hooks->store_path(s);
+    struct stat st;
+    if (path == nullptr || stat(path, &st) != 0) {
+        return false;
+    }
+    FILE *f = fopen(path, "rb");
+    if (f == nullptr) {
+        return false;
+    }
+    uint8_t head[storefile::kHeaderSize];
+    const size_t got = fread(head, 1, sizeof head, f);
+    fclose(f);
+    storefile::Header h;
+    if (!storefile::Decode(head, got, static_cast<size_t>(st.st_size),
+                           static_cast<storefile::Kind>(sync::KindOf(s)), &h) ||
+        h.cipher != storefile::Cipher::kAesGcm) {
+        return false;
+    }
+    out->has = true;
+    memcpy(out->store_id, h.store_id, sizeof out->store_id);
+    out->version = h.version;
+    memcpy(out->nonce, h.nonce, sizeof out->nonce);
+    memcpy(seed_id, h.seed_id, sync::kSeedIdSize);
+    *size = static_cast<size_t>(st.st_size);
+    return true;
+}
+
+void SetStore(sync::Store s, sync::Phase phase, uint32_t local, uint32_t server = 0,
+              bool other = false, const char *at = "") {
+    Locked l;
+    StoreStatus &t = status.stores[Index(s)];
+    t.phase = phase;
+    t.local_version = local;
+    t.server_version = server;
+    t.other_store = other;
+    snprintf(t.server_at, sizeof t.server_at, "%s", at);
+}
+
+void SetWaiting(sync::Store s, const sync::Copy &server, bool other) {
+    Locked l;
+    waiting[Index(s)] = {server, other};
+}
+
+enum class Outcome : uint8_t { kInSync, kUploaded, kTaken, kWaits, kFailed };
+
+// POST /api/device/stores/files: our file as it is (read whole into PSRAM,
+// up to 256 KB). 200 kept; 409 not newer (`*theirs` the server's version).
+int Upload(const char *host, const char *path, size_t size, Body &answer, char *said,
+           size_t said_size, uint32_t *theirs) {
+    if (size > sync::kMaxFileBytes) {
+        snprintf(said, said_size, "too large for the server");
+        return -3;
+    }
+    char *data = static_cast<char *>(Psram(size));
+    FILE *f = data != nullptr ? fopen(path, "rb") : nullptr;
+    const bool read = f != nullptr && fread(data, 1, size, f) == size;
+    if (f != nullptr) {
+        fclose(f);
+    }
+    char url[kSyncUrlSize];
+    if (!read || !Url(host, "/api/device/stores/files", url, sizeof url)) {
+        free(data);
+        snprintf(said, said_size, "cannot read the store file");
+        return -3;
+    }
+    Call call = {url};
+    call.type = "application/octet-stream";
+    call.body = data;
+    call.body_len = size;
+    call.answer = &answer;
+    const int code = SignedCall(call, host, answer, said, said_size);
+    free(data);
+    if (code == 409) {
+        int64_t v = 0;
+        GetNumber(answer.data, answer.length, "version", &v);
+        *theirs = static_cast<uint32_t>(v);
+    } else if (code != 200 && code != -2) {
+        SayFailed(code, answer, said, said_size);
+    }
+    return code;
+}
+
+// GET the server's copy into `to`: 200 there; 204 nothing above `above`;
+// else `to` removed. A 401 signs in again once.
+int Download(const char *host, const uint8_t store_id[sync::kStoreIdSize],
+             const uint8_t seed_id[sync::kSeedIdSize], uint8_t kind, uint32_t above,
+             const char *to, Body &answer, char *said, size_t size) {
+    char url[kSyncUrlSize];
+    if (!sync::DownloadUrl(host, store_id, seed_id, kind, above, url, sizeof url)) {
+        snprintf(said, size, "the host is too long");
+        return -3;
+    }
+    int code = -1;
+    for (int attempt = 0; attempt < 2; ++attempt) {
+        if (!Fresh() && !SignIn(host, answer, said, size)) {
+            code = -2;
+            break;
+        }
+        FILE *f = fopen(to, "wb");
+        if (f == nullptr) {
+            snprintf(said, size, "cannot write the copy");
+            code = -3;
+            break;
+        }
+        Body file = {nullptr, 0, 0};
+        file.file = f;
+        Call call = {url};
+        call.bearer = access;
+        call.answer = &file;
+        code = Request(call);
+        Answered(code);
+        const bool written = fclose(f) == 0 && !file.failed;
+        if (code == 200 && !written) {
+            snprintf(said, size, "cannot write the copy (or over %u KB)",
+                     static_cast<unsigned>(kMaxCopy / 1024));
+            code = -3;
+        }
+        if (code != 401) {
+            break;
+        }
+        DropToken();
+    }
+    if (code != 200) {
+        remove(to);
+    }
+    if (code == -1) {
+        SayFailed(code, answer, said, size);
+    } else if (code > 0 && code != 200 && code != 204) {
+        snprintf(said, size, "download: HTTP %d", code);
+    }
+    return code;
+}
+
+// Our copy up; 200: the synced one.
+Outcome Send(const char *host, sync::Store s, const sync::Copy &local, size_t size, Body &answer,
+             char *said, size_t said_size) {
+    uint32_t theirs = 0;
+    const int code = Upload(host, hooks->store_path(s), size, answer, said, said_size, &theirs);
+    if (code == 200) {
+        SaveSynced(s, local);
+        SetStore(s, sync::Phase::kInSync, local.version);
+        return Outcome::kUploaded;
+    }
+    if (code == 409) {
+        // Another device got there first.
+        sync::Copy was;
+        {
+            Locked l;
+            was = synced[Index(s)];
+        }
+        if (sync::SameWrite(local, was)) {
+            snprintf(said, said_size, "the server has a newer copy: again in a minute");
+            SetStore(s, sync::Phase::kFailed, local.version);
+            return Outcome::kFailed;
+        }
+        sync::Copy server = local;
+        server.version = theirs;
+        memset(server.nonce, 0, sizeof server.nonce);
+        SetWaiting(s, server, false);
+        SetStore(s, sync::Phase::kConflict, local.version, theirs);
+        return Outcome::kWaits;
+    }
+    SetStore(s, sync::Phase::kFailed, local.version);
+    return Outcome::kFailed;
+}
+
+// The server's copy of `store_id` down (above `above`) and taken (`force`:
+// any version); `server` / `other`: what a PIN asked for waits with.
+Outcome Take(const char *host, sync::Store s, const sync::Copy &local,
+             const uint8_t seed_id[sync::kSeedIdSize], const sync::Copy &server, bool other,
+             uint32_t above, bool force, const char *pin, Body &answer, char *said,
+             size_t said_size) {
+    char dl[kPathSize + 32];
+    snprintf(dl, sizeof dl, "%s.dl", hooks->store_path(s));
+    const int code =
+        Download(host, server.store_id, seed_id, sync::KindOf(s), above, dl, answer, said, said_size);
+    if (code == 204) {
+        snprintf(said, said_size, "no newer copy on the server");
+    }
+    if (code != 200) {
+        SetStore(s, sync::Phase::kFailed, local.version, server.version, other);
+        return Outcome::kFailed;
+    }
+    const Taken t = hooks->take(s, dl, server.store_id, force, pin, said, said_size);
+    remove(dl);
+    if (t == Taken::kOk) {
+        sync::Copy now;
+        uint8_t seed[sync::kSeedIdSize];
+        size_t size = 0;
+        if (ReadLocal(s, &now, seed, &size)) {
+            SaveSynced(s, now);
+        }
+        SetWaiting(s, sync::Copy(), false);
+        SetStore(s, sync::Phase::kInSync, now.version);
+        return Outcome::kTaken;
+    }
+    if (t == Taken::kNeedPin || t == Taken::kWrongPin) {
+        SetWaiting(s, server, other);
+        SetStore(s, sync::Phase::kNeedPin, local.version, server.version, other);
+        if (t == Taken::kNeedPin) {
+            snprintf(said, said_size, "the server's %s: type its PIN", sync::StoreName(s));
+        }
+        return Outcome::kWaits;
+    }
+    if (t == Taken::kLocked) {
+        SetStore(s, sync::Phase::kNewer, local.version, server.version, other);
+        return Outcome::kWaits;
+    }
+    SetStore(s, sync::Phase::kFailed, local.version, server.version, other);
+    return Outcome::kFailed;
+}
+
+// One store after heads: what Decide says, carried out.
+Outcome SyncOne(const char *host, sync::Store s, const sync::Copy &local,
+                const uint8_t seed_id[sync::kSeedIdSize], size_t size, const sync::Copy &server,
+                bool open, Body &answer, char *said, size_t said_size) {
+    sync::Copy was;
+    {
+        Locked l;
+        was = synced[Index(s)];
+    }
+    const bool empty = open && hooks->empty(s);
+    sync::Step step = sync::Decide(local, was, server, empty);
+    sync::Candidate cand;
+    if (step == sync::Step::kLook) {
+        char url[kSyncUrlSize];
+        Call call = {url};
+        call.answer = &answer;
+        const int code = sync::StoresUrl(host, seed_id, url, sizeof url)
+                             ? SignedCall(call, host, answer, said, said_size)
+                             : -3;
+        const int found = code == 200 ? sync::ParseStores(answer.data, answer.length,
+                                                          sync::KindOf(s), local.store_id, &cand)
+                                      : -1;
+        if (found < 0) {
+            if (code == 200) {
+                snprintf(said, said_size, "stores: not the server's answer");
+            } else if (code > 0 || code == -1) {
+                SayFailed(code, answer, said, said_size);
+            }
+            SetStore(s, sync::Phase::kFailed, local.version);
+            return Outcome::kFailed;
+        }
+        if (found > 0 && !open) {
+            // Ours may be empty: known once the PIN is in.
+            SetStore(s, sync::Phase::kNewer, local.version, cand.copy.version, true, cand.at);
+            return Outcome::kWaits;
+        }
+        step = sync::AfterLook(empty, static_cast<size_t>(found));
+        if (step == sync::Step::kConflict) {
+            SetWaiting(s, cand.copy, true);
+            SetStore(s, sync::Phase::kConflict, local.version, cand.copy.version, true, cand.at);
+            return Outcome::kWaits;
+        }
+    }
+    switch (step) {
+        case sync::Step::kNothing:
+        case sync::Step::kLook:
+            SetStore(s, sync::Phase::kInSync, local.version);
+            return Outcome::kInSync;
+        case sync::Step::kRecord:
+            SaveSynced(s, local);
+            SetStore(s, sync::Phase::kInSync, local.version);
+            return Outcome::kInSync;
+        case sync::Step::kUpload:
+            return Send(host, s, local, size, answer, said, said_size);
+        case sync::Step::kDownload:
+            if (!open) {
+                SetStore(s, sync::Phase::kNewer, local.version, server.version);
+                return Outcome::kWaits;
+            }
+            return Take(host, s, local, seed_id, server, false, local.version, false, nullptr,
+                        answer, said, said_size);
+        case sync::Step::kAdopt:
+            return Take(host, s, local, seed_id, cand.copy, true, 0, true, nullptr, answer, said,
+                        said_size);
+        case sync::Step::kConflict:
+            SetWaiting(s, server, false);
+            SetStore(s, sync::Phase::kConflict, local.version, server.version);
+            return Outcome::kWaits;
+    }
+    return Outcome::kFailed;
+}
+
+void SyncSaid(const char *text, bool done) {
+    Locked l;
+    snprintf(status.sync_said, sizeof status.sync_said, "%s", text);
+    if (done) {
+        sync_done = sync_tried;
+        status.synced_at = time(nullptr);
+    }
+}
+
+// What a sync of several stores says.
+void SayOutcomes(const Outcome *o, size_t n, const char *failed) {
+    unsigned up = 0;
+    unsigned down = 0;
+    bool waits = false;
+    bool bad = false;
+    for (size_t i = 0; i < n; ++i) {
+        up += o[i] == Outcome::kUploaded;
+        down += o[i] == Outcome::kTaken;
+        waits |= o[i] == Outcome::kWaits;
+        bad |= o[i] == Outcome::kFailed;
+    }
+    char text[sizeof status.sync_said];
+    if (bad) {
+        snprintf(text, sizeof text, "%s", failed[0] != '\0' ? failed : "failed");
+    } else if (waits) {
+        snprintf(text, sizeof text, "%s", failed[0] != '\0' ? failed : "waits: see Sync");
+    } else if (up + down == 0) {
+        snprintf(text, sizeof text, "in sync");
+    } else {
+        snprintf(text, sizeof text, "sent %u, took %u", up, down);
+    }
+    SyncSaid(text, !bad);
+}
+
+// heads for our stores, then each one as Decide says.
+void Sync(const Job &r, Body &answer) {
+    sync::Copy local[sync::kStores];
+    uint8_t seed[sync::kStores][sync::kSeedIdSize] = {};
+    size_t size[sync::kStores] = {};
+    sync::Entry entries[sync::kStores] = {};
+    size_t count = 0;
+    const bool open = hooks->open();
+    for (const sync::Store s : sync::kAll) {
+        const size_t i = Index(s);
+        if (!ReadLocal(s, &local[i], seed[i], &size[i])) {
+            SetStore(s, sync::Phase::kNone, 0);
+            continue;
+        }
+        memcpy(entries[count].store_id, local[i].store_id, sync::kStoreIdSize);
+        memcpy(entries[count].seed_id, seed[i], sync::kSeedIdSize);
+        entries[count].kind = sync::KindOf(s);
+        ++count;
+    }
+    if (count == 0) {
+        SyncSaid("no stores here", true);
+        return;
+    }
+    char said[sizeof status.sync_said] = "";
+    char body[sync::kHeadsBodySize];
+    char url[kSyncUrlSize];
+    const size_t body_len = sync::HeadsBody(entries, count, body, sizeof body);
+    int code = -3;
+    if (body_len != 0 && Url(r.host, "/api/device/stores/heads", url, sizeof url)) {
+        Call call = {url};
+        call.type = "application/json";
+        call.body = body;
+        call.body_len = body_len;
+        call.answer = &answer;
+        code = SignedCall(call, r.host, answer, said, sizeof said);
+    }
+    // Every head first: the stores' requests reuse the answer's buffer.
+    sync::Copy server[sync::kStores];
+    bool named[sync::kStores] = {};
+    for (const sync::Store s : sync::kAll) {
+        const size_t i = Index(s);
+        named[i] = code == 200 && local[i].has &&
+                   sync::ParseHeads(answer.data, answer.length, local[i].store_id,
+                                    sync::KindOf(s), &server[i]);
+    }
+    if (code != 200) {
+        if (code > 0 || code == -1) {
+            SayFailed(code, answer, said, sizeof said);
+        }
+        SyncSaid(said[0] != '\0' ? said : "heads failed", false);
+        ESP_LOGI(TAG, "sync: heads %d", code);
+        return;
+    }
+    Outcome o[sync::kStores];
+    size_t n = 0;
+    for (const sync::Store s : sync::kAll) {
+        const size_t i = Index(s);
+        if (!local[i].has) {
+            continue;
+        }
+        if (!named[i]) {
+            snprintf(said, sizeof said, "heads: not the server's answer");
+            SetStore(s, sync::Phase::kFailed, local[i].version);
+            o[n++] = Outcome::kFailed;
+            continue;
+        }
+        char one[sizeof said - 12] = "";  // room for the store's name
+        o[n] = SyncOne(r.host, s, local[i], seed[i], size[i], server[i], open, answer, one,
+                       sizeof one);
+        if (one[0] != '\0' && (o[n] == Outcome::kFailed || said[0] == '\0')) {
+            snprintf(said, sizeof said, "%s: %s", sync::StoreName(s), one);
+        }
+        ESP_LOGI(TAG, "sync %s: v%u, outcome %d", sync::StoreName(s),
+                 static_cast<unsigned>(local[i].version), static_cast<int>(o[n]));
+        ++n;
+    }
+    SayOutcomes(o, n, said);
+    // What this sync did here is no change to sync again.
+    Locked l;
+    for (const sync::Store s : sync::kAll) {
+        seen_version[Index(s)] = hooks->store_version(s);
+    }
+}
+
+// A store that waits for a person: this device's copy, or the server's.
+void Resolve(const Job &r, Body &answer) {
+    const sync::Store s = r.store;
+    const size_t i = Index(s);
+    Waiting w;
+    sync::Phase phase;
+    {
+        Locked l;
+        w = waiting[i];
+        phase = status.stores[i].phase;
+    }
+    sync::Copy local;
+    uint8_t seed[sync::kSeedIdSize];
+    size_t size = 0;
+    if (!sync::ByHand(phase) || !w.server.has || !ReadLocal(s, &local, seed, &size)) {
+        SyncSaid("nothing waits", false);
+        return;
+    }
+    char said[sizeof status.sync_said - 12] = "";  // room for the store's name
+    Outcome o = Outcome::kFailed;
+    if (r.choice == Choice::kKeepMine) {
+        // Another store of the account: ours goes up beside it. Ours: above
+        // the server's version, so it wins.
+        const bool ok = w.other_store ||
+                        (hooks->rewrite(s, sync::KeepVersion(w.server.version)) == ESP_OK &&
+                         ReadLocal(s, &local, seed, &size));
+        if (!ok) {
+            snprintf(said, sizeof said, "cannot write our copy: unlock?");
+        } else {
+            o = Send(r.host, s, local, size, answer, said, sizeof said);
+        }
+    } else {
+        // Taken by hand: also a version not above ours.
+        const bool force = w.other_store || w.server.version <= local.version;
+        o = Take(r.host, s, local, seed, w.server, w.other_store, force ? 0 : local.version,
+                 force, r.pin[0] != '\0' ? r.pin : nullptr, answer, said, sizeof said);
+    }
+    char text[sizeof status.sync_said];
+    snprintf(text, sizeof text, "%s: %s", sync::StoreName(s),
+             said[0] != '\0'               ? said
+             : o == Outcome::kUploaded     ? "this device's copy sent"
+             : o == Outcome::kTaken        ? "the server's copy taken"
+                                           : "waits");
+    SyncSaid(text, o == Outcome::kUploaded || o == Outcome::kTaken);
+    ESP_LOGI(TAG, "sync %s resolved: outcome %d", sync::StoreName(s), static_cast<int>(o));
+}
+
 void Task(void *arg) {
     auto *r = static_cast<Job *>(arg);
     Body answer = {static_cast<char *>(Psram(kAnswerSize)), kAnswerSize, 0};
@@ -572,6 +1119,10 @@ void Task(void *arg) {
         Register(*r, answer);
     } else if (r->kind == Kind::kStatus) {
         SendStatus(*r, answer);
+    } else if (r->kind == Kind::kSync) {
+        Sync(*r, answer);
+    } else if (r->kind == Kind::kResolve) {
+        Resolve(*r, answer);
     } else {
         Check(*r, answer);
     }
@@ -588,7 +1139,9 @@ void Task(void *arg) {
     vTaskDelete(nullptr);
 }
 
-esp_err_t Start(Kind kind, const char *host, const char *email, const Report *report) {
+esp_err_t Start(Kind kind, const char *host, const char *email, const Report *report,
+                sync::Store store = sync::Store::kVault, Choice choice = Choice::kKeepMine,
+                const char *pin = nullptr) {
     if (lock == nullptr) {
         return ESP_ERR_INVALID_STATE;
     }
@@ -602,14 +1155,21 @@ esp_err_t Start(Kind kind, const char *host, const char *email, const Report *re
         if (status.busy) {
             return ESP_ERR_INVALID_STATE;
         }
-        if (kind == Kind::kStatus && !(state.registered && state.client_id[0] != '\0')) {
+        const bool signed_in = kind == Kind::kStatus || kind == Kind::kSync || kind == Kind::kResolve;
+        if (signed_in && !(state.registered && state.client_id[0] != '\0')) {
             return ESP_ERR_NOT_FOUND;
         }
         status.busy = true;
         if (kind == Kind::kStatus) {
             status_tried = Uptime();
         }
-        if (kind != Kind::kStatus || !refused) {
+        if (kind == Kind::kSync || kind == Kind::kResolve) {
+            if (kind == Kind::kSync) {
+                sync_tried = Uptime();
+            }
+            snprintf(status.sync_said, sizeof status.sync_said, "%s",
+                     kind == Kind::kSync ? "syncing..." : "resolving...");
+        } else if (kind != Kind::kStatus || !refused) {
             snprintf(status.said, sizeof status.said, "%s",
                      registering ? "registering..." : kind == Kind::kStatus ? "sending the status..."
                                                                             : "connecting...");
@@ -625,6 +1185,9 @@ esp_err_t Start(Kind kind, const char *host, const char *email, const Report *re
         if (report != nullptr) {
             r->report = *report;
         }
+        r->store = store;
+        r->choice = choice;
+        snprintf(r->pin, sizeof r->pin, "%s", pin != nullptr ? pin : "");
     }
     if (r == nullptr || xTaskCreate(Task, "server", kTaskStack, r, 4, nullptr) != pdPASS) {
         free(r);
@@ -638,7 +1201,6 @@ esp_err_t Start(Kind kind, const char *host, const char *email, const Report *re
 
 // --- The schedule ---------------------------------------------------------------
 
-const Hooks *hooks = nullptr;
 StaticTask_t scheduler_task;
 StackType_t scheduler_stack[kSchedulerStack / sizeof(StackType_t)];
 
@@ -657,6 +1219,39 @@ void Scheduler(void *) {
         const bool ready = registered && hooks->ready();
         if (StatusDue(ready, hooks->status_minutes(), Uptime(), tried, sent)) {
             StartStatus();
+            continue;  // one request at a time: the sync next look
+        }
+        // The sync: a change here shows on its store's line at once, and
+        // starts one (so does the PIN coming in).
+        uint32_t version[sync::kStores];
+        for (const sync::Store s : sync::kAll) {
+            version[Index(s)] = hooks->store_version(s);
+        }
+        const bool open = hooks->open();
+        bool changed = open && !seen_open;
+        bool by_hand = false;
+        int64_t sync_tried_now;
+        int64_t sync_done_now;
+        {
+            Locked l;
+            for (size_t i = 0; i < sync::kStores; ++i) {
+                StoreStatus &t = status.stores[i];
+                changed |= version[i] != 0 && version[i] != seen_version[i];
+                if (version[i] != 0 &&
+                    (t.phase == sync::Phase::kInSync || t.phase == sync::Phase::kNone)) {
+                    t.phase = synced[i].has && synced[i].version == version[i]
+                                  ? sync::Phase::kInSync
+                                  : sync::Phase::kChanged;
+                    t.local_version = version[i];
+                }
+                by_hand |= sync::ByHand(t.phase);
+            }
+            sync_tried_now = sync_tried;
+            sync_done_now = sync_done;
+        }
+        if (sync::SyncDue(ready, hooks->sync_minutes(), by_hand, changed, Uptime(),
+                          sync_tried_now, sync_done_now)) {
+            StartSync();
         }
     }
 }
@@ -703,6 +1298,16 @@ void StartSchedule(const Hooks *h) {
         return;
     }
     hooks = h;
+    LoadSynced();
+    // A download cut short (a power loss) is no copy.
+    for (const sync::Store s : sync::kAll) {
+        const char *p = hooks->store_path(s);
+        if (p != nullptr) {
+            char dl[kPathSize + 32];
+            snprintf(dl, sizeof dl, "%s.dl", p);
+            remove(dl);
+        }
+    }
     xTaskCreateStatic(Scheduler, "server_due", kSchedulerStack / sizeof(StackType_t), nullptr, 2,
                       scheduler_stack, &scheduler_task);
 }
@@ -715,6 +1320,12 @@ Status Get() {
     Status s = status;
     const int64_t left = access_until - Uptime();
     s.token_left = access != nullptr && access[0] != '\0' && left > 0 ? left : 0;
+    sync::Phase phases[sync::kStores];
+    for (size_t i = 0; i < sync::kStores; ++i) {
+        phases[i] = s.stores[i].phase;
+    }
+    s.icon = sync::IconOf(hooks != nullptr, state.registered && state.client_id[0] != '\0',
+                          phases);
     return s;
 }
 
@@ -751,6 +1362,41 @@ esp_err_t StartStatus() {
     Report report = {};
     hooks->report(&report);
     return Start(Kind::kStatus, host, nullptr, &report);
+}
+
+esp_err_t StartSync() {
+    if (hooks == nullptr) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    char host[kHostSize];
+    hooks->host(host, sizeof host);
+    uint32_t version[sync::kStores];
+    for (const sync::Store s : sync::kAll) {
+        version[static_cast<size_t>(s)] = hooks->store_version(s);
+    }
+    const bool open = hooks->open();
+    const esp_err_t err = Start(Kind::kSync, host, nullptr, nullptr);
+    if (err == ESP_OK) {
+        Locked l;
+        memcpy(seen_version, version, sizeof seen_version);
+        seen_open = open;
+    }
+    return err;
+}
+
+esp_err_t StartResolve(sync::Store store, Choice choice, const char *pin) {
+    if (hooks == nullptr) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    {
+        Locked l;
+        if (!sync::ByHand(status.stores[static_cast<size_t>(store)].phase)) {
+            return ESP_ERR_INVALID_STATE;
+        }
+    }
+    char host[kHostSize];
+    hooks->host(host, sizeof host);
+    return Start(Kind::kResolve, host, nullptr, nullptr, store, choice, pin);
 }
 
 bool PublicKey(char *out, size_t size) {

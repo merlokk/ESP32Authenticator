@@ -134,6 +134,39 @@ void CheckTask(void *) {
     vTaskDelete(nullptr);
 }
 
+// The check's task, made when the PIN is complete. While the internal RAM is
+// short (a sync's TLS session takes most of it for a few seconds) it is
+// tried again every kRetryMs, kRetries times, the PIN kept meanwhile.
+constexpr uint32_t kRetryMs = 500;
+constexpr uint8_t kRetries = 40;
+lv_timer_t *retry = nullptr;
+uint8_t retries = 0;
+
+bool StartCheck() {
+    return xTaskCreate(&CheckTask, "pin_check", kCheckStackBytes, nullptr, 2, nullptr) == pdPASS;
+}
+
+void OnRetry(lv_timer_t *timer) {
+    if (StartCheck()) {
+        lv_timer_delete(timer);
+        retry = nullptr;
+        return;
+    }
+    if (++retries < kRetries) {
+        return;
+    }
+    lv_timer_delete(timer);
+    retry = nullptr;
+    checking = false;
+    vault::Wipe(check_pin, sizeof check_pin);
+    pad.Done(new_store);
+    if (pad_screen != nullptr) {
+        lv_label_set_text(message, "no memory: try again");
+        ShowTitle();
+        ShowDots();
+    }
+}
+
 void OnKey(lv_event_t *event) {
     auto *keys = static_cast<lv_obj_t *>(lv_event_get_target(event));
     const uint32_t id = lv_buttonmatrix_get_selected_button(keys);
@@ -153,12 +186,10 @@ void OnKey(lv_event_t *event) {
             snprintf(check_pin, sizeof check_pin, "%s", pad.Pin());
             lv_label_set_text(message, "checking...");
             checking = true;
-            if (xTaskCreate(&CheckTask, "pin_check", kCheckStackBytes, nullptr, 2, nullptr) !=
-                pdPASS) {
-                checking = false;
-                vault::Wipe(check_pin, sizeof check_pin);
-                pad.Done(new_store);
-                lv_label_set_text(message, "no memory: try again");
+            if (!StartCheck() && retry == nullptr) {
+                ESP_LOGW(TAG, "no memory for the check: trying again");
+                retries = 0;
+                retry = lv_timer_create(OnRetry, kRetryMs, nullptr);
             }
             break;
     }

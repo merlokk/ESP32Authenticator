@@ -1,9 +1,11 @@
 #include "vault.h"
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <ctime>
 #include <new>
+#include <sys/stat.h>
 
 #include "clock_math.h"
 #include "crypto.h"
@@ -1027,6 +1029,203 @@ Error SortByName() {
     }
     Guard guard;
     g_records->SortByName();
+    return Changed(Error::kOk);
+}
+
+// --- the sync
+
+namespace {
+
+// The largest copy taken (the server's Sync:MaxFileBytes and the header).
+constexpr size_t kMaxCopy = 256 * 1024 + storefile::kHeaderSize;
+
+// Under the lock. The checks, then the copy in place (see vault.h).
+Error AdoptLocked(const storefile::File &target, const char *from,
+                  const uint8_t store_id[storefile::kStoreIdSize], bool other_store,
+                  const char *pin) {
+    if (g_state != State::kOpen || !g_have_key) {
+        return Error::kLocked;
+    }
+    const bool fido = target.kind == storefile::Kind::kFido;
+    struct stat st;
+    if (stat(from, &st) != 0 || static_cast<size_t>(st.st_size) > kMaxCopy ||
+        static_cast<size_t>(st.st_size) < storefile::kHeaderSize + storefile::kTagSize) {
+        return Error::kBadCopy;
+    }
+    const size_t size = static_cast<size_t>(st.st_size);
+    auto *data = static_cast<uint8_t *>(PsramCalloc(size));
+    FILE *f = data != nullptr ? fopen(from, "rb") : nullptr;
+    const bool read = f != nullptr && fread(data, 1, size, f) == size;
+    if (f != nullptr) {
+        fclose(f);
+    }
+    storefile::Header h;
+    Error e = Error::kOk;
+    if (!read) {
+        e = data == nullptr ? Error::kStorage : Error::kBadCopy;
+    } else if (!storefile::Decode(data, size, size, target.kind, &h) ||
+               h.cipher != storefile::Cipher::kAesGcm || h.kdf_iterations == 0 ||
+               memcmp(h.store_id, store_id, sizeof h.store_id) != 0 ||
+               (!fido && h.length > g_plain_capacity)) {
+        e = Error::kBadCopy;
+    } else if (!g_have_seed || memcmp(h.seed_id, g_seed.id, sizeof h.seed_id) != 0) {
+        e = Error::kWrongSeed;
+    } else if (!other_store && h.version <= storefile::KeptVersion(target)) {
+        ESP_LOGE(TAG, "the server's copy: version %u, but %u was seen",
+                 static_cast<unsigned>(h.version),
+                 static_cast<unsigned>(storefile::KeptVersion(target)));
+        e = Error::kBadCopy;  // a rollback
+    }
+    Key k = {};
+    const bool same = e == Error::kOk && memcmp(h.key_id, g_key.id, sizeof h.key_id) == 0;
+    if (e == Error::kOk && same) {
+        k = g_key;
+    } else if (e == Error::kOk) {
+        // Another PIN (or a PIN change) on the device that wrote it.
+        if (pin == nullptr) {
+            e = Error::kNeedPin;
+        } else if (!ValidPin(pin)) {
+            e = Error::kBadPin;
+        } else if (!PinEntryAllowed()) {
+            e = Error::kPinLocked;
+        } else if (Derive(pin, h.salt, h.kdf_iterations, g_seed, &k) != ESP_OK) {
+            e = Error::kStorage;
+        } else if (memcmp(k.id, h.key_id, sizeof k.id) != 0) {
+            ESP_LOGW(TAG, "the server's copy: wrong PIN");
+            e = PinWrong();
+        } else {
+            PinRight();
+        }
+    }
+    if (e == Error::kOk) {
+        auto *plain = static_cast<uint8_t *>(PsramCalloc(h.length > 0 ? h.length : 1));
+        const esp_err_t err =
+            plain == nullptr ? ESP_ERR_NO_MEM
+                             : crypto::Aes256GcmOpen(k.key, h.nonce, data, storefile::kHeaderSize,
+                                                     data + storefile::kHeaderSize, h.length,
+                                                     plain);
+        if (plain != nullptr) {
+            Wipe(plain, h.length);
+            free(plain);
+        }
+        if (err != ESP_OK) {
+            e = err == ESP_ERR_NO_MEM ? Error::kStorage : Error::kBadCopy;
+        }
+    }
+    free(data);
+    if (e != Error::kOk) {
+        Wipe(&k, sizeof k);
+        return e;
+    }
+    // Checked: in place.
+    esp_err_t err = ESP_OK;
+    if (same) {
+        if (fido) {
+            err = g_hooks.adopt != nullptr ? g_hooks.adopt(from, k, other_store) : ESP_FAIL;
+        } else {
+            if (other_store) {
+                storefile::SetKeptVersion(target, h.version);
+            }
+            err = storefile::Install(target, from, h.version);
+        }
+    } else {
+        // This device takes the copy's key: the other store re-keyed with
+        // it, all committed together (store_io.h), as a PIN change.
+        char staged[80];
+        snprintf(staged, sizeof staged, "%s.new", target.path);
+        storefile::Header hv;
+        if (!fido) {
+            err = storefile::StageFrom(g_file, from);
+            if (err == ESP_OK && g_hooks.stage != nullptr) {
+                err = g_hooks.stage(k);
+            }
+        } else {
+            const size_t n = Seal(k, &hv);
+            err = n == 0 ? ESP_FAIL : storefile::Stage(g_file, hv, g_body, n);
+            if (err == ESP_OK) {
+                err = storefile::StageFrom(target, from);
+            }
+        }
+        if (err == ESP_OK) {
+            err = storefile::BeginCommit(g_marker);
+        }
+        if (err != ESP_OK) {
+            storefile::Unstage(g_file);
+            if (!fido && g_hooks.unstage != nullptr) {
+                g_hooks.unstage();
+            }
+            remove(staged);
+            remove(from);
+            Wipe(&k, sizeof k);
+            ESP_LOGE(TAG, "the server's copy not taken (%s): nothing changed",
+                     esp_err_to_name(err));
+            return err == ESP_ERR_INVALID_STATE ? Error::kFidoNotLoaded : Error::kStorage;
+        }
+        if (!fido) {
+            if (other_store) {
+                storefile::SetKeptVersion(g_file, h.version);
+            }
+            storefile::Promote(g_file, h.version);
+            if (g_hooks.commit != nullptr) {
+                g_hooks.commit();
+            }
+        } else {
+            storefile::Promote(g_file, hv.version);
+            g_header = hv;
+            err = g_hooks.adopt != nullptr ? g_hooks.adopt(staged, k, other_store) : ESP_FAIL;
+        }
+        storefile::EndCommit(g_marker);
+        g_key = k;
+        ESP_LOGW(TAG, "the server's copy has another PIN: this device takes it");
+    }
+    remove(from);
+    Wipe(&k, sizeof k);
+    if (!fido) {
+        if (ReadFile(nullptr) != Read::kOk) {
+            return Error::kBadCopy;  // Refuse() said why
+        }
+        Opened();
+    }
+    ESP_LOGI(TAG, "the server's %s taken: version %u", fido ? "fido.bin" : "vault.bin",
+             static_cast<unsigned>(h.version));
+    return err == ESP_OK ? Error::kOk : Error::kStorage;
+}
+
+}  // namespace
+
+const storefile::File &StoreFile() { return g_file; }
+
+// No lock: the screen's poll asks it (an Unlock holds the lock a second).
+uint32_t Version() { return g_state == State::kOpen ? g_header.version : 0; }
+
+Error Adopt(const storefile::File &target, const char *from,
+            const uint8_t store_id[storefile::kStoreIdSize], bool other_store, const char *pin) {
+    if (g_state == State::kOff) {
+        remove(from);
+        return Error::kLocked;
+    }
+    Error e;
+    {
+        Guard guard;
+        e = AdoptLocked(target, from, store_id, other_store, pin);
+    }
+    if (e != Error::kOk && e != Error::kNeedPin && e != Error::kWrongPin) {
+        remove(from);
+    }
+    return e;
+}
+
+Error Rewrite(uint32_t min_version) {
+    if (g_state != State::kOpen) {
+        return Error::kLocked;
+    }
+    Guard guard;
+    if (g_state != State::kOpen || !g_have_key) {
+        return Error::kLocked;
+    }
+    if (min_version > 0 && g_header.version < min_version - 1) {
+        g_header.version = min_version - 1;
+    }
     return Changed(Error::kOk);
 }
 

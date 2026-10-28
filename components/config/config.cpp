@@ -81,7 +81,8 @@ const char kDefaultJson[] = R"json({
   "server": {
     "host": "auth.merlokk.com",
     "email": "",
-    "statusMinutes": 10
+    "statusMinutes": 10,
+    "syncMinutes": 10
   },
   "test": {
     "pin": "",
@@ -685,6 +686,15 @@ bool ParseSections(const cJSON *root, Data *staged, char *error, size_t size) {
             return false;
         }
         parsed.server.status_minutes = static_cast<uint8_t>(minutes);
+        minutes = parsed.server.sync_minutes;
+        if (!GetUint(server, "syncMinutes", 0, 60, &minutes, "server", error, size)) {
+            return false;
+        }
+        if (!ValidStatusMinutes(minutes)) {
+            SetError(error, size, "server.syncMinutes: 0, 1, 10, 30 or 60");
+            return false;
+        }
+        parsed.server.sync_minutes = static_cast<uint8_t>(minutes);
     }
     const cJSON *test = cJSON_GetObjectItemCaseSensitive(root, "test");
     if (test != nullptr) {
@@ -861,6 +871,7 @@ size_t Serialize(const Data &d, char *out, size_t size) {
     cJSON_AddStringToObject(server, "host", d.server.host);
     cJSON_AddStringToObject(server, "email", d.server.email);
     cJSON_AddNumberToObject(server, "statusMinutes", d.server.status_minutes);
+    cJSON_AddNumberToObject(server, "syncMinutes", d.server.sync_minutes);
     cJSON *test = cJSON_AddObjectToObject(root, "test");
     cJSON_AddStringToObject(test, "pin", d.test.pin);
     cJSON_AddBoolToObject(test, "autoPresence", d.test.auto_presence);

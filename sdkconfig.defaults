@@ -76,3 +76,17 @@ CONFIG_TINYUSB_MSC_BUFSIZE=8192
 # mbedTLS (the HTTPS client of components/server) allocates in PSRAM: its
 # ~20 KB per TLS session does not fit in the internal RAM beside BLE and Wi-Fi.
 CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC=y
+# Software AES: the hardware's DMA wants a 1600-byte internal bounce buffer
+# (twice) for data in PSRAM (the TLS records, the store files), which a sync
+# upload under BLE, Wi-Fi and the TLS session does not find.
+CONFIG_MBEDTLS_HARDWARE_AES=n
+# Wi-Fi's and lwIP's buffers in PSRAM: a TLS session's traffic otherwise
+# takes the internal RAM down to ~1 KB (the PIN check's task and the SD
+# card's DMA then fail). That needs static TX buffers: 6 (internal) and a
+# queue in PSRAM; the default 16 would take ~16 KB of internal RAM.
+CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y
+CONFIG_ESP_WIFI_STATIC_TX_BUFFER=y
+CONFIG_ESP_WIFI_STATIC_TX_BUFFER_NUM=6
+# And the RX side as without it (it would raise them to 16).
+CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM=10
+CONFIG_ESP_WIFI_RX_BA_WIN=6

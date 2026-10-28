@@ -233,6 +233,36 @@ esp_err_t Promote(const File &file, uint32_t version) {
 
 void EndCommit(const char *marker) { remove(marker); }
 
+void SetKeptVersion(const File &file, uint32_t version) {
+    nvs_handle_t h;
+    esp_err_t err = nvs_open(file.nvs_namespace, NVS_READWRITE, &h);
+    if (err == ESP_OK) {
+        err = nvs_set_u32(h, kNvsVersion, version);
+        if (err == ESP_OK) {
+            err = nvs_commit(h);
+        }
+        nvs_close(h);
+    }
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "%s: version %u not set: %s", file.path, static_cast<unsigned>(version),
+                 esp_err_to_name(err));
+    }
+}
+
+esp_err_t Install(const File &file, const char *from, uint32_t version) {
+    const esp_err_t err = Replace(from, file.path);
+    if (err == ESP_OK) {
+        KeepVersion(file, version);
+    }
+    return err;
+}
+
+esp_err_t StageFrom(const File &file, const char *from) {
+    char path[kPathMax];
+    NewPath(file.path, path);
+    return Replace(from, path);
+}
+
 void FinishCommit(const char *marker, const char *const *paths, size_t count) {
     struct stat st;
     const bool committed = stat(marker, &st) == 0;

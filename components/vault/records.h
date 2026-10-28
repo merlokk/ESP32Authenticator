@@ -61,6 +61,8 @@ enum class Error : uint8_t {
     kNoSeed,         // a store file, but no seed phrase on this device
     kWrongSeed,      // the store file names another seed phrase
     kBadSeed,        // not 12 BIP39 words, or a typo (the checksum)
+    kNeedPin,        // the sync: the server's copy has another key, its PIN is asked
+    kBadCopy,        // the sync: the server's copy does not check out
 };
 
 inline constexpr size_t kPinLength = 6;

@@ -43,7 +43,9 @@ enum class Page : uint8_t {
     kWifiHidden,    // Wi-Fi > Add a network: one not broadcast (its name, its password)
     kServer,        // the authentication server: registered, connected, the code
     kServerEmail,   // Server > Register: the e-mail on the keyboard
-    kServerConfig,  // Server > Configure: how often the status goes
+    kServerConfig,  // Server > Configure: how often the status and the sync go
+    kServerSync,    // Server > Sync: the stores against the server's, what waits
+    kServerSyncPin, // Server > Sync: the PIN of the server's copy, on the keyboard
 };
 
 // Where a page's back arrow goes.
@@ -62,7 +64,9 @@ constexpr Page Parent(Page p) {
            : p == Page::kSecurityLock || p == Page::kSecurityPin ? Page::kSecurity
            : p == Page::kWebMode || p == Page::kWebLogin ? Page::kWeb
            : p == Page::kFido ? Page::kSecurity
-           : p == Page::kServerEmail || p == Page::kServerConfig ? Page::kServer
+           : p == Page::kServerEmail || p == Page::kServerConfig || p == Page::kServerSync
+               ? Page::kServer
+           : p == Page::kServerSyncPin ? Page::kServerSync
                                       : Page::kMain;
 }
 
@@ -106,6 +110,8 @@ constexpr const char *Title(Page p) {
         case Page::kServer: return "Server";
         case Page::kServerEmail: return "E-mail";
         case Page::kServerConfig: return "Configure";
+        case Page::kServerSync: return "Sync";
+        case Page::kServerSyncPin: return "The copy's PIN";
     }
     return "";
 }
@@ -120,6 +126,7 @@ enum class Action : uint8_t {
     kFidoReset, // FIDO2 / U2F (held: every key and its PIN erased)
     kServerRegister,  // Server (asked first: a new key, then the e-mail)
     kServerStatus,    // Server > Configure: the status now
+    kServerSync,      // Server > Sync: the sync now
 };
 
 constexpr Action PageAction(Page p) {
@@ -130,6 +137,7 @@ constexpr Action PageAction(Page p) {
            : p == Page::kFido     ? Action::kFidoReset
            : p == Page::kServer   ? Action::kServerRegister
            : p == Page::kServerConfig ? Action::kServerStatus
+           : p == Page::kServerSync   ? Action::kServerSync
                                   : Action::kNone;
 }
 
@@ -141,6 +149,7 @@ constexpr const char *ActionText(Action a) {
            : a == Action::kFidoReset ? "Reset FIDO2"
            : a == Action::kServerRegister ? "Register"
            : a == Action::kServerStatus   ? "Send the status now"
+           : a == Action::kServerSync     ? "Sync now"
                                     : "";
 }
 
@@ -195,14 +204,20 @@ constexpr bool EmailOk(const char *email) {
     return n >= 3 && n < kEmailSize && ats == 1 && at > 0 && at + 1 < n;
 }
 
-// Server > Configure: the status report's interval (config.json
-// server.statusMinutes, config::kStatusMinutes).
+// Server > Configure: the status report's and the sync's interval
+// (config.json server.statusMinutes / syncMinutes, config::kStatusMinutes).
 struct StatusChoice {
     uint8_t minutes;
     const char *label;
+    const char *short_label;  // a button in a row of them
 };
-inline constexpr StatusChoice kStatusChoices[] = {
-    {0, "Never"}, {1, "Every minute"}, {10, "Every 10 min"}, {30, "Every 30 min"}, {60, "Every hour"}};
+inline constexpr StatusChoice kStatusChoices[] = {{0, "Never", "never"},
+                                                  {1, "Every minute", "1 min"},
+                                                  {10, "Every 10 min", "10 min"},
+                                                  {30, "Every 30 min", "30 min"},
+                                                  {60, "Every hour", "1 hour"}};
+// Configure's taps: a status choice is its row, a sync choice this plus it.
+inline constexpr int kSyncChoiceBase = 10;
 inline constexpr uint8_t kStatusChoiceCount = sizeof kStatusChoices / sizeof kStatusChoices[0];
 
 // Its row in kStatusChoices; -1: none.
@@ -225,6 +240,21 @@ constexpr const char *StatusSummary(uint8_t minutes) {
            : minutes == 60 ? "status every hour"
                            : "status";
 }
+
+// Server > Sync: which stores wait for a person (ServerHooks::sync_waits):
+// bit 2i a conflict, bit 2i+1 the server's copy's PIN asked; i 0 the
+// passwords, 1 the passkeys.
+inline constexpr uint8_t kSyncStores = 2;
+constexpr bool SyncConflict(uint8_t waits, uint8_t store) { return (waits >> (2 * store)) & 1; }
+constexpr bool SyncPinAsked(uint8_t waits, uint8_t store) {
+    return (waits >> (2 * store + 1)) & 1;
+}
+constexpr const char *SyncStoreTitle(uint8_t store) {
+    return store == 0 ? "Passwords" : "Passkeys";
+}
+// The Sync page's taps: store * 2 + 0 keep this device's copy, + 1 take the
+// server's (or type its PIN).
+constexpr int SyncTap(uint8_t store, bool take) { return store * 2 + (take ? 1 : 0); }
 
 // The frontlight's sliders: brightness 1..100 (0 is 1), warmth 0..100.
 constexpr uint8_t Brightness(int32_t slider) {

@@ -12,11 +12,21 @@
 
 #include "esp_err.h"
 #include "server_logic.h"
+#include "sync_logic.h"
 
 namespace server {
 
 // Loads `<dir>/server.bin` (none: not registered). Once, at boot.
 esp_err_t Init(const char *dir);
+
+// Where a store stands with the server (Settings > Server > Sync).
+struct StoreStatus {
+    sync::Phase phase;
+    uint32_t local_version;   // our file's, 0 unknown
+    uint32_t server_version;  // the server's copy (a conflict, a PIN asked), 0 unknown
+    bool other_store;         // that copy is another store of the account (never synced)
+    char server_at[17];       // when it reached the server ("2026-10-27 19:07" UTC), or ""
+};
 
 struct Status {
     bool has_key;
@@ -32,6 +42,10 @@ struct Status {
     int64_t token_left;      // seconds the access token still has; 0: not signed in
     char update[kVersionSize];  // the release the server offers; empty: none
     char said[48];           // the last request's outcome
+    StoreStatus stores[sync::kStores];  // by sync::Store
+    sync::Icon icon;         // the status bar's
+    int64_t synced_at;       // the last sync that went through (Unix seconds), 0: none
+    char sync_said[48];      // the last sync's outcome
 };
 Status Get();
 
@@ -50,13 +64,34 @@ esp_err_t StartRegister(const char *host, const char *email);
 // ESP_ERR_INVALID_STATE: busy.
 esp_err_t StartCheck(const char *host);
 
+// What the vault and FIDO2 give the sync (from the server's task, 10 KB).
+enum class Taken : uint8_t { kOk, kLocked, kNeedPin, kWrongPin, kFailed };
+
 // What the schedule asks the device (any of them from the scheduler's task,
-// 4 KB stack; `report` also from StartStatus' caller).
+// 4 KB stack; `report` also from StartStatus' caller; the stores' from the
+// server's task too).
 struct Hooks {
     bool (*ready)();                          // Wi-Fi online, the clock set
     uint8_t (*status_minutes)();              // config.json server.statusMinutes
     void (*host)(char *out, size_t size);     // config.json server.host
     void (*report)(Report *out);              // the state (no `mac`: added here); static texts
+    uint8_t (*sync_minutes)();                // config.json server.syncMinutes
+    // A store's file; nullptr: none here (no card, refused, not loaded).
+    const char *(*store_path)(sync::Store store);
+    // Its loaded version, 0 while not open. Quick: a change shows.
+    uint32_t (*store_version)(sync::Store store);
+    // The PIN is in (a copy can be checked and taken).
+    bool (*open)();
+    // Holds nothing (no record, no credential); asked only when open.
+    bool (*empty)(sync::Store store);
+    // Our copy written again with a version of at least `min_version`.
+    esp_err_t (*rewrite)(sync::Store store, uint32_t min_version);
+    // The server's copy at `from` checked and put in place (vault::Adopt;
+    // `from` gone after); `force`: any version taken, kept as it is.
+    // kFailed: why in `said`.
+    Taken (*take)(sync::Store store, const char *from,
+                  const uint8_t store_id[sync::kStoreIdSize], bool force, const char *pin,
+                  char *said, size_t size);
 };
 
 // The status schedule (a task of its own): the first status once the device
@@ -68,6 +103,18 @@ void StartSchedule(const Hooks *hooks);
 // ESP_ERR_INVALID_STATE: busy or no schedule; ESP_ERR_NOT_FOUND: not
 // registered with a client id.
 esp_err_t StartStatus();
+
+// The stores' sync now (signed in first), also while a store waits for a
+// person (it looks again). ESP_ERR_INVALID_STATE: busy or no schedule;
+// ESP_ERR_NOT_FOUND: not registered with a client id.
+esp_err_t StartSync();
+
+// A store waiting for a person (sync::ByHand): keep this device's copy (its
+// version above the server's, uploaded), or take the server's (with `pin`
+// when it has another PIN: this device takes that PIN). ESP_ERR_INVALID_STATE:
+// busy, or the store does not wait.
+enum class Choice : uint8_t { kKeepMine, kTakeServer };
+esp_err_t StartResolve(sync::Store store, Choice choice, const char *pin);
 
 // The public key, base64url (kPublicSize bytes); false: no key.
 bool PublicKey(char *out, size_t size);

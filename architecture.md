@@ -14,7 +14,7 @@ Target and status. Screen design and the open questions: [x4-design.md](x4-desig
 | Password records (site, user, password, TOTP): add / edit / delete | done on the console (`pass`) and the site; the screen shows and types them |
 | Store file header (version, modification time) and rollback check (highest version in NVS) | done (`storefile`) |
 | Encrypted stores: `vault.bin` and `fido.bin`, AES-256-GCM with a key from the PIN and the seed phrase (the same on every device with both and the files), loaded whole into PSRAM | done |
-| Sync over the internet, the later modification time wins | not yet; service not chosen |
+| Sync with the authentication server (`vault.bin`, `fido.bin`), conflicts resolved by hand | done (Settings > Server > Sync, console `server sync`) |
 | Authentication server (`auth.merlokk.com`): registration, sign-in with the device's TOTP | device side done (Settings > Server, console `server`); the server is being written |
 | X4 Pro screen: status bar, credential list, pages, settings | status bar, the password list (pages, typing, TOTP), swipes, PIN pad, the U2F / FIDO2 list, Settings done |
 | Settings: frontlight, Wi-Fi | on the screen: frontlight, Wi-Fi (and the web site), Bluetooth, Devices (power, display, USB, touch calibration), security, date & time, about; also the console and the site |
@@ -73,8 +73,8 @@ Reference ESP-IDF + LVGL project: `../../ai-remote/approver-esp32` ([GitHub](htt
   drain, the kept PIN lost).
 - `server`: `host` (default `auth.merlokk.com`; empty or a host name /
   IPv4, HTTPS on 443), `email` (empty or 3..64 printable ASCII with one
-  '@') and `statusMinutes` (0, 1, 10, 30, 60; default 10, 0: never), see
-  Server.
+  '@'), `statusMinutes` and `syncMinutes` (0, 1, 10, 30, 60; default 10, 0:
+  never), see Server.
 - `test`: development aids (`pin`, `autoPresence`), see
   [testing-on-device.md](testing-on-device.md#configjson-test). Never on a
   device with real secrets.
@@ -110,7 +110,7 @@ An example (the built-in default has no networks):
   "power": {"idleMinutes": 10, "idleMinutesUsb": 0, "keepPinHours": 0, "holdRail": true},
   "pin": {"lockMinutes": 10, "wipe": "", "complexity": true},
   "usb": {"mode": "jtag"},
-  "server": {"host": "auth.merlokk.com", "email": "", "statusMinutes": 10},
+  "server": {"host": "auth.merlokk.com", "email": "", "statusMinutes": 10, "syncMinutes": 10},
   "test": {"pin": "", "autoPresence": false}
 }
 ```
@@ -783,6 +783,29 @@ account on the authentication server (`config.json` `server.host`).
   30, 60; default 10), a failed one again in a minute. The answer's `time`
   sets Clock, its `update` the Update line. Settings > Server > Configure:
   the interval (saved) and "Send the status now"; console `server report`.
+- Sync (`sync_logic.h`, device-protocol.md: Stores): `vault.bin` and
+  `fido.bin` by their headers (store id, version, nonce). NVS `srvsync`
+  keeps the write both sides had at the last sync, so a change on either
+  side shows (`POST /api/device/stores/heads`): only ours: upload (`POST
+  /api/device/stores/files`, the file as it is); only the server's: download
+  (`GET .../files/{store}/{seed}/{kind}?above=`) to `<file>.dl`, taken by
+  `vault::Adopt` (kind, seed id, store id, a version above the kept one, the
+  GCM tag) once the PIN is in; both: a conflict. A store never synced looks
+  at the account's stores under its seed id first (`GET
+  /api/device/stores?seedId=`): none: upload; one and ours empty: taken (its
+  store id from then); else a conflict. A 409 (another device first) with
+  ours changed: a conflict. Another key on the server's copy (the PIN
+  changed on another device): its PIN asked; this device takes that key for
+  both stores (a PIN change's commit), so its PIN becomes that one. Runs in
+  the server's task: the first once registered and online, then after each
+  change (the stores' versions, the PIN coming in: a look every 5 s) and
+  every `server.syncMinutes` (0: only by hand), a failed one again in a
+  minute; a store waiting for a person stops it until resolved: Server >
+  Sync, per store "Keep mine" (written again above the server's version,
+  uploaded) or "Take server's" / "Type its PIN"; console `server sync`,
+  `server sync keep|take passwords|passkeys [pin]`. Status bar: the sync
+  icon (off: not registered, an arrow: changes to send or take, "!": waits
+  for you). Another seed phrase's stores are not looked at.
 - Connected: `GET https://<host>/api/device/ping` answered 200
   `{"status":"ok","time":N}` (anything else: "not the server: HTTP n", or no
   answer); while the page is shown, at most once a minute, with Wi-Fi online
@@ -796,7 +819,11 @@ account on the authentication server (`config.json` `server.host`).
 - Requests run one at a time in a task of their own (10 KB stack); TLS
   through the certificate bundle, mbedTLS allocates in PSRAM
   (`CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC`: internal RAM beside BLE and Wi-Fi
-  ran out in `mbedtls_ssl_setup`); answers are read into a PSRAM buffer. The
+  ran out in `mbedtls_ssl_setup`), software AES (the hardware's DMA wants
+  internal bounce buffers for PSRAM data), Wi-Fi's and lwIP's buffers in
+  PSRAM (`CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP`, 6 static TX buffers: else a
+  session's traffic left ~1 KB of internal RAM, and the PIN check's task and
+  the SD card's reads failed); answers are read into a PSRAM buffer. The
   JWTs and the access token are never logged: the registration's carries
   the TOTP secret.
 

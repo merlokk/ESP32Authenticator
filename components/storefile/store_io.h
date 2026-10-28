@@ -59,6 +59,15 @@ esp_err_t Promote(const File &file, uint32_t version);
 void EndCommit(const char *marker);
 void FinishCommit(const char *marker, const char *const *paths, size_t count);
 
+// --- The sync: a copy from the server (checked by the caller) put in place.
+// The kept version set to exactly `version` (also below it: another store
+// taken), before any rename: a power loss leaves the old file, still above.
+void SetKeptVersion(const File &file, uint32_t version);
+// `from` over the file; the kept version raised to `version`.
+esp_err_t Install(const File &file, const char *from, uint32_t version);
+// `from` as <path>.new, for a commit (Promote) with the other files.
+esp_err_t StageFrom(const File &file, const char *from);
+
 // Removes the file, its .tmp and the kept version: as if never made (the
 // next Load is kNew). For a wipe.
 void Forget(const File &file);

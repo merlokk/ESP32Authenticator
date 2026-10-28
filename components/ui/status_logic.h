@@ -1,7 +1,7 @@
 #pragma once
 
-// The status bar (x4-design.md) at the top of every screen: Wi-Fi, Bluetooth
-// and the microSD on the left, the time and the battery on the right. Pure
+// The status bar (x4-design.md) at the top of every screen: Wi-Fi, Bluetooth,
+// the microSD and the server's sync on the left, the time and the battery on the right. Pure
 // (host-tested): what the board reports in, the two texts out; the ui task
 // sets a label only when its text changed (each change is an e-ink refresh).
 
@@ -15,6 +15,8 @@ inline constexpr const char *kWifi = "\xEF\x87\xAB";
 inline constexpr const char *kBluetooth = "\xEF\x8A\x93";
 inline constexpr const char *kSdCard = "\xEF\x9F\x82";
 inline constexpr const char *kCharge = "\xEF\x83\xA7";
+inline constexpr const char *kSync = "\xEF\x80\xA1";    // LV_SYMBOL_REFRESH
+inline constexpr const char *kUpload = "\xEF\x82\x93";  // LV_SYMBOL_UPLOAD
 // Empty, 1, 2, 3, full.
 inline constexpr const char *kBattery[5] = {"\xEF\x89\x84", "\xEF\x89\x83", "\xEF\x89\x82",
                                             "\xEF\x89\x81", "\xEF\x89\x80"};
@@ -34,12 +36,22 @@ enum class Ble : uint8_t {
     kPairing,    // the pairing window is open
 };
 
+// The stores' sync with the server (server::sync::Icon).
+enum class Sync : uint8_t {
+    kHidden,    // no server
+    kOff,       // not registered
+    kPending,   // changes to send or to take
+    kOk,
+    kConflict,  // waits for a person: Settings > Server > Sync
+};
+
 struct Status {
     Wifi wifi = Wifi::kOff;
     Ble ble = Ble::kOff;
     int8_t battery = -1;  // percent, -1 no gauge
     bool charging = false;
     bool sd = false;         // mounted
+    Sync sync = Sync::kHidden;
     bool fido_wait = false;  // a FIDO2 request waits for the user
     bool time_set = false;  // the clock is believable
     uint8_t hour = 0;       // local
@@ -69,6 +81,10 @@ constexpr const char *WifiText(Wifi w) {
 
 constexpr const char *BleText(Ble b) {
     return b == Ble::kWaiting ? "..." : b == Ble::kPairing ? "pair" : "";
+}
+
+constexpr const char *SyncText(Sync s) {
+    return s == Sync::kOff ? "off" : s == Sync::kPending ? kUpload : s == Sync::kConflict ? "!" : "";
 }
 
 // Text into a fixed buffer, cut at its end, always terminated.
@@ -108,7 +124,8 @@ class Text {
 
 inline constexpr const char *kGap = "   ";
 
-// Left: "<wifi> [state]   <bt> [state]   <sd>"; what is off is left out.
+// Left: "<wifi> [state]   <bt> [state]   <sd>   <sync> [state]"; what is off
+// is left out.
 // (While FIDO2 waits, its prompt window says what the buttons do.)
 constexpr void Left(const Status &s, char *out, size_t size) {
     Text t(out, size);
@@ -129,6 +146,9 @@ constexpr void Left(const Status &s, char *out, size_t size) {
     }
     if (s.sd) {
         add(kSdCard, "");
+    }
+    if (s.sync != Sync::kHidden) {
+        add(kSync, SyncText(s.sync));
     }
 }
 

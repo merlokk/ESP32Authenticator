@@ -164,6 +164,10 @@ const char *Describe(Error error) {
             return "the store has another seed phrase";
         case Error::kBadSeed:
             return "not 12 seed words, or a typo in them";
+        case Error::kNeedPin:
+            return "the server's copy has another PIN: type that one";
+        case Error::kBadCopy:
+            return "the server's copy does not check out (damaged, old, or not this store)";
     }
     return "?";
 }

@@ -160,15 +160,15 @@ Yes go fast; hiding a password is full (no ghost).
   a time (the BM8563 RTC, corrected by SNTP), maybe off by some drift. A board
   with no believable time (the dev board before its first sync) still saves
   the edit, with time 0 (unknown).
-- **Sync**: the copy with the later modification time wins, also when both
-  copies were changed (on two devices) since the last sync; equal times: the
-  higher counter. Time 0 loses to any known time. The result is written with
-  counter = max(both) + 1, so it is above what either device has seen.
+- **Sync** (the authentication server, architecture.md: Server): the
+  version alone orders copies (the time is shown, never compared). Only
+  one side changed since the last sync: it goes to the other. Both: a
+  conflict, resolved by hand on Settings > Server > Sync (keep this device's,
+  written above the server's version, or take the server's).
 - **Rollback**: the device keeps the highest counter it has accepted in NVS. A
   `.bin` with a lower counter is invalid (an old copy put back on the SD card
   or served by the sync service).
 
 ## Open questions
 
-- Sync service.
 - Decided: off is deep sleep (a reboot); `power.keepPinHours` spares the PIN.

@@ -106,6 +106,22 @@ uint32_t ctap_file_storage_nvs_version(void) {
     return v;
 }
 
+// Exactly `version`, also below the kept one (another store taken by the sync).
+static void set_version(uint32_t version) {
+    nvs_handle_t h;
+    esp_err_t err = nvs_open(kNvsNamespace, NVS_READWRITE, &h);
+    if (err == ESP_OK) {
+        err = nvs_set_u32(h, kNvsVersion, version);
+        if (err == ESP_OK) {
+            err = nvs_commit(h);
+        }
+        nvs_close(h);
+    }
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "store version %u not set: %s", (unsigned)version, esp_err_to_name(err));
+    }
+}
+
 // The RAM log, sealed with `key`, into `out_path`. `changed`: the credentials
 // or PIN changed (the modification time moves); false: only the layout
 // (compaction) or the key. *header: what was written.
@@ -225,6 +241,44 @@ void ctap_file_storage_unstage(const ctap_storage_t *storage) {
     remove(path);
     memset(&ctx->staged, 0, sizeof ctx->staged);
     ctx->has_staged = false;
+}
+
+ctap_storage_status_t ctap_file_storage_install_copy(const ctap_storage_t *storage,
+                                                    const char *from, bool force) {
+    ctap_file_storage_context_t *ctx = ctx_of(storage);
+    if (ctx->path == NULL) {
+        return CTAP_STORAGE_ERROR;
+    }
+    if (force) {
+        struct stat st;
+        FILE *f = stat(from, &st) == 0 ? fopen(from, "rb") : NULL;
+        if (f == NULL) {
+            return CTAP_STORAGE_ERROR;
+        }
+        uint8_t head[STORE_HEADER_SIZE];
+        const size_t got = fread(head, 1, sizeof head, f);
+        fclose(f);
+        store_header_t header = {0};
+        if (!store_header_decode(head, got, (size_t)st.st_size, STORE_KIND_FIDO, &header)) {
+            return CTAP_STORAGE_ERROR;
+        }
+        set_version(header.version);  // before the rename: a power loss keeps the old file
+    }
+    remove(ctx->path);  // SPIFFS rename does not replace
+    if (rename(from, ctx->path) != 0) {
+        ESP_LOGE(TAG, "rename %s failed", from);
+        return CTAP_STORAGE_ERROR;
+    }
+    return CTAP_STORAGE_OK;
+}
+
+ctap_storage_status_t ctap_file_storage_rewrite(const ctap_storage_t *storage,
+                                               uint32_t min_version) {
+    ctap_file_storage_context_t *ctx = ctx_of(storage);
+    if (min_version > 0 && ctx->version < min_version - 1) {
+        ctx->version = min_version - 1;
+    }
+    return save(storage, false);
 }
 
 // Rebuilds the log from its live items, which also sets write_index (lionkey's

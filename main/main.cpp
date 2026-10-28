@@ -124,10 +124,13 @@ void PromptFor(const uint8_t *msg, size_t len) {
 // the board's Left button (BOOT on the dev board) or Home (the touch key
 // under the glass), debounced by the keypad task, which owns the pins; Right
 // refuses.
+const char *fido_file = nullptr;  // the store file (the sync), nullptr: none
+
 void InitFido(const char *dir) {
     static char store[64];
     const bool have_fs = dir != nullptr && snprintf(store, sizeof store, "%s/fido.bin", dir) <
                                                static_cast<int>(sizeof store);
+    fido_file = have_fs ? store : nullptr;
     // The creator of a credential: the host on the BLE link, or "USB".
     const fido_ctap_hooks_t hooks = {
         [](uint8_t status) {
@@ -213,6 +216,10 @@ void InitVault(const char *dir) {
         .commit = [] { fido_ctap_commit_key(); },
         .unstage = [] { fido_ctap_unstage_key(); },
         .wipe = [] { fido_ctap_wipe(); },
+        .adopt = [](const char *from, const vault::Key &k, bool force) {
+            const fido_ctap_key_t key = Convert(k);
+            return fido_ctap_adopt(from, &key, force);
+        },
     });
     // The key kept through the sleep (power.keepPinHours): handed over at
     // the sleep, taken back at the wake.
@@ -273,6 +280,17 @@ void StatusSource(ui::status::Status *s) {
              : ble::ConnHandle() != BLE_HS_CONN_HANDLE_NONE ? st::Ble::kConnected
                                                               : st::Ble::kWaiting;
     s->sd = sd_card::Mounted();
+    if (config::Get().server.host[0] == '\0') {
+        s->sync = st::Sync::kHidden;
+    } else {
+        switch (server::Get().icon) {
+            case server::sync::Icon::kHidden: s->sync = st::Sync::kHidden; break;
+            case server::sync::Icon::kOff: s->sync = st::Sync::kOff; break;
+            case server::sync::Icon::kPending: s->sync = st::Sync::kPending; break;
+            case server::sync::Icon::kOk: s->sync = st::Sync::kOk; break;
+            case server::sync::Icon::kConflict: s->sync = st::Sync::kConflict; break;
+        }
+    }
     s->fido_wait = fido_waiting;
 
     const time_t now = time(nullptr);
@@ -660,6 +678,132 @@ void DescribeServer(bool summary, char *out, size_t size) {
     }
 }
 
+// Server > Sync: each store against the server's copy.
+void DescribeSync(char *out, size_t size) {
+    namespace sy = server::sync;
+    const server::Status s = server::Get();
+    for (const sy::Store store : sy::kAll) {
+        const server::StoreStatus &t = s.stores[static_cast<size_t>(store)];
+        const char *name = store == sy::Store::kVault ? "Passwords" : "Passkeys";
+        if (sy::ByHand(t.phase) || t.phase == sy::Phase::kNewer) {
+            Put(out, size, name, "%s: v%u here, v%u %s", sy::PhaseText(t.phase),
+                static_cast<unsigned>(t.local_version), static_cast<unsigned>(t.server_version),
+                t.other_store ? "(another store)" : "there");
+            if (t.server_at[0] != '\0') {
+                Put(out, size, "  sent", "%s UTC", t.server_at);
+            }
+        } else if (t.local_version != 0) {
+            Put(out, size, name, "%s (v%u)", sy::PhaseText(t.phase),
+                static_cast<unsigned>(t.local_version));
+        } else {
+            Put(out, size, name, "%s", t.phase == sy::Phase::kNone ? "not checked yet"
+                                                                    : sy::PhaseText(t.phase));
+        }
+    }
+    char text[40];
+    server::Ago(time(nullptr), s.synced_at, text, sizeof text);
+    Put(out, size, "Last sync", "%s", text);
+    const uint8_t minutes = config::Get().server.sync_minutes;
+    if (minutes == 0) {
+        Put(out, size, "Automatic", "never (only Sync now)");
+    } else {
+        Put(out, size, "Automatic", "on changes, every %u min", static_cast<unsigned>(minutes));
+    }
+    if (s.sync_said[0] != '\0') {
+        Put(out, size, "Last", "%s", s.sync_said);
+    }
+}
+
+void SyncSummary(char *out, size_t size) {
+    if (config::Get().server.host[0] == '\0') {
+        snprintf(out, size, "no server");
+        return;
+    }
+    const server::Status s = server::Get();
+    switch (s.icon) {
+        case server::sync::Icon::kHidden:
+        case server::sync::Icon::kOff: snprintf(out, size, "not registered"); return;
+        case server::sync::Icon::kPending: snprintf(out, size, "changes to send"); return;
+        case server::sync::Icon::kOk: snprintf(out, size, "in sync"); return;
+        case server::sync::Icon::kConflict: snprintf(out, size, "waits for you"); return;
+    }
+}
+
+uint8_t SyncWaits() {
+    const server::Status s = server::Get();
+    uint8_t bits = 0;
+    for (size_t i = 0; i < server::sync::kStores; ++i) {
+        const server::sync::Phase p = s.stores[i].phase;
+        bits |= static_cast<uint8_t>((p == server::sync::Phase::kConflict ? 1u : 0u) << (2 * i));
+        bits |= static_cast<uint8_t>((p == server::sync::Phase::kNeedPin ? 1u : 0u) << (2 * i + 1));
+    }
+    return bits;
+}
+
+const char *SyncResolve(uint8_t store, bool take, const char *pin) {
+    if (const char *why = ServerBlocked()) {
+        return why;
+    }
+    switch (server::StartResolve(static_cast<server::sync::Store>(store),
+                                 take ? server::Choice::kTakeServer : server::Choice::kKeepMine,
+                                 pin)) {
+        case ESP_OK: return take ? "taking the server's copy..." : "sending this device's copy...";
+        case ESP_ERR_NOT_FOUND: return "not registered";
+        case ESP_ERR_INVALID_STATE: return "busy, or nothing waits";
+        default: return "cannot resolve";
+    }
+}
+
+uint8_t ServerSyncMinutes() { return config::Get().server.sync_minutes; }
+
+const char *ServerSetSyncMinutes(uint8_t minutes) {
+    if (!config::ValidStatusMinutes(minutes)) {
+        return "not a choice";
+    }
+    config::Get().server.sync_minutes = minutes;
+    return config::Save() == ESP_OK ? "saved" : "in use, but config.json is not saved";
+}
+
+// --- The stores for the sync (server::Hooks, the server's task) ---------------------
+
+const char *SyncPath(server::sync::Store store) {
+    if (store == server::sync::Store::kVault) {
+        const vault::State st = vault::GetState();
+        return st == vault::State::kLocked || st == vault::State::kOpen ? vault::StoreFile().path
+                                                                        : nullptr;
+    }
+    // Refused (rollback, damaged): left alone. Locked: the file goes up as it is.
+    if (fido_file == nullptr ||
+        (vault::GetState() == vault::State::kOpen && fido_ctap_stopped_reason() != nullptr)) {
+        return nullptr;
+    }
+    return fido_file;
+}
+
+server::Taken SyncTake(server::sync::Store store, const char *from,
+                       const uint8_t store_id[server::sync::kStoreIdSize], bool force,
+                       const char *pin, char *said, size_t size) {
+    const storefile::File fido = {fido_file, storefile::Kind::kFido, "fido"};
+    const storefile::File &target =
+        store == server::sync::Store::kVault ? vault::StoreFile() : fido;
+    if (target.path == nullptr) {
+        snprintf(said, size, "no store file");
+        return server::Taken::kFailed;
+    }
+    const vault::Error e = vault::Adopt(target, from, store_id, force, pin);
+    switch (e) {
+        case vault::Error::kOk: return server::Taken::kOk;
+        case vault::Error::kLocked: return server::Taken::kLocked;
+        case vault::Error::kNeedPin: return server::Taken::kNeedPin;
+        case vault::Error::kWrongPin:
+            snprintf(said, size, "wrong PIN for the server's copy");
+            return server::Taken::kWrongPin;
+        default:
+            snprintf(said, size, "%s", vault::Describe(e));
+            return server::Taken::kFailed;
+    }
+}
+
 void ServerEmail(char *out, size_t size) { snprintf(out, size, "%s", config::Get().server.email); }
 
 const char *ServerRegister(const char *email) {
@@ -693,8 +837,9 @@ const char *ServerSetStatusMinutes(uint8_t minutes) {
     return config::Save() == ESP_OK ? "saved" : "in use, but config.json is not saved";
 }
 
-const ui::ServerHooks kServerHooks = {ServerEmail, ServerRegister, ServerStatusMinutes,
-                                      ServerSetStatusMinutes};
+const ui::ServerHooks kServerHooks = {ServerEmail,       ServerRegister,       ServerStatusMinutes,
+                                      ServerSetStatusMinutes, ServerSyncMinutes, ServerSetSyncMinutes,
+                                      SyncSummary,       SyncWaits,            SyncResolve};
 
 // The status schedule (server::Hooks): from the scheduler's task.
 const server::Hooks kServerSchedule = {
@@ -712,6 +857,30 @@ const server::Hooks kServerSchedule = {
             r->uptime = esp_timer_get_time() / 1000000;
             r->time = now >= 1704067200 ? static_cast<int64_t>(now) : 0;
         },
+    .sync_minutes = ServerSyncMinutes,
+    .store_path = SyncPath,
+    .store_version =
+        [](server::sync::Store store) {
+            return store == server::sync::Store::kVault ? vault::Version()
+                                                        : fido_ctap_file_version();
+        },
+    .open = [] { return vault::GetState() == vault::State::kOpen; },
+    .empty =
+        [](server::sync::Store store) {
+            if (store == server::sync::Store::kVault) {
+                return vault::GetInfo().count == 0;
+            }
+            fido_ctap_info_t info = {};
+            return fido_ctap_info(&info) == ESP_OK && info.credentials == 0;
+        },
+    .rewrite =
+        [](server::sync::Store store, uint32_t min_version) {
+            if (store == server::sync::Store::kVault) {
+                return vault::Rewrite(min_version) == vault::Error::kOk ? ESP_OK : ESP_FAIL;
+            }
+            return fido_ctap_rewrite(min_version);
+        },
+    .take = SyncTake,
 };
 
 void SettingsDescribe(ui::settings::Page page, bool summary, char *out, size_t size) {
@@ -754,7 +923,13 @@ void SettingsDescribe(ui::settings::Page page, bool summary, char *out, size_t s
         case Page::kWifiStaticText:
         case Page::kWifiHidden:
         case Page::kServerEmail:
-        case Page::kServerConfig: break;
+        case Page::kServerConfig:
+        case Page::kServerSyncPin: break;
+        case Page::kServerSync:
+            if (!summary) {
+                DescribeSync(out, size);
+            }
+            break;
         case Page::kFido: DescribeFido(summary, out, size); break;
         case Page::kWeb:
             if (summary) {
@@ -802,6 +977,16 @@ const char *SettingsAct(ui::settings::Action action) {
                 case ESP_ERR_NOT_FOUND: return "not registered";
                 case ESP_ERR_INVALID_STATE: return "busy: a request is under way";
                 default: return "cannot send the status";
+            }
+        case Action::kServerSync:
+            if (const char *why = ServerBlocked()) {
+                return why;
+            }
+            switch (server::StartSync()) {
+                case ESP_OK: return "syncing";
+                case ESP_ERR_NOT_FOUND: return "not registered";
+                case ESP_ERR_INVALID_STATE: return "busy: a request is under way";
+                default: return "cannot sync";
             }
         case Action::kServerRegister:  // the ui asks the e-mail (ServerRegister)
         case Action::kNone: break;

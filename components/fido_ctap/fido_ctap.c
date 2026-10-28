@@ -285,6 +285,46 @@ esp_err_t fido_ctap_set_key(const fido_ctap_key_t *key) {
     return err;
 }
 
+esp_err_t fido_ctap_adopt(const char *from, const fido_ctap_key_t *key, bool force) {
+    if (lock == NULL || ctx->path == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    xSemaphoreTake(lock, portMAX_DELAY);  // a running request finishes first
+    stop();
+    esp_err_t err =
+        ctap_file_storage_install_copy(&storage, from, force) == CTAP_STORAGE_OK ? ESP_OK : ESP_FAIL;
+    ctx->key = *key;
+    ctx->has_key = true;
+    ctx->refused = NULL;
+    if (storage.init(&storage) == CTAP_STORAGE_OK) {
+        const esp_err_t started = start();
+        err = err == ESP_OK ? started : err;
+    } else {
+        err = ESP_FAIL;
+        if (ctx->refused == NULL) {
+            ctx->refused = "the store could not be loaded";
+        }
+    }
+    xSemaphoreGive(lock);
+    ESP_LOGI(TAG, "the server's copy taken: %s", esp_err_to_name(err));
+    return err;
+}
+
+esp_err_t fido_ctap_rewrite(uint32_t min_version) {
+    if (lock == NULL || ctx->path == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    xSemaphoreTake(lock, portMAX_DELAY);
+    const esp_err_t err = !ready ? ESP_ERR_INVALID_STATE
+                          : ctap_file_storage_rewrite(&storage, min_version) == CTAP_STORAGE_OK
+                              ? ESP_OK
+                              : ESP_FAIL;
+    xSemaphoreGive(lock);
+    return err;
+}
+
+uint32_t fido_ctap_file_version(void) { return ready ? ctx->version : 0; }
+
 esp_err_t fido_ctap_stage_key(const fido_ctap_key_t *key) {
     if (lock == NULL || ctx->path == NULL) {
         return ESP_OK;

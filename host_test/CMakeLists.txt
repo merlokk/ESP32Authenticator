@@ -61,6 +61,7 @@ add_executable(host_test
     test_usb.cpp
     test_rng.cpp
     test_server.cpp
+    test_sync.cpp
     fakes/fake_platform.cpp
     fakes/fake_store.cpp
 
