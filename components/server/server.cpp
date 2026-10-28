@@ -235,6 +235,14 @@ struct Call {
     Body *answer = nullptr;
 };
 
+// The answer's HTTP status; -1: none. A 401 whose WWW-Authenticate is
+// Bearer (a token the server no longer takes: its keys changed) fails
+// esp_http_client_perform with ESP_ERR_NOT_SUPPORTED: still a 401.
+int StatusOf(esp_http_client_handle_t client, esp_err_t err) {
+    const int code = esp_http_client_get_status_code(client);
+    return err == ESP_OK || (err == ESP_ERR_NOT_SUPPORTED && code == 401) ? code : -1;
+}
+
 // The HTTP status; -1 with no answer.
 int Request(const Call &c) {
     esp_http_client_config_t cfg = {};
@@ -273,7 +281,7 @@ int Request(const Call &c) {
         esp_http_client_set_post_field(client, c.body, static_cast<int>(c.body_len));
     }
     const esp_err_t err = esp_http_client_perform(client);
-    const int code = err == ESP_OK ? esp_http_client_get_status_code(client) : -1;
+    const int code = StatusOf(client, err);
     last_error = err;
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "request: %s", esp_err_to_name(err));
@@ -682,7 +690,7 @@ const char *Fetch(const Job &r, Body &answer, char *said, size_t size) {
         d.range_ok = false;
         answer.length = 0;
         const esp_err_t err = esp_http_client_perform(client);
-        const int code = err == ESP_OK ? esp_http_client_get_status_code(client) : -1;
+        const int code = StatusOf(client, err);
         last_error = err;
         Answered(code);
         if (code == 401) {
