@@ -686,9 +686,13 @@ void DescribeSync(char *out, size_t size) {
         const server::StoreStatus &t = s.stores[static_cast<size_t>(store)];
         const char *name = store == sy::Store::kVault ? "Passwords" : "Passkeys";
         if (sy::ByHand(t.phase) || t.phase == sy::Phase::kNewer) {
-            Put(out, size, name, "%s: v%u here, v%u %s", sy::PhaseText(t.phase),
-                static_cast<unsigned>(t.local_version), static_cast<unsigned>(t.server_version),
-                t.other_store ? "(another store)" : "there");
+            // "conflict, v318 / v319": here / the server's.
+            Put(out, size, name, "%s, v%u / v%u",
+                t.phase == sy::Phase::kNeedPin ? "its PIN" : sy::PhaseText(t.phase),
+                static_cast<unsigned>(t.local_version), static_cast<unsigned>(t.server_version));
+            if (t.other_store) {
+                Put(out, size, "  server's", "another store");
+            }
             if (t.server_at[0] != '\0') {
                 Put(out, size, "  sent", "%s UTC", t.server_at);
             }
@@ -818,6 +822,9 @@ server::Taken SyncTake(server::sync::Store store, const char *from,
         case vault::Error::kWrongPin:
             snprintf(said, size, "wrong PIN for the server's copy");
             return server::Taken::kWrongPin;
+        case vault::Error::kBadCopy:
+            snprintf(said, size, "%s", vault::Describe(e));
+            return server::Taken::kBad;
         default:
             snprintf(said, size, "%s", vault::Describe(e));
             return server::Taken::kFailed;

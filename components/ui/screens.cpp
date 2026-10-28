@@ -1168,7 +1168,7 @@ void ShowSettingsPage(settings::Page page) {
         bottom -= 112;
         lv_obj_t *head = Label(content, &lv_font_montserrat_20);
         lv_label_set_text_fmt(head, "%s: %s", settings::SyncStoreTitle(i),
-                              conflict ? "both changed" : "another PIN on the server's copy");
+                              conflict ? "which copy stays?" : "the server's has another PIN");
         lv_obj_set_pos(head, 12, bottom + 8);
         const int32_t w = (kRowWidth - 24 - 12) / 2;
         lv_obj_t *keep = AskButton(content, w, "Keep mine");

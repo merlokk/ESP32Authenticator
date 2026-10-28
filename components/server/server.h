@@ -67,7 +67,9 @@ esp_err_t StartRegister(const char *host, const char *email);
 esp_err_t StartCheck(const char *host);
 
 // What the vault and FIDO2 give the sync (from the server's task, 10 KB).
-enum class Taken : uint8_t { kOk, kLocked, kNeedPin, kWrongPin, kFailed };
+// kBad: the copy does not check out (its tag, an old version): a conflict,
+// so this device's copy can be kept over it.
+enum class Taken : uint8_t { kOk, kLocked, kNeedPin, kWrongPin, kBad, kFailed };
 
 // What the schedule asks the device (any of them from the scheduler's task,
 // 4 KB stack; `report` also from StartStatus' caller; the stores' from the

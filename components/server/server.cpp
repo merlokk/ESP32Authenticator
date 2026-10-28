@@ -872,6 +872,13 @@ Outcome Take(const char *host, sync::Store s, const sync::Copy &local,
         SetStore(s, sync::Phase::kNewer, local.version, server.version, other);
         return Outcome::kWaits;
     }
+    if (t == Taken::kBad) {
+        // Never taken: only a person can put ours over it.
+        SetWaiting(s, server, other);
+        SetStore(s, sync::Phase::kConflict, local.version, server.version, other);
+        snprintf(said, said_size, "bad copy there");
+        return Outcome::kWaits;
+    }
     SetStore(s, sync::Phase::kFailed, local.version, server.version, other);
     return Outcome::kFailed;
 }
