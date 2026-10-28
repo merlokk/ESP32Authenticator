@@ -5,6 +5,7 @@
 
 #include "board_devices.h"
 #include "buttons.h"
+#include "esp_attr.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -41,7 +42,8 @@ Listener listeners[kMaxListeners] = {};
 unsigned listener_count = 0;
 
 StaticTask_t task_storage;
-StackType_t task_stack[kTaskStackBytes / sizeof(StackType_t)];
+// In PSRAM: the task never touches the flash (the cache is off meanwhile).
+EXT_RAM_BSS_ATTR StackType_t task_stack[kTaskStackBytes / sizeof(StackType_t)];
 bool started = false;
 
 uint32_t NowMs() { return static_cast<uint32_t>(esp_timer_get_time() / 1000); }

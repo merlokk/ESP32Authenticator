@@ -222,8 +222,9 @@ bool Prepare() {
     if (state == nullptr || response == nullptr || reports == nullptr || state_lock == nullptr ||
         send_lock == nullptr || sent == nullptr ||
         xTaskCreate(Worker, "usb_fido", kWorkerStack, nullptr, kWorkerPriority, &worker) != pdPASS ||
-        xTaskCreate(LinkTask, "usb_ctaphid", kLinkStack, nullptr, kLinkPriority, nullptr) !=
-            pdPASS) {
+        // The link's stack in PSRAM: it never touches the flash (the worker does).
+        xTaskCreateWithCaps(LinkTask, "usb_ctaphid", kLinkStack, nullptr, kLinkPriority, nullptr,
+                            MALLOC_CAP_SPIRAM) != pdPASS) {
         ESP_LOGE(TAG, "no memory: no FIDO2 over USB");
         return false;
     }

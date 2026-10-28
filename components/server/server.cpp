@@ -7,6 +7,7 @@
 #include <sys/stat.h>
 
 #include "crypto.h"
+#include "esp_attr.h"
 #include "esp_crt_bundle.h"
 #include "esp_efuse.h"
 #include "esp_efuse_table.h"
@@ -1233,7 +1234,8 @@ esp_err_t Start(Kind kind, const char *host, const char *email, const Report *re
 // --- The schedule ---------------------------------------------------------------
 
 StaticTask_t scheduler_task;
-StackType_t scheduler_stack[kSchedulerStack / sizeof(StackType_t)];
+// In PSRAM: the task never touches the flash (the cache is off meanwhile).
+EXT_RAM_BSS_ATTR StackType_t scheduler_stack[kSchedulerStack / sizeof(StackType_t)];
 
 void Scheduler(void *) {
     for (;;) {

@@ -9,6 +9,7 @@
 #include "clock_math.h"
 #include "codes.h"
 #include "config.h"
+#include "esp_attr.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "fido_ctap.h"
@@ -26,9 +27,9 @@ constexpr const char *TAG = "web";
 // Static, not on the httpd stack; httpd serves one request at a time. Both
 // hold secrets: wiped after every use (Wiped).
 vault::Record g_record;
-AdminRequest g_request;
+EXT_RAM_BSS_ATTR AdminRequest g_request;
 // Escaped text for one record or credential.
-char g_text[3][2 * vault::kSiteMax + 8];
+EXT_RAM_BSS_ATTR char g_text[3][2 * vault::kSiteMax + 8];
 // A new seed phrase's words (seed-new answers them, once).
 char g_words[vault::seed::kTextSize];
 

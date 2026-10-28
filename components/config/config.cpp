@@ -6,6 +6,7 @@
 #include <initializer_list>
 
 #include "cJSON.h"
+#include "esp_attr.h"
 #include "esp_log.h"
 #include "zones.h"
 
@@ -100,7 +101,7 @@ char dir[kMaxDirSize] = {};
 char path[kMaxDirSize + 16] = {};
 char temp_path[kMaxDirSize + 16] = {};
 char last_error[kErrorSize] = {};
-char file_buffer[kMaxFileSize + 1];
+EXT_RAM_BSS_ATTR char file_buffer[kMaxFileSize + 1];
 
 void SetError(char *error, size_t size, const char *text) {
     if (error != nullptr && size > 0) {

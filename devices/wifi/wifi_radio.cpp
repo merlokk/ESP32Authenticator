@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <cstring>
 
+#include "esp_attr.h"
 #include "esp_event.h"
 #include "esp_log.h"
 #include "esp_netif.h"
@@ -21,7 +22,7 @@ namespace {
 
 constexpr const char *TAG = "wifi";
 
-wifi_ap_record_t scan_records[kMaxScanResults];
+EXT_RAM_BSS_ATTR wifi_ap_record_t scan_records[kMaxScanResults];
 
 // Copies into a fixed field, refusing rather than truncating.
 bool CopyField(char *out, size_t capacity, const char *in) {

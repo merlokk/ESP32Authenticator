@@ -15,6 +15,7 @@
 #include "console.h"
 #include "crypto.h"
 #include "esp_app_desc.h"
+#include "esp_attr.h"
 #include "esp_chip_info.h"
 #include "esp_flash.h"
 #include "esp_idf_version.h"
@@ -92,7 +93,7 @@ std::atomic<bool> fido_waiting{false};
 void PromptFor(const uint8_t *msg, size_t len) {
     namespace fp = ui::fido_prompt;
     static SemaphoreHandle_t lock = xSemaphoreCreateMutex();
-    static fp::Request request;  // ~800 bytes: off the transport task's stack
+    static EXT_RAM_BSS_ATTR fp::Request request;  // ~800 bytes: off the transport task's stack
     xSemaphoreTake(lock, portMAX_DELAY);
     request = fp::Parse(msg, len);
     if (request.kind == fp::Kind::kSignIn || request.kind == fp::Kind::kU2fSignIn) {
@@ -1064,7 +1065,7 @@ void WifiView(ui::wifi_view::View *out) {
 }
 
 size_t WifiScan(ui::wifi_view::Nearby *out, size_t capacity) {
-    static wifi::ScanResult found[wifi::kMaxScanResults];  // off the caller's stack
+    static EXT_RAM_BSS_ATTR wifi::ScanResult found[wifi::kMaxScanResults];  // off the caller's stack
     size_t count = 0;
     if (wifimgr::Scan(found, wifi::kMaxScanResults, &count) != ESP_OK) {
         return 0;

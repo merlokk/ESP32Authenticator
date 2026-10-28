@@ -4,6 +4,7 @@
 
 #include "clock_math.h"
 #include "config.h"
+#include "esp_attr.h"
 #include "esp_log.h"
 #include "esp_netif_sntp.h"
 #include "esp_timer.h"
@@ -23,7 +24,8 @@ constexpr uint32_t kPollMs = 1000;
 // Our bound on one exchange: DNS + a retry on a slow link.
 constexpr uint32_t kExchangeMs = 15000;
 
-StackType_t task_stack[kStackBytes];
+// In PSRAM: the task never touches the flash (the cache is off meanwhile).
+EXT_RAM_BSS_ATTR StackType_t task_stack[kStackBytes];
 StaticTask_t task_storage;
 StaticSemaphore_t lock_storage;
 SemaphoreHandle_t lock = nullptr;

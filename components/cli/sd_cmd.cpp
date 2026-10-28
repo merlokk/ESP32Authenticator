@@ -12,6 +12,7 @@
 #include "ota_update.h"
 #include "sd_card.h"
 #include "wallpaper_logic.h"
+#include "esp_attr.h"
 
 namespace console {
 
@@ -25,8 +26,8 @@ int CmdLs(const char *rel) {
         return 1;
     }
     // Static, not on the console task's stack (4 KB).
-    static char dir_path[kPathSize];
-    static char path[kPathSize];
+    static EXT_RAM_BSS_ATTR char dir_path[kPathSize];
+    static EXT_RAM_BSS_ATTR char path[kPathSize];
     if (!sd_card::JoinPath(sd_card::kBasePath, rel, dir_path, sizeof dir_path)) {
         printf("bad path '%s'\n", rel);
         return 1;
@@ -98,7 +99,7 @@ bool WallpaperPath(const char *name, char *path, size_t size) {
 }
 
 int CmdPut(const char *name, size_t length, uint32_t crc) {
-    static char path[kPathSize];
+    static EXT_RAM_BSS_ATTR char path[kPathSize];
     if (!WallpaperPath(name, path, sizeof path)) {
         return 1;
     }
@@ -124,7 +125,7 @@ int CmdPut(const char *name, size_t length, uint32_t crc) {
 }
 
 int CmdRm(const char *name) {
-    static char path[kPathSize];
+    static EXT_RAM_BSS_ATTR char path[kPathSize];
     if (!WallpaperPath(name, path, sizeof path)) {
         return 1;
     }

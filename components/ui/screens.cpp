@@ -11,6 +11,7 @@
 #include <cstring>
 #include <ctime>
 
+#include "esp_attr.h"
 #include "esp_heap_caps.h"
 #include "fido_ctap.h"
 #include "fido_list_logic.h"
@@ -178,7 +179,7 @@ Job MakeJob(JobKind kind) {
 }
 QueueHandle_t jobs = nullptr;
 StaticQueue_t jobs_storage;
-uint8_t jobs_buffer[4 * sizeof(Job)];
+EXT_RAM_BSS_ATTR uint8_t jobs_buffer[4 * sizeof(Job)];
 StackType_t type_stack[kTypeStackBytes];
 StaticTask_t type_storage;
 vault::Record type_record;  // the typing task's copy
@@ -220,7 +221,7 @@ void Toast(const char *text) {
 
 // --- the FIDO2 prompt ----------------------------------------------------------------
 
-fido_prompt::Request fido_request;  // SetFidoRequest, under Lock
+EXT_RAM_BSS_ATTR fido_prompt::Request fido_request;  // SetFidoRequest, under Lock
 lv_obj_t *prompt = nullptr;
 bool prompt_demo = false;  // ui demo prompt
 // The physical buttons, held upright: Left and Right on the edges at the
@@ -897,8 +898,8 @@ constexpr int32_t kLineHeight = 50;
 constexpr size_t kSettingsText = 512;
 // What the shown page says (describe; the main page: its rows' summaries, a
 // line each), looked at every kSettingsMs: drawn again when it changes.
-char settings_shown[kSettingsText];
-char settings_now[kSettingsText];
+EXT_RAM_BSS_ATTR char settings_shown[kSettingsText];
+EXT_RAM_BSS_ATTR char settings_now[kSettingsText];
 lv_obj_t *light_switch = nullptr;
 lv_obj_t *light_value[2] = {};  // "60%" after the sliders
 bool light_save = false;        // a slider let go: for Poll (the save job)
@@ -1215,7 +1216,7 @@ const WifiHooks *wifi_hooks = nullptr;
 wifi_view::View wifi_shown;
 wifi_view::View wifi_now;
 // The scan: written by the ui's own task under Lock; drawn when its count changes.
-wifi_view::Nearby nearby[kScanCapacity];
+EXT_RAM_BSS_ATTR wifi_view::Nearby nearby[kScanCapacity];
 size_t nearby_count = 0;
 bool scanning = false;
 uint32_t scans = 0;
@@ -1289,7 +1290,7 @@ void OnHidden(lv_event_t *) {
 
 // The ui's own task: a scan (seconds), then the list.
 void WifiScanJob() {
-    static wifi_view::Nearby found[kScanCapacity];  // off the task's stack
+    static EXT_RAM_BSS_ATTR wifi_view::Nearby found[kScanCapacity];  // off the task's stack
     size_t n = wifi_hooks->scan(found, kScanCapacity);
     n = wifi_view::Tidy(found, n, wifi_view::kMaxNearby);
     Lock();

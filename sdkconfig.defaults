@@ -10,6 +10,13 @@ CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 # 8 MB octal PSRAM.
 CONFIG_SPIRAM=y
 CONFIG_SPIRAM_MODE_OCT=y
+# malloc() over 4 KB from PSRAM (the default: over 16 KB); DMA and internal
+# buffers ask by their caps.
+CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=4096
+# EXT_RAM_BSS_ATTR: static buffers and task stacks in PSRAM. A task whose
+# stack is there must not touch the flash (NVS, SPIFFS, OTA): the cache is
+# off during a flash operation.
+CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY=y
 
 # Stock bootloader has rollback enabled; keep ours the same.
 CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
@@ -34,6 +41,8 @@ CONFIG_BT_NIMBLE_SM_SC=y
 CONFIG_BT_NIMBLE_EXT_ADV=n
 CONFIG_BT_NIMBLE_SVC_GAP_DEVICE_NAME="ESP32 Auth"
 CONFIG_BT_NIMBLE_LOG_LEVEL_WARNING=y
+# The host's pools (mbufs, ACL and HCI buffers) in PSRAM; the controller stays internal.
+CONFIG_BT_NIMBLE_MEM_ALLOC_MODE_EXTERNAL=y
 
 # LVGL (components/ui): 1-bit colour for the X4 Pro e-ink (monochrome theme);
 # every LVGL allocation (widgets, layers, draw buffers) in PSRAM through

@@ -5,6 +5,7 @@
 #include <cstring>
 
 #include "epd.h"
+#include "esp_attr.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_random.h"
@@ -24,8 +25,8 @@ namespace {
 
 constexpr const char *TAG = "wallpaper";
 
-wallpaper::Dither dither;  // 2.9 KB of error rows: static, not on a stack
-char path[300];
+EXT_RAM_BSS_ATTR wallpaper::Dither dither;  // 2.9 KB of error rows: static, not on a stack
+EXT_RAM_BSS_ATTR char path[300];
 
 // PreviewWallpaper: lodepng wants more stack than the console's 4 KB.
 constexpr uint32_t kPreviewStackBytes = 6144;
@@ -39,7 +40,7 @@ void PreviewTask(void *) {
     HoldPanel(false);
     Unlock();
     xSemaphoreGive(preview_done);
-    vTaskDelete(nullptr);
+    vTaskDeleteWithCaps(nullptr);
 }
 
 // A random wallpaper's full path into `path`; false when there is none.
@@ -160,7 +161,9 @@ esp_err_t PreviewWallpaper(bool grey, const char **shown) {
     if (preview_done == nullptr) {
         preview_done = xSemaphoreCreateBinary();
     }
-    if (xTaskCreate(&PreviewTask, "wallpaper", kPreviewStackBytes, nullptr, 3, nullptr) != pdPASS) {
+    // The stack in PSRAM: the task reads the SD card only, never the flash.
+    if (xTaskCreateWithCaps(&PreviewTask, "wallpaper", kPreviewStackBytes, nullptr, 3, nullptr,
+                            MALLOC_CAP_SPIRAM) != pdPASS) {
         return ESP_ERR_NO_MEM;
     }
     xSemaphoreTake(preview_done, portMAX_DELAY);

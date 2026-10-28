@@ -5,6 +5,7 @@
 #include <atomic>
 
 #include "ble.h"
+#include "esp_attr.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
@@ -64,8 +65,8 @@ uint16_t status_handle = 0;
 bool subscribed = false;
 
 // Request being assembled. Written from the host task only.
-uint8_t request[kMaxMessage];
-uint8_t response[kMaxMessage];
+EXT_RAM_BSS_ATTR uint8_t request[kMaxMessage];
+EXT_RAM_BSS_ATTR uint8_t response[kMaxMessage];
 uint8_t request_cmd = 0;
 size_t request_len = 0;       // announced total length
 size_t request_got = 0;       // bytes received so far
@@ -77,7 +78,7 @@ uint32_t errors = 0;
 
 // MSG being handled by the worker: copied out of `request`, which the host
 // task keeps using for the next frames.
-uint8_t work[kMaxMessage];
+EXT_RAM_BSS_ATTR uint8_t work[kMaxMessage];
 size_t work_len = 0;
 std::atomic<bool> busy{false};
 std::atomic<bool> cancelled{false};
@@ -137,7 +138,7 @@ void Send(uint8_t cmd, const uint8_t *data, size_t len) {
     if (frame_max > kControlPointLength) {
         frame_max = kControlPointLength;
     }
-    static uint8_t frame[kControlPointLength];  // host task only; keep it off its stack
+    static EXT_RAM_BSS_ATTR uint8_t frame[kControlPointLength];  // host task only; keep it off its stack
     frame[0] = cmd;
     frame[1] = static_cast<uint8_t>(len >> 8);
     frame[2] = static_cast<uint8_t>(len);
@@ -239,7 +240,7 @@ int Access(uint16_t, uint16_t, ble_gatt_access_ctxt *ctxt, void *arg) {
     const uintptr_t which = reinterpret_cast<uintptr_t>(arg);
     switch (which) {
         case 1: {  // fidoControlPoint
-            static uint8_t frame[kControlPointLength];  // host task only
+            static EXT_RAM_BSS_ATTR uint8_t frame[kControlPointLength];  // host task only
             uint16_t len = 0;
             if (OS_MBUF_PKTLEN(ctxt->om) > sizeof frame ||
                 ble_hs_mbuf_to_flat(ctxt->om, frame, sizeof frame, &len) != 0) {

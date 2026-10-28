@@ -5,6 +5,7 @@
 #include <cstring>
 
 #include "epd.h"
+#include "esp_attr.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -73,7 +74,8 @@ esp_err_t last_err = ESP_OK;
 // goes off kPanelOffMs after the last one.
 constexpr uint32_t kPanelOffMs = 2000;
 constexpr uint32_t kPushStackBytes = 4096;
-StackType_t push_stack[kPushStackBytes];
+// In PSRAM: the task never touches the flash (the cache is off meanwhile).
+EXT_RAM_BSS_ATTR StackType_t push_stack[kPushStackBytes];
 StaticTask_t push_storage;
 TaskHandle_t push_task = nullptr;
 SemaphoreHandle_t pending_mutex = nullptr;  // `pending` and the flags below

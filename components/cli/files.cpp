@@ -9,6 +9,7 @@
 #include <cstring>
 #include <ctime>
 
+#include "esp_attr.h"
 #include "esp_partition.h"
 #include "esp_rom_crc.h"
 #include "freertos/FreeRTOS.h"
@@ -24,7 +25,7 @@ namespace {
 constexpr size_t kPathSize = 64;
 
 // Static, not on the REPL task stack.
-uint8_t chunk[513];
+EXT_RAM_BSS_ATTR uint8_t chunk[513];
 
 bool CheckMounted() {
     if (!spiffs_fs::Mounted()) {

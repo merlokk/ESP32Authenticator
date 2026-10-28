@@ -4,6 +4,7 @@
 
 #include <cstring>
 
+#include "esp_attr.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -49,7 +50,8 @@ struct State {
 
 State state;
 
-StackType_t task_stack[kTaskStackBytes / sizeof(StackType_t)];
+// In PSRAM: the task never touches the flash (the cache is off meanwhile).
+EXT_RAM_BSS_ATTR StackType_t task_stack[kTaskStackBytes / sizeof(StackType_t)];
 StaticTask_t task_storage;
 
 uint32_t NowMs() { return static_cast<uint32_t>(esp_timer_get_time() / 1000); }

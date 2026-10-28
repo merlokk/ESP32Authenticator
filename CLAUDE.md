@@ -118,6 +118,8 @@ Reference projects (local paths + git): [sources.md](sources.md).
   (`host_test\lionkey.cmd` after changes in `lib/lionkey`).
 - Nothing over ~1 KB on a task stack (main 3.5 KB, console/httpd 4 KB): use the
   heap or static storage (a stack copy of the config boot-looped the board).
+  Large static buffers take `EXT_RAM_BSS_ATTR` (PSRAM, zero-initialised only);
+  a stack goes there only if its task never touches the flash.
 - Passwords never in logs, console dumps or HTTP answers; the web write path is
   a whitelist; config changes from the site are memory-only until saved.
 - Verify on the board after flashing (console via `utils/`, HTTP via `curl`).

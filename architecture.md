@@ -32,6 +32,7 @@ Target and status. Screen design and the open questions: [x4-design.md](x4-desig
 | Host link | BLE HID keyboard (types credentials), FIDO2 / U2F over BLE and USB HID |
 | Network | Wi-Fi (client / AP / AP+client) and a configuration web site |
 | Storage | `config.json` on SPIFFS; store files (`vault.bin`, `fido.bin`, encrypted) in `/sdcard/.authenticator` when the board has a card slot (no card: no stores, never a second set on SPIFFS), else SPIFFS |
+| Memory | PSRAM for `malloc` over 4 KB, the NimBLE host's pools, Wi-Fi / lwIP / wpa `.bss` and our `EXT_RAM_BSS_ATTR` buffers; task stacks in PSRAM only for tasks that never touch the flash (NVS, SPIFFS, OTA: the cache is off meanwhile): `ui_push`, `keypad`, `led`, `timesync`, `server_due`, `wallpaper`, `usb_ctaphid`. Internal heap after boot ~127 KB free (was ~34 KB) |
 
 Reference ESP-IDF + LVGL project: `../../ai-remote/approver-esp32` ([GitHub](https://github.com/merlokk/ai-remote/tree/main/approver-esp32)).
 

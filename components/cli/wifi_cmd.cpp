@@ -6,6 +6,7 @@
 #include <cstdlib>
 
 #include "config.h"
+#include "esp_attr.h"
 #include "esp_mac.h"
 #include "esp_netif.h"
 #include "freertos/FreeRTOS.h"
@@ -145,7 +146,7 @@ int CmdInfo(int, char **) {
 }
 
 int CmdScan(int, char **) {
-    static wifi::ScanResult found[wifi::kMaxScanResults];
+    static EXT_RAM_BSS_ATTR wifi::ScanResult found[wifi::kMaxScanResults];
     size_t count = 0;
     const int rc = Result(wifimgr::Scan(found, wifi::kMaxScanResults, &count), "scan");
     if (rc != 0) {
@@ -508,7 +509,7 @@ int CmdShow(int, char **) {
     if (masked.test.pin[0] != '\0') {
         snprintf(masked.test.pin, config::kPinSize, "***");
     }
-    static char json[config::kMaxFileSize];
+    static EXT_RAM_BSS_ATTR char json[config::kMaxFileSize];
     if (config::Serialize(masked, json, sizeof json) == 0) {
         printf("does not fit in %u bytes\n", static_cast<unsigned>(sizeof json));
         return 1;

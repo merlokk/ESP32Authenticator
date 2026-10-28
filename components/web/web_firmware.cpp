@@ -7,6 +7,7 @@
 #include <cstring>
 
 #include "config.h"
+#include "esp_attr.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -26,9 +27,9 @@ constexpr size_t kChunk = 4096;
 constexpr int kMaxStalls = 6;  // receive timeouts in a row before the upload is dropped
 
 // Static, not on the httpd stack; one request at a time.
-ota::Status g_ota;
+EXT_RAM_BSS_ATTR ota::Status g_ota;
 ota::SdFile g_sd;
-char g_esc[6][72];
+EXT_RAM_BSS_ATTR char g_esc[6][72];
 
 const char *Esc(int slot, const char *text) {
     Escape(text, g_esc[slot], sizeof g_esc[slot]);

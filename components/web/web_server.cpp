@@ -10,6 +10,7 @@
 #include "board_devices.h"
 #include "config.h"
 #include "esp_app_desc.h"
+#include "esp_attr.h"
 #include "esp_heap_caps.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
@@ -108,10 +109,10 @@ class Held {
 };
 
 // httpd is one task serving one request at a time: these cannot be re-entered.
-char g_json[2048];
-char g_body[kMaxSettingsBody + 1];  // a POST body in, or a settings document out
+EXT_RAM_BSS_ATTR char g_json[2048];
+EXT_RAM_BSS_ATTR char g_body[kMaxSettingsBody + 1];  // a POST body in, or a settings document out
 constexpr size_t kMaxScan = 12;
-wifi::ScanResult g_scan[kMaxScan];
+EXT_RAM_BSS_ATTR wifi::ScanResult g_scan[kMaxScan];
 constexpr size_t kMaxAuthHeader = kMaxEncodedSize + 24;
 char g_auth[kMaxAuthHeader];
 
