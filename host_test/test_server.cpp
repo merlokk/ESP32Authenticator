@@ -202,21 +202,31 @@ void test_server_ping(void) {
 }
 
 void test_server_offset(void) {
-    char out[24];
-    server::OffsetText(0, out, sizeof out);
-    TEST_ASSERT_EQUAL_STRING("same", out);
-    server::OffsetText(-2, out, sizeof out);
-    TEST_ASSERT_EQUAL_STRING("same", out);
-    server::OffsetText(12, out, sizeof out);
-    TEST_ASSERT_EQUAL_STRING("12 s ahead", out);
-    server::OffsetText(-119, out, sizeof out);
-    TEST_ASSERT_EQUAL_STRING("119 s behind", out);
-    server::OffsetText(-15 * 60, out, sizeof out);
-    TEST_ASSERT_EQUAL_STRING("15 min behind", out);
-    server::OffsetText(3 * 3600, out, sizeof out);
-    TEST_ASSERT_EQUAL_STRING("3 h ahead", out);
-    server::OffsetText(-400 * 86400LL, out, sizeof out);
-    TEST_ASSERT_EQUAL_STRING("400 days behind", out);
+    char out[40];
+    const struct {
+        int64_t offset;
+        const char *text;
+    } kCases[] = {
+        {0, "same (+0 s)"},
+        {-2, "same (-2 s)"},
+        {12, "+12 s ahead"},
+        {-14, "-14 s behind"},
+        {15, "+15 s ahead, bad"},
+        {-59, "-59 s behind, bad"},
+        {60, "+60 s ahead, critical"},
+        {-119, "-119 s behind, critical"},
+        {-185, "-185 s (3 min), critical"},
+        {3 * 3600, "+10800 s (3 h), critical"},
+        {-5 * 86400LL, "-432000 s (5 days), critical"},
+    };
+    for (const auto &c : kCases) {
+        server::OffsetText(c.offset, out, sizeof out);
+        TEST_ASSERT_EQUAL_STRING(c.text, out);
+    }
+    TEST_ASSERT_TRUE(server::ClockLevelOf(14) == server::ClockLevel::kOk);
+    TEST_ASSERT_TRUE(server::ClockLevelOf(-15) == server::ClockLevel::kBad);
+    TEST_ASSERT_TRUE(server::ClockLevelOf(59) == server::ClockLevel::kBad);
+    TEST_ASSERT_TRUE(server::ClockLevelOf(-60) == server::ClockLevel::kCritical);
 
     TEST_ASSERT_FALSE(server::ClockTooFar(600));
     TEST_ASSERT_FALSE(server::ClockTooFar(-600));

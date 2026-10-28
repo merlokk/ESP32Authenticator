@@ -631,7 +631,7 @@ void DescribeServer(bool summary, char *out, size_t size) {
         : s.link == server::Link::kOk     ? "yes"
         : s.link == server::Link::kFailed ? "no"
                                           : "not tried yet");
-    char text[24];
+    char text[40];  // OffsetText: "-432000 s (5 days), critical"
     if (s.has_offset) {
         server::OffsetText(s.offset, text, sizeof text);
         Put(out, size, "Clock", "%s", text);

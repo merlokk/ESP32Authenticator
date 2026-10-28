@@ -650,9 +650,26 @@ inline constexpr int64_t kIatWindow = 10 * 60;
 // `offset`: the device's clock minus the server's, from a ping.
 constexpr bool ClockTooFar(int64_t offset) { return offset > kIatWindow || offset < -kIatWindow; }
 
-// The device's clock against the server's (`offset` = device - server):
-// "same" within 2 s (the request's own delay), else "12 s ahead",
-// "3 min behind", "2 h ahead", "5 days behind".
+// How far the device's clock is off the server's, for the TOTP code the
+// server checks (30 s steps): from kClockBad a code may fall in the wrong
+// step, from kClockCritical it does.
+inline constexpr int64_t kClockBad = 15;
+inline constexpr int64_t kClockCritical = 60;
+
+enum class ClockLevel : uint8_t { kOk, kBad, kCritical };
+
+constexpr ClockLevel ClockLevelOf(int64_t offset) {
+    const int64_t d = offset < 0 ? -offset : offset;
+    return d >= kClockCritical ? ClockLevel::kCritical
+           : d >= kClockBad    ? ClockLevel::kBad
+                               : ClockLevel::kOk;
+}
+
+// The device's clock against the server's (`offset` = device - server),
+// always with the seconds (the server's time is whole seconds: +-1 s is the
+// resolution): "same (+1 s)" within 2 s, "+12 s ahead", "-20 s behind, bad",
+// "+75 s ahead, critical"; from 2 min the sign says which way:
+// "-185 s (3 min), critical", "+432000 s (5 days), critical".
 constexpr void OffsetText(int64_t offset, char *out, size_t size) {
     if (size == 0) {
         return;
@@ -660,14 +677,27 @@ constexpr void OffsetText(int64_t offset, char *out, size_t size) {
     size_t n = 0;
     out[0] = '\0';
     const int64_t d = offset < 0 ? -offset : offset;
+    const char *sign = offset < 0 ? "-" : "+";
     if (d <= 2) {
-        PutRaw("same", out, size, &n);
+        if (PutRaw("same (", out, size, &n) && PutRaw(sign, out, size, &n) &&
+            PutNumber(d, out, size, &n)) {
+            PutRaw(" s)", out, size, &n);
+        }
         return;
     }
-    const int64_t v = d < 120 ? d : d < 2 * 3600 ? d / 60 : d < 2 * 86400 ? d / 3600 : d / 86400;
-    const char *unit = d < 120 ? " s" : d < 2 * 3600 ? " min" : d < 2 * 86400 ? " h" : " days";
-    if (PutNumber(v, out, size, &n) && PutRaw(unit, out, size, &n)) {
-        PutRaw(offset > 0 ? " ahead" : " behind", out, size, &n);
+    bool ok = PutRaw(sign, out, size, &n) && PutNumber(d, out, size, &n) &&
+              PutRaw(" s", out, size, &n);
+    if (d < 120) {
+        ok = ok && PutRaw(offset > 0 ? " ahead" : " behind", out, size, &n);
+    } else {
+        const int64_t v = d < 2 * 3600 ? d / 60 : d < 2 * 86400 ? d / 3600 : d / 86400;
+        const char *unit = d < 2 * 3600 ? " min)" : d < 2 * 86400 ? " h)" : " days)";
+        ok = ok && PutRaw(" (", out, size, &n) && PutNumber(v, out, size, &n) &&
+             PutRaw(unit, out, size, &n);
+    }
+    const ClockLevel level = ClockLevelOf(offset);
+    if (ok && level != ClockLevel::kOk) {
+        PutRaw(level == ClockLevel::kBad ? ", bad" : ", critical", out, size, &n);
     }
 }
 

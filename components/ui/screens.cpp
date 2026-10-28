@@ -1144,12 +1144,16 @@ void ShowSettingsPage(settings::Page page) {
         lv_obj_t *l = Label(content, &lv_font_montserrat_24);
         lv_label_set_text(l, label);
         lv_obj_set_pos(l, 12, y + (kLineHeight - 30) / 2);
+        // The value takes the row after its label (a long one: Server's Clock).
+        lv_obj_update_layout(l);
+        const int32_t room = kRowWidth - 24 - lv_obj_get_width(l) - 16;
+        const int32_t width = room > 270 ? room : 270;
         lv_obj_t *v = Label(content, &lv_font_montserrat_24);
         lv_label_set_long_mode(v, LV_LABEL_LONG_MODE_DOTS);
         lv_obj_set_style_text_align(v, LV_TEXT_ALIGN_RIGHT, 0);
-        lv_obj_set_size(v, 270, 30);
+        lv_obj_set_size(v, width, 30);
         lv_label_set_text(v, value);
-        lv_obj_set_pos(v, kRowWidth - 282, y + (kLineHeight - 30) / 2);
+        lv_obj_set_pos(v, kRowWidth - 12 - width, y + (kLineHeight - 30) / 2);
     }
     if (action != settings::Action::kNone) {
         lv_obj_t *b = AskButton(content, kRowWidth - 48, settings::ActionText(action));

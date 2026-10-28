@@ -787,9 +787,11 @@ account on the authentication server (`config.json` `server.host`).
   `{"status":"ok","time":N}` (anything else: "not the server: HTTP n", or no
   answer); while the page is shown, at most once a minute, with Wi-Fi online
   and the clock set (console `server check`). `time` gives the device's clock
-  against the server's (Clock: "same" within 2 s, "12 s ahead", "3 min
-  behind"; console in seconds); over 10 min off, Register is refused (the
-  server would refuse `iat`). Status sent: the last status the server took.
+  against the server's in whole seconds (no milliseconds in the protocol:
+  +-1 s resolution). Clock, always with the seconds: "same (+1 s)" within 2 s,
+  "+12 s ahead", "-185 s (3 min)"; from 15 s ", bad", from 60 s ", critical"
+  (the server's TOTP check, 30 s steps). Over 10 min off, Register is refused
+  (the server would refuse `iat`). Status sent: the last status the server took.
   Protocol: `../ESP32AuthenticatorServer/device-protocol.md`.
 - Requests run one at a time in a task of their own (10 KB stack); TLS
   through the certificate bundle, mbedTLS allocates in PSRAM

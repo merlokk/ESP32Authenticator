@@ -18,7 +18,7 @@ void PrintStatus() {
     const config::Server &c = config::Get().server;
     const server::Status s = server::Get();
     const time_t now = time(nullptr);
-    char ago[24];
+    char ago[40];
     printf("host        %s\n", c.host[0] != '\0' ? c.host : "(none)");
     printf("email       %s\n", c.email[0] != '\0' ? c.email : "(none)");
     printf("registered  %s\n", s.registered ? "yes" : s.has_key ? "no (a key, not taken)" : "no");
@@ -36,7 +36,7 @@ void PrintStatus() {
     printf("\n");
     if (s.has_offset) {
         server::OffsetText(s.offset, ago, sizeof ago);
-        printf("clock       %s (%+lld s)\n", ago, static_cast<long long>(s.offset));
+        printf("clock       %s\n", ago);
     }
     char id[server::kClientIdSize + 1];
     if (server::ClientId(id, sizeof id)) {
