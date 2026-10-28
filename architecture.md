@@ -782,7 +782,7 @@ account on the authentication server (`config.json` `server.host`).
   with a client id, Wi-Fi online and the clock set (at the boot, or when
   Wi-Fi first connects), then every `server.statusMinutes` (0 never, 1, 10,
   30, 60; default 10), a failed one again in a minute. The answer's `time`
-  sets Clock, its `update` the Update line. Settings > Server > Configure:
+  sets Clock. Settings > Server > Configure:
   the interval (saved) and "Send the status now"; console `server report`.
 - Sync (`sync_logic.h`, device-protocol.md: Stores): `vault.bin` and
   `fido.bin` by their headers (store id, version, nonce). NVS `srvsync`
@@ -811,6 +811,19 @@ account on the authentication server (`config.json` `server.host`).
   10 min): how many, and one by its seed id: ours moved there (our store id,
   newer: the phrase changed on another device, type it), another device's
   own phrase, or ours under an old phrase.
+- Firmware (`firmware_logic.h`): after each status that went through (and on
+  Server > Firmware's opening or "Check the server"; console `server
+  firmware [check]`), `GET /api/device/firmware?board=`; the 8 newest by
+  version (`x.y.z-<commits>`, the hash orders nothing) kept, newest first.
+  One newer than the running firmware: the status bar's download icon and
+  "new: <version>" on the Server page's Firmware row. A release tapped:
+  asked (Yes held), then `GET /api/device/firmware/{id}/image` in 64 KB
+  `Range` pieces on one connection, each from where the slot stands (a cut
+  one costs its rest; 3 in a row with nothing: given up), into
+  `ota::Begin(kServer)` (its check as it streams, the progress window); the
+  SHA-256 must be the release's, then `ota::End` and the restart (trial
+  boot). Any release can go in, an older one too (asked as such); console
+  `server firmware install <#>`.
 - Connected: `GET https://<host>/api/device/ping` answered 200
   `{"status":"ok","time":N}` (anything else: "not the server: HTTP n", or no
   answer); while the page is shown, at most once a minute, with Wi-Fi online

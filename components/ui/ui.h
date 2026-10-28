@@ -185,6 +185,16 @@ struct ServerHooks {
     // A store that waits: this device's copy kept, or the server's taken
     // (`pin`: its PIN, "" none). The ui's own task, saying what happened.
     const char *(*resolve)(uint8_t store, bool take, const char *pin);
+    // Firmware: the server's releases for this board, newest first (up to
+    // `max` into `out`); their count. ui task.
+    uint8_t (*firmware)(settings::FirmwareRow *out, uint8_t max);
+    // Its row's value on the Server page ("new: 0.1.0-245"), and the line
+    // over the list ("checked 2 min ago", "looking..."). ui task.
+    void (*firmware_summary)(char *out, size_t size);
+    void (*firmware_note)(char *out, size_t size);
+    // Release `id` downloaded and installed (the progress window, then the
+    // restart). The ui's own task, saying what happened.
+    const char *(*firmware_install)(const char *id);
 };
 void SetServerHooks(const ServerHooks *hooks);
 

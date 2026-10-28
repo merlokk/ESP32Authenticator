@@ -1,10 +1,13 @@
 #include "server_cmd.h"
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <ctime>
 
 #include "config.h"
+#include "esp_app_desc.h"
+#include "ota_update.h"
 #include "server.h"
 #include "wifi_manager.h"
 
@@ -104,6 +107,30 @@ void PrintStatus() {
     char pub[server::Base64UrlLength(server::kPublicSize) + 1];
     if (server::PublicKey(pub, sizeof pub)) {
         printf("public key  %s\n", pub);
+    }
+}
+
+// The server's releases for this board, newest first.
+void PrintFirmware() {
+    const server::Status s = server::Get();
+    const char *running = esp_app_get_description()->version;
+    printf("running     %s\n", running);
+    char ago[40];
+    server::Ago(time(nullptr), s.firmware_at, ago, sizeof ago);
+    printf("checked     %s%s\n", ago, s.firmware_newer ? ", a newer one is there" : "");
+    if (s.firmware_said[0] != '\0') {
+        printf("said        %s\n", s.firmware_said);
+    }
+    static server::firmware::Release list[server::firmware::kMaxReleases];  // off the stack
+    const size_t n = server::Releases(list, server::firmware::kMaxReleases);
+    for (size_t i = 0; i < n; ++i) {
+        const server::firmware::Release &r = list[i];
+        printf("%2u  %-32s %7u KB  %s%s%s\n", static_cast<unsigned>(i + 1), r.version,
+               static_cast<unsigned>((r.size + 1023) / 1024), r.built,
+               r.active ? ", offered" : "",
+               strcmp(r.version, running) == 0              ? ", running"
+               : server::firmware::Newer(r.version, running) ? ", newer"
+                                                              : "");
     }
 }
 
@@ -234,8 +261,41 @@ int CmdServer(int argc, char **argv) {
                                      : err == ESP_ERR_INVALID_STATE ? "busy" : esp_err_to_name(err));
         return err == ESP_OK ? 0 : 1;
     }
+    if (strcmp(sub, "firmware") == 0 && argc == 2) {
+        PrintFirmware();
+        return 0;
+    }
+    if (strcmp(sub, "firmware") == 0 && argc == 3 && strcmp(argv[2], "check") == 0) {
+        if (!Ready()) {
+            return 1;
+        }
+        const esp_err_t err = server::StartFirmwareList();
+        printf("%s\n", err == ESP_OK                ? "asking: `server firmware` shows the list"
+                       : err == ESP_ERR_NOT_FOUND     ? "not registered (or no client id): register"
+                       : err == ESP_ERR_INVALID_STATE ? "busy"
+                                                      : esp_err_to_name(err));
+        return err == ESP_OK ? 0 : 1;
+    }
+    if (strcmp(sub, "firmware") == 0 && argc == 4 && strcmp(argv[2], "install") == 0) {
+        static server::firmware::Release list[server::firmware::kMaxReleases];  // off the stack
+        const size_t n = server::Releases(list, server::firmware::kMaxReleases);
+        const int i = atoi(argv[3]);
+        if (i < 1 || static_cast<size_t>(i) > n) {
+            printf("no release #%s ('server firmware')\n", argv[3]);
+            return 1;
+        }
+        if (!Ready()) {
+            return 1;
+        }
+        const esp_err_t err = server::StartInstall(list[i - 1].id);
+        printf("%s\n", err == ESP_OK ? "downloading: the device restarts into it"
+                       : err == ESP_ERR_INVALID_STATE
+                           ? (ota::Refusal() != nullptr ? ota::Refusal() : "busy")
+                           : esp_err_to_name(err));
+        return err == ESP_OK ? 0 : 1;
+    }
     printf("usage: server [check | report | sync [keep|take passwords|passkeys [pin]] |\n"
-           "               register [email] | code | host <name>]\n");
+           "               firmware [check | install <#>] | register [email] | code | host <name>]\n");
     return 1;
 }
 

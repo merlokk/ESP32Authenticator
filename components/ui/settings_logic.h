@@ -46,6 +46,7 @@ enum class Page : uint8_t {
     kServerConfig,  // Server > Configure: how often the status and the sync go
     kServerSync,    // Server > Sync: the stores against the server's, what waits
     kServerSyncPin, // Server > Sync: the PIN of the server's copy, on the keyboard
+    kServerFirmware,  // Server > Firmware: the server's releases, newest first
 };
 
 // Where a page's back arrow goes.
@@ -64,7 +65,8 @@ constexpr Page Parent(Page p) {
            : p == Page::kSecurityLock || p == Page::kSecurityPin ? Page::kSecurity
            : p == Page::kWebMode || p == Page::kWebLogin ? Page::kWeb
            : p == Page::kFido ? Page::kSecurity
-           : p == Page::kServerEmail || p == Page::kServerConfig || p == Page::kServerSync
+           : p == Page::kServerEmail || p == Page::kServerConfig || p == Page::kServerSync ||
+                   p == Page::kServerFirmware
                ? Page::kServer
            : p == Page::kServerSyncPin ? Page::kServerSync
                                       : Page::kMain;
@@ -112,6 +114,7 @@ constexpr const char *Title(Page p) {
         case Page::kServerConfig: return "Configure";
         case Page::kServerSync: return "Sync";
         case Page::kServerSyncPin: return "The copy's PIN";
+        case Page::kServerFirmware: return "Firmware";
     }
     return "";
 }
@@ -127,6 +130,7 @@ enum class Action : uint8_t {
     kServerRegister,  // Server (asked first: a new key, then the e-mail)
     kServerStatus,    // Server > Configure: the status now
     kServerSync,      // Server > Sync: the sync now
+    kServerFirmware,  // Server > Firmware: the releases looked at again
 };
 
 constexpr Action PageAction(Page p) {
@@ -138,6 +142,7 @@ constexpr Action PageAction(Page p) {
            : p == Page::kServer   ? Action::kServerRegister
            : p == Page::kServerConfig ? Action::kServerStatus
            : p == Page::kServerSync   ? Action::kServerSync
+           : p == Page::kServerFirmware ? Action::kServerFirmware
                                   : Action::kNone;
 }
 
@@ -150,6 +155,7 @@ constexpr const char *ActionText(Action a) {
            : a == Action::kServerRegister ? "Register"
            : a == Action::kServerStatus   ? "Send the status now"
            : a == Action::kServerSync     ? "Sync now"
+           : a == Action::kServerFirmware ? "Check the server"
                                     : "";
 }
 
@@ -255,6 +261,24 @@ constexpr const char *SyncStoreTitle(uint8_t store) {
 // The Sync page's taps: store * 2 + 0 keep this device's copy, + 1 take the
 // server's (or type its PIN).
 constexpr int SyncTap(uint8_t store, bool take) { return store * 2 + (take ? 1 : 0); }
+
+// Server > Firmware: a release on a row (ServerHooks::firmware), newest first.
+struct FirmwareRow {
+    char id[37];       // the server's
+    char version[33];  // esp_app_desc_t.version
+    char built[24];    // "Oct 27 2026 21:07:30"
+    uint32_t size;     // bytes
+    bool active;       // the one the server offers
+    bool running;      // this device runs it
+    bool newer;        // newer than the running one
+};
+inline constexpr uint8_t kFirmwareRows = 8;
+
+// The row's mark on the right.
+constexpr const char *FirmwareTag(const FirmwareRow &r) {
+    return r.running ? "running" : r.newer ? (r.active ? "new, offered" : "new")
+                                       : r.active ? "offered" : "";
+}
 
 // The frontlight's sliders: brightness 1..100 (0 is 1), warmth 0..100.
 constexpr uint8_t Brightness(int32_t slider) {

@@ -8,6 +8,7 @@
 
 #include "crypto.h"
 #include "esp_attr.h"
+#include "esp_app_desc.h"
 #include "esp_crt_bundle.h"
 #include "esp_efuse.h"
 #include "esp_efuse_table.h"
@@ -20,6 +21,7 @@
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "nvs.h"
+#include "ota_update.h"
 #include "psa/crypto.h"
 #include "rng.h"
 #include "store_header.h"
@@ -58,7 +60,7 @@ int64_t access_until = 0;  // monotonic seconds
 int64_t status_tried = -1;
 int64_t status_sent = -1;
 
-enum class Kind : uint8_t { kCheck, kRegister, kStatus, kSync, kResolve };
+enum class Kind : uint8_t { kCheck, kRegister, kStatus, kSync, kResolve, kFirmware, kInstall };
 
 struct Job {
     Kind kind;
@@ -69,6 +71,7 @@ struct Job {
     Choice choice;
     char pin[8];        // kResolve: the server's copy's PIN, "" none (wiped after)
     bool by_hand;       // kSync: asked for (the other phrases' stores looked at)
+    firmware::Release release;  // kInstall
 };
 
 const Hooks *hooks = nullptr;  // StartSchedule
@@ -515,6 +518,233 @@ int SignedCall(Call call, const char *host, Body &answer, char *said, size_t siz
     return code;
 }
 
+// --- Firmware (firmware_logic.h) ----------------------------------------------------
+
+constexpr size_t kFirmwareUrlSize = 8 + kHostSize + 80;
+constexpr size_t kListSize = 16 * 1024;  // the list's answer (every release of the board)
+constexpr int kMaxStalls = 3;            // pieces in a row that brought nothing
+
+// This board's releases, newest first (under lock); PSRAM, kMaxReleases.
+firmware::Release *releases = nullptr;
+size_t release_count = 0;
+
+const char *Running() { return esp_app_get_description()->version; }
+
+void FirmwareSaid(const char *text) {
+    Locked l;
+    snprintf(status.firmware_said, sizeof status.firmware_said, "%s", text);
+}
+
+// GET /api/device/firmware?board=: the releases kept, `newer` worked out.
+void ListFirmware(const Job &r) {
+    char url[kFirmwareUrlSize];
+    if (r.report.board == nullptr || !firmware::ListUrl(r.host, r.report.board, url, sizeof url)) {
+        FirmwareSaid("no board to ask for");
+        return;
+    }
+    Body list = {static_cast<char *>(Psram(kListSize)), kListSize, 0};
+    auto *found = static_cast<firmware::Release *>(
+        Psram(firmware::kMaxReleases * sizeof(firmware::Release)));
+    if (list.data == nullptr || found == nullptr) {
+        free(list.data);
+        free(found);
+        FirmwareSaid("out of memory");
+        return;
+    }
+    Call call = {url};
+    call.answer = &list;
+    char said[sizeof status.firmware_said] = "";
+    const int code = SignedCall(call, r.host, list, said, sizeof said);
+    const int n = code == 200 ? firmware::ParseReleases(list.data, list.length, found) : -1;
+    if (code != 200 && code != -2) {
+        SayFailed(code, list, said, sizeof said);
+    } else if (code == 200 && n < 0) {
+        snprintf(said, sizeof said, "firmware: not the server's list");
+    }
+    Wipe(list.data, kListSize);  // a sign-in's token may be in it
+    free(list.data);
+    {
+        Locked l;
+        if (n >= 0) {
+            if (releases == nullptr) {
+                releases = found;
+                found = nullptr;
+            } else {
+                memcpy(releases, found, static_cast<size_t>(n) * sizeof(firmware::Release));
+            }
+            release_count = static_cast<size_t>(n);
+            status.firmware_known = true;
+            status.firmware_count = static_cast<uint8_t>(n);
+            status.firmware_newer = firmware::AnyNewer(releases, release_count, Running());
+            status.firmware_at = time(nullptr);
+            snprintf(said, sizeof said, "%s", n == 0 ? "no releases for this board" : "");
+        }
+        snprintf(status.firmware_said, sizeof status.firmware_said, "%s", said);
+    }
+    free(found);
+    ESP_LOGI(TAG, "firmware: %d, %d release(s)", code, n);
+}
+
+// One image download: the pieces go into the OTA slot as they come.
+struct Download {
+    psa_hash_operation_t hash;
+    uint32_t offset;  // bytes written so far
+    bool range_ok;    // this answer's Content-Range starts at `offset`
+    bool failed;      // ota::Write refused (the update is over: ota says why)
+    Body *refusal;    // a refusal's body
+};
+
+esp_err_t OnImage(esp_http_client_event_t *e) {
+    auto *d = static_cast<Download *>(e->user_data);
+    if (e->event_id == HTTP_EVENT_ON_HEADER && strcasecmp(e->header_key, "Content-Range") == 0) {
+        uint32_t first = 0;
+        d->range_ok = firmware::RangeStart(e->header_value, &first) && first == d->offset;
+        return ESP_OK;
+    }
+    if (e->event_id != HTTP_EVENT_ON_DATA || e->data_len <= 0) {
+        return ESP_OK;
+    }
+    const size_t len = static_cast<size_t>(e->data_len);
+    if (esp_http_client_get_status_code(e->client) != 206) {
+        Body *b = d->refusal;  // kept for what to say
+        const size_t room = b->size - b->length;
+        const size_t n = len < room ? len : room;
+        memcpy(b->data + b->length, e->data, n);
+        b->length += n;
+        return ESP_OK;
+    }
+    if (!d->range_ok || d->failed) {
+        return ESP_OK;  // not the bytes asked for: asked again
+    }
+    const auto *data = static_cast<const uint8_t *>(e->data);
+    if (ota::Write(data, len) != ESP_OK) {
+        d->failed = true;
+        return ESP_OK;
+    }
+    psa_hash_update(&d->hash, data, len);
+    d->offset += len;
+    return ESP_OK;
+}
+
+// GET /api/device/firmware/{id}/image, a piece (kPieceSize) a request on one
+// connection, each from where the slot stands (a cut piece costs only its
+// rest); its SHA-256 the release's, then ota::End. "": installed; nullptr:
+// ota failed it (its window says why); else why not.
+const char *Fetch(const Job &r, Body &answer, char *said, size_t size) {
+    const firmware::Release &rel = r.release;
+    char url[kFirmwareUrlSize];
+    if (!firmware::ImageUrl(r.host, rel.id, url, sizeof url)) {
+        return "not a release id";
+    }
+    if (!Fresh() && !SignIn(r.host, answer, said, size)) {
+        return said;
+    }
+    if (ota::Begin(ota::Source::kServer, rel.size) != ESP_OK) {
+        ota::Status o;
+        ota::GetStatus(&o);
+        snprintf(said, size, "%s", o.error[0] != '\0' ? o.error : "cannot start an update");
+        return said;
+    }
+    Download d = {};
+    d.hash = psa_hash_operation_init();
+    d.refusal = &answer;
+    char *auth = static_cast<char *>(Psram(kAccessSize + 8));
+    esp_http_client_config_t cfg = {};
+    cfg.url = url;
+    cfg.method = HTTP_METHOD_GET;
+    cfg.timeout_ms = kTimeoutMs;
+    cfg.crt_bundle_attach = esp_crt_bundle_attach;
+    cfg.disable_auto_redirect = true;
+    cfg.event_handler = OnImage;
+    cfg.user_data = &d;
+    cfg.buffer_size_tx = static_cast<int>(kAccessSize) + 1024;  // the Authorization header
+    esp_http_client_handle_t client =
+        auth != nullptr && psa_hash_setup(&d.hash, PSA_ALG_SHA_256) == PSA_SUCCESS
+            ? esp_http_client_init(&cfg)
+            : nullptr;
+    const char *why = client == nullptr ? "out of memory" : nullptr;
+    int stalls = 0;
+    while (why == nullptr && !d.failed && d.offset < rel.size) {
+        if (!Fresh() && !SignIn(r.host, answer, said, size)) {
+            why = said;
+            break;
+        }
+        {
+            Locked l;
+            snprintf(auth, kAccessSize + 8, "Bearer %s", access);
+        }
+        char range[40];
+        firmware::RangeHeader(d.offset, rel.size, range, sizeof range);
+        esp_http_client_set_header(client, "Authorization", auth);
+        esp_http_client_set_header(client, "Range", range);
+        const uint32_t before = d.offset;
+        d.range_ok = false;
+        answer.length = 0;
+        const esp_err_t err = esp_http_client_perform(client);
+        const int code = err == ESP_OK ? esp_http_client_get_status_code(client) : -1;
+        last_error = err;
+        Answered(code);
+        if (code == 401) {
+            DropToken();  // signed in again for the next piece
+        } else if (code == 404) {
+            why = "the release is gone from the server";
+        } else if (code > 0 && code != 206) {
+            SayFailed(code, answer, said, size);
+            why = said;
+        }
+        stalls = d.offset > before ? 0 : stalls + 1;
+        if (why == nullptr && stalls >= kMaxStalls) {
+            snprintf(said, size, "download stalled: %s",
+                     code > 0 ? "no piece came" : esp_err_to_name(err));
+            why = said;
+        }
+    }
+    if (client != nullptr) {
+        esp_http_client_cleanup(client);
+    }
+    if (auth != nullptr) {
+        Wipe(auth, kAccessSize + 8);
+        free(auth);
+    }
+    uint8_t digest[32] = {};
+    size_t digest_len = 0;
+    const bool hashed = psa_hash_finish(&d.hash, digest, sizeof digest, &digest_len) ==
+                            PSA_SUCCESS &&
+                        digest_len == sizeof digest;
+    if (d.failed) {
+        return nullptr;
+    }
+    char hex[firmware::kShaSize];
+    Hex(digest, sizeof digest, hex);
+    if (why == nullptr && (!hashed || strcmp(hex, rel.sha256) != 0)) {
+        why = "the image's SHA-256 is not the release's";
+    }
+    if (why != nullptr) {
+        ota::Abort(why);
+        return why;
+    }
+    return ota::End() == ESP_OK ? "" : nullptr;
+}
+
+void Install(const Job &r, Body &answer) {
+    char said[sizeof status.firmware_said] = "";
+    ESP_LOGI(TAG, "firmware: installing %s (%u bytes)", r.release.version,
+             static_cast<unsigned>(r.release.size));
+    const char *why = Fetch(r, answer, said, sizeof said);
+    if (why != nullptr && why[0] == '\0') {
+        FirmwareSaid("installed: restarting");
+        ota::Restart();  // the window said "Installed"
+        return;
+    }
+    if (why == nullptr) {
+        ota::Status o;
+        ota::GetStatus(&o);
+        why = o.error[0] != '\0' ? o.error : "not installed";
+    }
+    ESP_LOGW(TAG, "firmware: %s", why);
+    FirmwareSaid(why);
+}
+
 // POST /api/device/status (signed in first when the token is out); a 401
 // signs in again once. The answer: the server's clock and the update.
 void SendStatus(const Job &r, Body &answer) {
@@ -549,21 +779,26 @@ void SendStatus(const Job &r, Body &answer) {
             SayFailed(code, answer, said, sizeof said);
         }
     }
-    Locked l;
-    if (taken) {
-        status_sent = status_tried;
-        state.last_sync = now;
-        status.last_sync = now;
-        Save(state);
-        status.has_offset = true;
-        status.offset = now - server_time;
-        snprintf(status.update, sizeof status.update, "%s", update);
-        snprintf(said, sizeof said, "status sent");
-    }
-    if (taken || !refused) {
-        snprintf(status.said, sizeof status.said, "%s", said);
+    {
+        Locked l;
+        if (taken) {
+            status_sent = status_tried;
+            state.last_sync = now;
+            status.last_sync = now;
+            Save(state);
+            status.has_offset = true;
+            status.offset = now - server_time;
+            snprintf(status.update, sizeof status.update, "%s", update);
+            snprintf(said, sizeof said, "status sent");
+        }
+        if (taken || !refused) {
+            snprintf(status.said, sizeof status.said, "%s", said);
+        }
     }
     ESP_LOGI(TAG, "status: %d%s%s", code, update[0] != '\0' ? ", update " : "", update);
+    if (taken) {
+        ListFirmware(r);  // signed in already (not under the lock): for the newer one's icon
+    }
 }
 
 // GET /api/device/ping: 200 {"status":"ok","time":N} is the server (and
@@ -1154,6 +1389,10 @@ void Task(void *arg) {
         Sync(*r, answer);
     } else if (r->kind == Kind::kResolve) {
         Resolve(*r, answer);
+    } else if (r->kind == Kind::kFirmware) {
+        ListFirmware(*r);
+    } else if (r->kind == Kind::kInstall) {
+        Install(*r, answer);
     } else {
         Check(*r, answer);
     }
@@ -1172,7 +1411,8 @@ void Task(void *arg) {
 
 esp_err_t Start(Kind kind, const char *host, const char *email, const Report *report,
                 sync::Store store = sync::Store::kVault, Choice choice = Choice::kKeepMine,
-                const char *pin = nullptr, bool by_hand = false) {
+                const char *pin = nullptr, bool by_hand = false,
+                const firmware::Release *release = nullptr) {
     if (lock == nullptr) {
         return ESP_ERR_INVALID_STATE;
     }
@@ -1186,7 +1426,7 @@ esp_err_t Start(Kind kind, const char *host, const char *email, const Report *re
         if (status.busy) {
             return ESP_ERR_INVALID_STATE;
         }
-        const bool signed_in = kind == Kind::kStatus || kind == Kind::kSync || kind == Kind::kResolve;
+        const bool signed_in = kind != Kind::kCheck && kind != Kind::kRegister;
         if (signed_in && !(state.registered && state.client_id[0] != '\0')) {
             return ESP_ERR_NOT_FOUND;
         }
@@ -1200,6 +1440,9 @@ esp_err_t Start(Kind kind, const char *host, const char *email, const Report *re
             }
             snprintf(status.sync_said, sizeof status.sync_said, "%s",
                      kind == Kind::kSync ? "syncing..." : "resolving...");
+        } else if (kind == Kind::kFirmware || kind == Kind::kInstall) {
+            snprintf(status.firmware_said, sizeof status.firmware_said, "%s",
+                     kind == Kind::kFirmware ? "looking..." : "downloading...");
         } else if (kind != Kind::kStatus || !refused) {
             snprintf(status.said, sizeof status.said, "%s",
                      registering ? "registering..." : kind == Kind::kStatus ? "sending the status..."
@@ -1219,6 +1462,9 @@ esp_err_t Start(Kind kind, const char *host, const char *email, const Report *re
         r->store = store;
         r->choice = choice;
         r->by_hand = by_hand;
+        if (release != nullptr) {
+            r->release = *release;
+        }
         snprintf(r->pin, sizeof r->pin, "%s", pin != nullptr ? pin : "");
     }
     if (r == nullptr || xTaskCreate(Task, "server", kTaskStack, r, 4, nullptr) != pdPASS) {
@@ -1431,6 +1677,51 @@ esp_err_t StartResolve(sync::Store store, Choice choice, const char *pin) {
     char host[kHostSize];
     hooks->host(host, sizeof host);
     return Start(Kind::kResolve, host, nullptr, nullptr, store, choice, pin);
+}
+
+size_t Releases(firmware::Release *out, size_t max) {
+    if (lock == nullptr) {
+        return 0;
+    }
+    Locked l;
+    const size_t n = release_count < max ? release_count : max;
+    if (n > 0) {
+        memcpy(out, releases, n * sizeof(firmware::Release));
+    }
+    return n;
+}
+
+esp_err_t StartFirmwareList() {
+    if (hooks == nullptr) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    char host[kHostSize];
+    hooks->host(host, sizeof host);
+    Report report = {};
+    hooks->report(&report);  // the board
+    return Start(Kind::kFirmware, host, nullptr, &report);
+}
+
+esp_err_t StartInstall(const char *id) {
+    if (hooks == nullptr || ota::Refusal() != nullptr) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    firmware::Release release = {};
+    bool found = false;
+    {
+        Locked l;
+        for (size_t i = 0; i < release_count && !found; ++i) {
+            found = strcmp(releases[i].id, id) == 0;
+            release = releases[i];
+        }
+    }
+    if (!found) {
+        return ESP_ERR_NOT_FOUND;
+    }
+    char host[kHostSize];
+    hooks->host(host, sizeof host);
+    return Start(Kind::kInstall, host, nullptr, nullptr, sync::Store::kVault,
+                 Choice::kKeepMine, nullptr, false, &release);
 }
 
 bool PublicKey(char *out, size_t size) {

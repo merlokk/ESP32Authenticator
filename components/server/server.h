@@ -4,13 +4,14 @@
 // ESP32AuthenticatorServer): the device's ECDSA P-256 key, TOTP secret and
 // client id in `<dir>/server.bin` (SPIFFS, plain, as seed.txt), the
 // registration, the sign-in (an access token, in memory), the status report
-// and the ping, over HTTPS (the certificate bundle), and the TOTP code the
-// user signs in with. Requests run in a task of their own, one at a time.
+// and the ping, the firmware releases and their install, over HTTPS (the
+// certificate bundle), and the TOTP code the user signs in with. Requests run in a task of their own, one at a time.
 
 #include <cstddef>
 #include <cstdint>
 
 #include "esp_err.h"
+#include "firmware_logic.h"
 #include "server_logic.h"
 #include "sync_logic.h"
 
@@ -48,6 +49,11 @@ struct Status {
     char sync_said[48];      // the last sync's outcome
     bool others_known;       // the account's stores under other seed phrases looked at
     sync::Others others;     // those (shown only: they never open here)
+    bool firmware_known;     // the releases looked at (after each status, or by hand)
+    bool firmware_newer;     // one is newer than the running firmware: the status bar's icon
+    uint8_t firmware_count;  // this board's releases kept (Releases)
+    int64_t firmware_at;     // the last look that went through (Unix seconds), 0: none
+    char firmware_said[48];  // the last look's or install's outcome
 };
 Status Get();
 
@@ -120,6 +126,22 @@ esp_err_t StartSync(bool by_hand = true);
 // busy, or the store does not wait.
 enum class Choice : uint8_t { kKeepMine, kTakeServer };
 esp_err_t StartResolve(sync::Store store, Choice choice, const char *pin);
+
+// This board's releases on the server, newest first (firmware_logic.h), as
+// last looked at: up to `max` into `out`; their count. Looked at after each
+// status that went through, and by StartFirmwareList.
+size_t Releases(firmware::Release *out, size_t max);
+
+// The releases looked at now (signed in first). ESP_ERR_INVALID_STATE: busy
+// or no schedule; ESP_ERR_NOT_FOUND: not registered with a client id.
+esp_err_t StartFirmwareList();
+
+// Release `id` (of the last look) downloaded in pieces into the other OTA
+// slot (ota_update.h: its check as it streams, the progress window), its
+// SHA-256 checked, then the restart into it. ESP_ERR_NOT_FOUND: not in the
+// list, or not registered; ESP_ERR_INVALID_STATE: busy, or an update cannot
+// start now (ota::Refusal).
+esp_err_t StartInstall(const char *id);
 
 // The public key, base64url (kPublicSize bytes); false: no key.
 bool PublicKey(char *out, size_t size);

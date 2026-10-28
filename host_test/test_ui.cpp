@@ -294,6 +294,11 @@ void test_status_texts(void) {
     st::Left(s, t, sizeof t);
     want = std::string(st::kWifi) + " AP   " + st::kSync;
     TEST_ASSERT_EQUAL_STRING(want.c_str(), t);
+    s.firmware = true;
+    st::Left(s, t, sizeof t);
+    want = std::string(st::kWifi) + " AP   " + st::kSync + "   " + st::kDownload;
+    TEST_ASSERT_EQUAL_STRING(want.c_str(), t);
+    s.firmware = false;
     s.sync = st::Sync::kHidden;
 
     s.time_set = true;
@@ -616,6 +621,20 @@ void test_settings_pages(void) {
     TEST_ASSERT_FALSE(st::SyncConflict(0x08, 1));
     TEST_ASSERT_EQUAL(3, st::SyncTap(1, true));
     TEST_ASSERT_EQUAL_STRING("Passkeys", st::SyncStoreTitle(1));
+    TEST_ASSERT_TRUE(st::Parent(st::Page::kServerFirmware) == st::Page::kServer);
+    TEST_ASSERT_EQUAL_STRING("Firmware", st::Title(st::Page::kServerFirmware));
+    TEST_ASSERT_TRUE(st::PageAction(st::Page::kServerFirmware) == st::Action::kServerFirmware);
+    TEST_ASSERT_EQUAL_STRING("Check the server", st::ActionText(st::Action::kServerFirmware));
+    st::FirmwareRow row = {};
+    TEST_ASSERT_EQUAL_STRING("", st::FirmwareTag(row));
+    row.active = true;
+    TEST_ASSERT_EQUAL_STRING("offered", st::FirmwareTag(row));
+    row.newer = true;
+    TEST_ASSERT_EQUAL_STRING("new, offered", st::FirmwareTag(row));
+    row.active = false;
+    TEST_ASSERT_EQUAL_STRING("new", st::FirmwareTag(row));
+    row.running = true;
+    TEST_ASSERT_EQUAL_STRING("running", st::FirmwareTag(row));
     TEST_ASSERT_EQUAL_STRING("Send the status now", st::ActionText(st::Action::kServerStatus));
     TEST_ASSERT_EQUAL_UINT8(5, st::kStatusChoiceCount);
     TEST_ASSERT_EQUAL_INT(2, st::StatusChoiceIndex(10));

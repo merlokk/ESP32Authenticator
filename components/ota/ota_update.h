@@ -1,7 +1,7 @@
 #pragma once
 
 // Firmware updates into the other OTA slot (app0/app1), from the web site's
-// upload or /sdcard/firmware.bin, and the trial boot that follows.
+// upload, /sdcard/firmware.bin or the authentication server (server.h), and the trial boot that follows.
 //
 // Nothing switches the boot slot until the whole image passed: ImageCheck
 // (image_check.h) as it streams, before the slot is even erased, then
@@ -36,7 +36,7 @@ void Boot();
 void BootDone();
 
 enum class Job : uint8_t { kIdle, kWriting, kDone, kFailed };
-enum class Source : uint8_t { kNone, kWeb, kSd };
+enum class Source : uint8_t { kNone, kWeb, kSd, kServer };
 const char *JobName(Job job);
 const char *SourceName(Source source);
 

@@ -62,7 +62,10 @@ the vault is locked, GT911 touch as the pointer, `ui`); power-off
   `server.statusMinutes`, set on Server > Configure; `vault.bin` and
   `fido.bin` synced by their headers: on each change and every
   `server.syncMinutes`, a conflict or another PIN resolved on Server > Sync,
-  the sync icon in the status bar), console `server`.
+  the sync icon in the status bar; Server > Firmware: the server's releases
+  for the board, newest first, one installed after a held Yes (64 KB `Range`
+  pieces into OTA, its SHA-256 checked), a newer one is the status bar's
+  download icon), console `server`.
   PIN lockout (10 tries, `pin.lockMinutes`) and a wipe PIN (`pin wipe set`).
   LionKey fork (`merlokk/lionkey`, branch `esp32auth`): CTAP 2.3 (FIDO_2_3),
   U2F (BLE and USB), EdDSA, authenticatorConfig, minPinLength, PIN complexity,

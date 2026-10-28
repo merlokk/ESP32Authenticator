@@ -153,6 +153,7 @@ enum class JobKind : uint8_t {
     kServerStatusEvery,  // Server > Configure: the status every `id` minutes
     kServerSyncEvery,    // Server > Configure: the sync every `id` minutes
     kServerResolve,      // Server > Sync: store `which`, take it (`flag`) or keep ours; PIN `password`
+    kServerInstall,      // Server > Firmware: the release `password` (its id) installed
 };
 
 struct Job {
@@ -637,6 +638,8 @@ constexpr int kDeleteNo = 100;
 constexpr int kDeleteYes = 101;
 constexpr int kResetNo = 200;
 constexpr int kResetYes = 201;
+constexpr int kInstallNo = 300;
+constexpr int kInstallYes = 301;
 fido_ctap_credential_t asked;  // the key asked about (the list may be read again)
 
 // The made-up keys: site, user, display name, algorithm, kind.
@@ -1121,6 +1124,13 @@ lv_obj_t *ChoiceRow(int32_t y, const char *name, const char *value, bool check,
 extern const ServerHooks *server_hooks;
 bool server_config_tapped = false;
 bool server_sync_tapped = false;
+bool server_firmware_tapped = false;
+
+void OnServerFirmware(lv_event_t *) {
+    if (LastWasTap()) {
+        server_firmware_tapped = true;
+    }
+}
 
 void OnServerConfig(lv_event_t *) {
     if (LastWasTap()) {
@@ -1156,6 +1166,9 @@ void ShowSettingsPage(settings::Page page) {
         server_hooks->sync_summary(summary, sizeof summary);
         bottom -= 64 + 8;
         ChoiceRow(bottom + 8, "Sync", summary, false, OnServerSync, 0);
+        server_hooks->firmware_summary(summary, sizeof summary);
+        bottom -= 64 + 8;
+        ChoiceRow(bottom + 8, "Firmware", summary, false, OnServerFirmware, 0);
     }
     // Sync: each store that waits, its two choices over the button.
     const uint8_t waits =
@@ -3364,6 +3377,74 @@ void ShowServerConfig() {
     lv_obj_add_event_cb(b, OnAction, LV_EVENT_CLICKED, nullptr);
 }
 
+// Firmware: the device's lines (running, checked), then a row per release,
+// newest first: its version and mark, when it was built and its size. A tap
+// asks (held Yes), then the install job; the button looks again.
+EXT_RAM_BSS_ATTR settings::FirmwareRow firmware_rows[settings::kFirmwareRows];
+uint8_t firmware_row_count = 0;
+int firmware_tapped = -1;
+settings::FirmwareRow firmware_asked;  // the release the question is about
+
+void OnFirmwareRow(lv_event_t *event) {
+    if (LastWasTap()) {
+        firmware_tapped = static_cast<int>(reinterpret_cast<intptr_t>(lv_event_get_user_data(event)));
+    }
+}
+
+void ShowServerFirmware() {
+    TitleBar(settings::Title(settings::Page::kServerFirmware));
+    SettingsText(settings::Page::kServerFirmware, settings_shown, sizeof settings_shown);
+    settings_looked_at = lv_tick_get();
+    char note[160] = "";
+    server_hooks->firmware_note(note, sizeof note);
+    char label[32];
+    char value[64];
+    int32_t y = kTitleHeight + 4;
+    for (uint8_t i = 0; settings::Line(note, i, label, sizeof label, value, sizeof value);
+         ++i, y += 40) {
+        lv_obj_t *l = Label(content, &lv_font_montserrat_20);
+        lv_label_set_text(l, label);
+        lv_obj_set_pos(l, 12, y + 6);
+        lv_obj_t *v = Label(content, &lv_font_montserrat_20);
+        lv_label_set_long_mode(v, LV_LABEL_LONG_MODE_DOTS);
+        lv_obj_set_style_text_align(v, LV_TEXT_ALIGN_RIGHT, 0);
+        lv_obj_set_size(v, kRowWidth - 160, 26);
+        lv_label_set_text(v, value);
+        lv_obj_set_pos(v, 148, y + 6);
+    }
+    y += 8;
+    constexpr int32_t kRow = 76;
+    const int32_t bottom = kScreenBottom - kContentTop - 100;
+    firmware_row_count = server_hooks->firmware(firmware_rows, settings::kFirmwareRows);
+    for (uint8_t i = 0; i < firmware_row_count && y + kRow <= bottom; ++i, y += kRow + 6) {
+        const settings::FirmwareRow &r = firmware_rows[i];
+        lv_obj_t *row = Panel(content, y, kRow);
+        lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_set_style_border_width(row, r.newer ? 3 : 1, 0);
+        lv_obj_add_event_cb(row, OnFirmwareRow, LV_EVENT_CLICKED,
+                            reinterpret_cast<void *>(static_cast<intptr_t>(i)));
+        lv_obj_t *version = Label(row, &lv_font_montserrat_24);
+        lv_label_set_long_mode(version, LV_LABEL_LONG_MODE_DOTS);
+        lv_obj_set_width(version, kRowWidth - 170);
+        lv_label_set_text(version, r.version);
+        lv_obj_set_pos(version, 12, 6);
+        lv_obj_t *tag = Label(row, &lv_font_montserrat_20);
+        lv_label_set_text(tag, settings::FirmwareTag(r));
+        lv_obj_align(tag, LV_ALIGN_TOP_RIGHT, -12, 10);
+        lv_obj_t *built = Label(row, &lv_font_montserrat_20);
+        lv_label_set_text_fmt(built, "%s%s%u KB", r.built, r.built[0] != '\0' ? ", " : "",
+                              static_cast<unsigned>((r.size + 1023) / 1024));
+        lv_obj_set_pos(built, 12, 42);
+    }
+    if (firmware_row_count == 0) {
+        Stub(nullptr, "No releases from the server yet.", y + 24);
+    }
+    lv_obj_t *b = AskButton(content, kRowWidth - 48,
+                            settings::ActionText(settings::Action::kServerFirmware));
+    lv_obj_align(b, LV_ALIGN_BOTTOM_MID, 0, -16);
+    lv_obj_add_event_cb(b, OnAction, LV_EVENT_CLICKED, nullptr);
+}
+
 // Sync > the PIN of the server's copy.
 uint8_t sync_pin_store = 0;
 
@@ -3399,6 +3480,34 @@ bool PollServer() {
         server_sync_tapped = false;
         if (page == settings::Page::kServer) {
             changed |= nav_state.OpenSettings(static_cast<uint8_t>(settings::Page::kServerSync));
+        }
+    }
+    if (server_firmware_tapped) {
+        server_firmware_tapped = false;
+        if (page == settings::Page::kServer) {
+            changed |= nav_state.OpenSettings(static_cast<uint8_t>(settings::Page::kServerFirmware));
+            Job job = MakeJob(JobKind::kAct);  // a fresh look as the page opens
+            job.action = settings::Action::kServerFirmware;
+            xQueueSend(jobs, &job, 0);
+        }
+    }
+    if (firmware_tapped >= 0) {
+        const int i = firmware_tapped;
+        firmware_tapped = -1;
+        if (page == settings::Page::kServerFirmware && i < firmware_row_count &&
+            !dialog::IsOpen()) {
+            firmware_asked = firmware_rows[i];
+            if (firmware_asked.running) {
+                Toast("this device runs it already");
+            } else {
+                dialog::Confirm(firmware_asked.newer ? "Install this firmware?"
+                                                     : "Install this older firmware?",
+                                firmware_asked.version, firmware_asked.built,
+                                "Downloaded from the server and checked, then the device "
+                                "restarts into it. If it does not start, the running one "
+                                "comes back.",
+                                "Install: hold 4 s", kInstallNo, kInstallYes);
+            }
         }
     }
     if (status_choice_tapped >= 0) {
@@ -3745,6 +3854,11 @@ void ShowSettings() {
         ShowServerSyncPin();
         return;
     }
+    if (server_hooks != nullptr && settings_hooks != nullptr &&
+        page == settings::Page::kServerFirmware) {
+        ShowServerFirmware();
+        return;
+    }
     if (settings_hooks == nullptr) {
         TitleBar("Settings");
         Stub(nullptr, "Not on this device.", kTitleHeight + 24);
@@ -4063,6 +4177,7 @@ void TypeTask(void *) {
                 case JobKind::kServerResolve:
                     said = server_hooks->resolve(job.which, job.flag, job.password);
                     break;
+                case JobKind::kServerInstall: said = server_hooks->firmware_install(job.password); break;
                 case JobKind::kDisplaySet:
                     said = display_hooks->set(job.setting, static_cast<uint16_t>(job.id));
                     break;
@@ -4295,6 +4410,15 @@ void Poll(lv_timer_t *) {
             break;
         }
         case kResetNo:
+            break;
+        case kInstallYes: {
+            Job job = MakeJob(JobKind::kServerInstall);
+            snprintf(job.password, sizeof job.password, "%s", firmware_asked.id);
+            Toast("downloading...");
+            SendJob(job);
+            break;
+        }
+        case kInstallNo:
             break;
         default:
             sheet_choice = answer;

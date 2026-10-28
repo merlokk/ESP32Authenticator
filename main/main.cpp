@@ -284,7 +284,9 @@ void StatusSource(ui::status::Status *s) {
     if (config::Get().server.host[0] == '\0') {
         s->sync = st::Sync::kHidden;
     } else {
-        switch (server::Get().icon) {
+        const server::Status srv = server::Get();
+        s->firmware = srv.registered && srv.firmware_newer;
+        switch (srv.icon) {
             case server::sync::Icon::kHidden: s->sync = st::Sync::kHidden; break;
             case server::sync::Icon::kOff: s->sync = st::Sync::kOff; break;
             case server::sync::Icon::kPending: s->sync = st::Sync::kPending; break;
@@ -663,9 +665,6 @@ void DescribeServer(bool summary, char *out, size_t size) {
     }
     server::Ago(now, s.last_sync, text, sizeof text);
     Put(out, size, "Status sent", "%s", text);
-    if (s.update[0] != '\0') {
-        Put(out, size, "Update", "%s", s.update);
-    }
     uint32_t code = 0;
     if (s.registered && server::Code(now, &code)) {
         char shown[8];
@@ -779,6 +778,82 @@ const char *SyncResolve(uint8_t store, bool take, const char *pin) {
     }
 }
 
+// --- Server > Firmware (ui::ServerHooks) ---------------------------------------------
+
+// The releases as the server listed them (ui task: off its stack).
+EXT_RAM_BSS_ATTR server::firmware::Release firmware_list[server::firmware::kMaxReleases];
+
+uint8_t FirmwareRows(ui::settings::FirmwareRow *out, uint8_t max) {
+    const char *running = esp_app_get_description()->version;
+    const size_t n = server::Releases(
+        firmware_list, max < server::firmware::kMaxReleases ? max : server::firmware::kMaxReleases);
+    for (size_t i = 0; i < n; ++i) {
+        const server::firmware::Release &r = firmware_list[i];
+        ui::settings::FirmwareRow &row = out[i];
+        snprintf(row.id, sizeof row.id, "%s", r.id);
+        snprintf(row.version, sizeof row.version, "%s", r.version);
+        snprintf(row.built, sizeof row.built, "%s", r.built);
+        row.size = r.size;
+        row.active = r.active;
+        row.running = strcmp(r.version, running) == 0;
+        row.newer = server::firmware::Newer(r.version, running);
+    }
+    return static_cast<uint8_t>(n);
+}
+
+void FirmwareSummary(char *out, size_t size) {
+    const server::Status s = server::Get();
+    if (config::Get().server.host[0] == '\0') {
+        snprintf(out, size, "no server");
+    } else if (!s.registered) {
+        snprintf(out, size, "not registered");
+    } else if (!s.firmware_known) {
+        snprintf(out, size, "not checked yet");
+    } else if (s.firmware_newer && server::Releases(firmware_list, 1) == 1) {
+        snprintf(out, size, "new: %s", firmware_list[0].version);
+    } else {
+        snprintf(out, size, "%s", s.firmware_count == 0 ? "none on the server" : "up to date");
+    }
+}
+
+// "label\tvalue" lines over the list.
+void FirmwareNote(char *out, size_t size) {
+    out[0] = '\0';
+    const server::Status s = server::Get();
+    Put(out, size, "Running", "%s", esp_app_get_description()->version);
+    char text[40];
+    server::Ago(time(nullptr), s.firmware_at, text, sizeof text);
+    Put(out, size, "Checked", "%s", text);
+    if (s.firmware_said[0] != '\0') {
+        Put(out, size, "Last", "%s", s.firmware_said);
+    }
+}
+
+// What the page shows, for its redraw: the lines and the releases.
+void DescribeFirmware(char *out, size_t size) {
+    FirmwareNote(out, size);
+    static EXT_RAM_BSS_ATTR ui::settings::FirmwareRow rows[ui::settings::kFirmwareRows];
+    const uint8_t n = FirmwareRows(rows, ui::settings::kFirmwareRows);
+    for (uint8_t i = 0; i < n; ++i) {
+        Put(out, size, rows[i].version, "%s", ui::settings::FirmwareTag(rows[i]));
+    }
+}
+
+const char *FirmwareInstall(const char *id) {
+    if (const char *why = ServerBlocked()) {
+        return why;
+    }
+    switch (server::StartInstall(id)) {
+        case ESP_OK: return "downloading...";
+        case ESP_ERR_NOT_FOUND: return "not in the server's list: check again";
+        case ESP_ERR_INVALID_STATE: {
+            const char *why = ota::Refusal();
+            return why != nullptr ? why : "busy: a request is under way";
+        }
+        default: return "cannot install";
+    }
+}
+
 uint8_t ServerSyncMinutes() { return config::Get().server.sync_minutes; }
 
 const char *ServerSetSyncMinutes(uint8_t minutes) {
@@ -867,7 +942,9 @@ const char *ServerSetStatusMinutes(uint8_t minutes) {
 
 const ui::ServerHooks kServerHooks = {ServerEmail,       ServerRegister,       ServerStatusMinutes,
                                       ServerSetStatusMinutes, ServerSyncMinutes, ServerSetSyncMinutes,
-                                      SyncSummary,       SyncWaits,            SyncResolve};
+                                      SyncSummary,       SyncWaits,            SyncResolve,
+                                      FirmwareRows,      FirmwareSummary,      FirmwareNote,
+                                      FirmwareInstall};
 
 // The status schedule (server::Hooks): from the scheduler's task.
 const server::Hooks kServerSchedule = {
@@ -958,6 +1035,11 @@ void SettingsDescribe(ui::settings::Page page, bool summary, char *out, size_t s
                 DescribeSync(out, size);
             }
             break;
+        case Page::kServerFirmware:
+            if (!summary) {
+                DescribeFirmware(out, size);
+            }
+            break;
         case Page::kFido: DescribeFido(summary, out, size); break;
         case Page::kWeb:
             if (summary) {
@@ -1015,6 +1097,16 @@ const char *SettingsAct(ui::settings::Action action) {
                 case ESP_ERR_NOT_FOUND: return "not registered";
                 case ESP_ERR_INVALID_STATE: return "busy: a request is under way";
                 default: return "cannot sync";
+            }
+        case Action::kServerFirmware:
+            if (const char *why = ServerBlocked()) {
+                return why;
+            }
+            switch (server::StartFirmwareList()) {
+                case ESP_OK: return "asking the server...";
+                case ESP_ERR_NOT_FOUND: return "not registered";
+                case ESP_ERR_INVALID_STATE: return "busy: a request is under way";
+                default: return "cannot ask the server";
             }
         case Action::kServerRegister:  // the ui asks the e-mail (ServerRegister)
         case Action::kNone: break;

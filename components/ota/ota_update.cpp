@@ -149,6 +149,7 @@ const char *SourceName(Source source) {
         case Source::kNone: return "";
         case Source::kWeb: return "web";
         case Source::kSd: return "sd";
+        case Source::kServer: return "server";
     }
     return "?";
 }

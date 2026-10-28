@@ -36,6 +36,7 @@ void RegisterUsbTests(void);
 void RegisterRngTests(void);
 void RegisterServerTests(void);
 void RegisterSyncTests(void);
+void RegisterFirmwareTests(void);
 
 void setUp(void) {}
 
@@ -95,5 +96,6 @@ int main(int argc, char **argv) {
     if (Wanted("rng")) RegisterRngTests();
     if (Wanted("server")) RegisterServerTests();
     if (Wanted("sync")) RegisterSyncTests();
+    if (Wanted("firmware")) RegisterFirmwareTests();
     return UNITY_END();
 }
