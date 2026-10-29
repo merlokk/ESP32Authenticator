@@ -11,6 +11,8 @@
 #include <sys/stat.h>
 
 #include "driver/usb_serial_jtag.h"
+#include "esp_efuse.h"
+#include "esp_efuse_table.h"
 #include "esp_log.h"
 #include "esp_mac.h"
 #include "esp_newlib.h"
@@ -93,6 +95,15 @@ esp_err_t Note(Mode to, const char *step, esp_err_t err) {
 constexpr int kMaxFds = 4;
 bool fd_used[kMaxFds];
 int fd_flags[kMaxFds];
+
+// TinyUSB on an OTG controller burned off (eFuse DIS_USB_OTG) waits for its
+// core reset forever: refused, the port stays (or comes up) on the Serial/JTAG.
+esp_err_t CheckOtg(Mode m) {
+    if (OnOtg(m) && esp_efuse_read_field_bit(ESP_EFUSE_DIS_USB_OTG)) {
+        return Note(m, "OTG controller (eFuse DIS_USB_OTG)", ESP_ERR_NOT_SUPPORTED);
+    }
+    return ESP_OK;
+}
 
 // --- Descriptors (TinyUSB keeps the pointers: static)
 
@@ -609,13 +620,17 @@ esp_err_t Init(Mode m) {
     esp_register_shutdown_handler(OnRestart);
     esp_deep_sleep_register_hook(OnDeepSleep);
 
+    const esp_err_t refused = CheckOtg(m);
     switching = true;
     xSemaphoreTake(rx_lock, portMAX_DELAY);
     xSemaphoreTake(tx_lock, portMAX_DELAY);
-    err = Apply(m);
+    err = Apply(refused == ESP_OK ? m : Mode::kJtag);
     xSemaphoreGive(tx_lock);
     xSemaphoreGive(rx_lock);
     switching = false;
+    if (err == ESP_OK) {
+        err = refused;
+    }
 
     fflush(stdout);
     esp_libc_init_global_stdio(kDevicePath);  // stdin, stdout, stderr: ours from here
@@ -635,6 +650,8 @@ esp_err_t SetMode(Mode next) {
     esp_err_t err = ESP_OK;
     if (HasCard(next) && next != mode && !sd_card::Mounted()) {
         err = ESP_ERR_NOT_FOUND;  // no card to lend: the port stays as it is
+    } else if (next != mode && (err = CheckOtg(next)) != ESP_OK) {
+        ESP_LOGE(TAG, "%s: %s; the port stays %s", Name(next), esp_err_to_name(err), Name(mode));
     } else if (next != mode) {
         const Mode was = mode;
         if (HasCard(next)) {

@@ -24,13 +24,16 @@
 namespace usb {
 
 // Puts stdin / stdout on the port and starts `mode` (the TinyUSB one failing:
-// the Serial/JTAG, and an error). Once, early in app_main; not kReader.
+// the Serial/JTAG, and an error; ESP_ERR_NOT_SUPPORTED: the OTG controller is
+// off in eFuse, TinyUSB not tried). Once, early in app_main; not kReader.
 esp_err_t Init(Mode mode);
 
 // Switches the port; output in flight is flushed first (up to 50 ms). The
 // TinyUSB one failing: back on the Serial/JTAG, and an error. kReader: the
 // microSD card leaves FAT (sd_card::Lend) for the host's drive and comes back
-// when another mode is set (no card: ESP_ERR_NOT_FOUND, nothing changed).
+// when another mode is set (no card: ESP_ERR_NOT_FOUND, nothing changed). A
+// TinyUSB mode with the OTG controller off in eFuse: ESP_ERR_NOT_SUPPORTED,
+// nothing changed.
 esp_err_t SetMode(Mode mode);
 
 // Called with true before the card goes to the host, false after it is back:

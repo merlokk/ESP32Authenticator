@@ -1364,7 +1364,11 @@ const char *DisplaySet(ui::display_view::Setting setting, uint16_t value) {
             }
             c.usb.mode = static_cast<config::UsbMode>(value);
             const bool saved = config::Save() == ESP_OK;
-            if (usb::SetMode(static_cast<usb::Mode>(value)) != ESP_OK) {
+            const esp_err_t err = usb::SetMode(static_cast<usb::Mode>(value));
+            if (err == ESP_ERR_NOT_SUPPORTED) {
+                return "USB-OTG is off in eFuse: Serial/JTAG";
+            }
+            if (err != ESP_OK) {
                 return "the port did not start: Serial/JTAG";
             }
             return saved ? "saved" : "in use, but config.json is not saved";

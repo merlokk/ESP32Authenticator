@@ -5,7 +5,7 @@ set(lk ${CMAKE_CURRENT_LIST_DIR}/../../lib/lionkey)
 idf_component_register(SRCS "usb.cpp" "usb_fido.cpp" ${lk}/core/ctaphid.c
                     INCLUDE_DIRS "."
                     PRIV_INCLUDE_DIRS ${lk}/core
-                    PRIV_REQUIRES esp_driver_usb_serial_jtag esp_hal_usb esp_hw_support esp_system
+                    PRIV_REQUIRES efuse esp_driver_usb_serial_jtag esp_hal_usb esp_hw_support esp_system
                                   esp_timer vfs heap sd_card)
 
 # Errors only, asserts off: as in components/fido_ctap.
