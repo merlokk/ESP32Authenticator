@@ -14,8 +14,8 @@
 // (checked by esp_ota_end, not here: the trailer is kept for the caller).
 //
 // What refuses a file: not an app image, another chip, a chip or eFuse block
-// revision out of the image's range (0xFFFF: no limit), another project (the reader's own firmware, say), larger
-// than the slot, a broken segment table, a wrong checksum, a wrong length.
+// revision out of the image's range (0xFFFF: no limit), another project (the
+// reader's own firmware, say; unless Expect::any_project), larger than the slot, a broken segment table, a wrong checksum, a wrong length.
 
 #include <cstddef>
 #include <cstdint>
@@ -56,6 +56,7 @@ struct Expect {
     uint16_t efuse_revision;  // the eFuse block revision, the same way
     const char *project;     // esp_app_desc_t::project_name of this firmware
     size_t max_size;         // the OTA slot's size
+    bool any_project;        // another firmware too (asked for: back to the reader's)
 };
 
 struct AppInfo {
@@ -72,6 +73,7 @@ struct AppInfo {
     uint16_t max_efuse;
     uint8_t segments;
     bool hash_appended;
+    bool foreign;  // its project is not Expect::project
 };
 
 class ImageCheck {
@@ -124,5 +126,10 @@ class ImageCheck {
 // any reset before that rolls the bootloader back to the previous slot.
 inline constexpr uint32_t kConfirmAfterMs = 30000;
 bool ShouldConfirm(bool pending, bool boot_done, uint32_t uptime_ms);
+
+// A trial boot that has not finished (BootDone) by kTrialDeadlineMs hangs
+// somewhere: it is restarted, so the bootloader rolls back to the previous slot.
+inline constexpr uint32_t kTrialDeadlineMs = 120000;
+bool ShouldGiveUp(bool pending, bool boot_done, uint32_t uptime_ms);
 
 }  // namespace ota

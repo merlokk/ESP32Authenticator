@@ -27,6 +27,7 @@ constexpr size_t kChunk = 4096;
 Hooks g_hooks = {};
 bool g_boot_done = false;
 esp_timer_handle_t g_confirm_timer = nullptr;
+esp_timer_handle_t g_give_up_timer = nullptr;
 
 // One writer at a time (web upload in the httpd task, or the SD task).
 std::atomic<bool> g_busy{false};
@@ -72,12 +73,23 @@ void Confirm(void *) {
     ESP_LOGI(TAG, "trial boot confirmed: %s", esp_err_to_name(err));
 }
 
-Expect ThisDevice() {
+// A trial boot stuck before BootDone: a restart rolls back to the previous slot.
+void GiveUp(void *) {
+    if (!ShouldGiveUp(Trial(), g_boot_done, UptimeMs())) {
+        return;
+    }
+    ESP_LOGE(TAG, "trial boot not done in %u s: restarting, the previous slot boots",
+             static_cast<unsigned>(kTrialDeadlineMs / 1000));
+    esp_restart();
+}
+
+Expect ThisDevice(bool any_project = false) {
     esp_chip_info_t chip = {};
     esp_chip_info(&chip);
     const esp_partition_t *next = esp_ota_get_next_update_partition(nullptr);
     return Expect{kChipEsp32S3, chip.revision, static_cast<uint16_t>(efuse_hal_blk_version()),
-                  esp_app_get_description()->project_name, next != nullptr ? next->size : 0};
+                  esp_app_get_description()->project_name, next != nullptr ? next->size : 0,
+                  any_project};
 }
 
 void Fail(const char *why) {
@@ -157,14 +169,30 @@ const char *SourceName(Source source) {
 void SetHooks(const Hooks &hooks) { g_hooks = hooks; }
 
 void Boot() {
-    if (Trial()) {
-        ESP_LOGW(TAG, "trial boot: confirmed %u s after the boot, else rolled back at the next reset",
-                 static_cast<unsigned>(kConfirmAfterMs / 1000));
+    if (!Trial()) {
+        return;
+    }
+    ESP_LOGW(TAG, "trial boot: confirmed %u s after the boot, else rolled back at the next reset",
+             static_cast<unsigned>(kConfirmAfterMs / 1000));
+    const esp_timer_create_args_t args = {
+        .callback = GiveUp,
+        .arg = nullptr,
+        .dispatch_method = ESP_TIMER_TASK,
+        .name = "ota_give_up",
+        .skip_unhandled_events = true,
+    };
+    if (esp_timer_create(&args, &g_give_up_timer) == ESP_OK) {
+        const uint32_t up = UptimeMs();
+        const uint32_t wait_ms = up >= kTrialDeadlineMs ? 1 : kTrialDeadlineMs - up;
+        esp_timer_start_once(g_give_up_timer, static_cast<uint64_t>(wait_ms) * 1000);
     }
 }
 
 void BootDone() {
     g_boot_done = true;
+    if (g_give_up_timer != nullptr) {
+        esp_timer_stop(g_give_up_timer);
+    }
     if (!Trial()) {
         return;
     }
@@ -232,14 +260,14 @@ const char *Refusal() {
     return nullptr;
 }
 
-esp_err_t Begin(Source source, size_t total) {
+esp_err_t Begin(Source source, size_t total, bool any_project) {
     const char *refusal = Refusal();
     bool idle = false;
     if (refusal != nullptr || !g_busy.compare_exchange_strong(idle, true)) {
         return ESP_ERR_INVALID_STATE;
     }
     g_slot = esp_ota_get_next_update_partition(nullptr);
-    g_check = ImageCheck(ThisDevice());
+    g_check = ImageCheck(ThisDevice(any_project));
     g_begun = false;
     g_held_size = 0;
     g_source = source;
@@ -321,6 +349,10 @@ esp_err_t End() {
         return err;
     }
     g_job = Job::kDone;
+    if (g_check.Info().foreign) {
+        ESP_LOGW(TAG, "another firmware (%s) written to %s: this one is gone at the next start",
+                 g_check.Info().project, g_slot->label);
+    }
     ESP_LOGW(TAG, "%s written to %s: boots on trial at the next start", g_job_version, g_slot->label);
     Release();
     if (g_hooks.finished != nullptr) {
@@ -336,7 +368,7 @@ void Abort(const char *why) {
     Release();
 }
 
-void ReadSdFile(SdFile *out) {
+void ReadSdFile(SdFile *out, bool any_project) {
     *out = {};
     out->mounted = sd_card::Mounted();
     struct stat st = {};
@@ -348,7 +380,7 @@ void ReadSdFile(SdFile *out) {
     // Static: the check object and the head are over a few hundred bytes.
     static ImageCheck check{Expect{}};
     static uint8_t head[kIdentifySize];
-    check = ImageCheck(ThisDevice());
+    check = ImageCheck(ThisDevice(any_project));
     FILE *file = fopen(kSdFile, "rb");
     const size_t got = file != nullptr ? fread(head, 1, sizeof head, file) : 0;
     if (file != nullptr) {
@@ -367,12 +399,12 @@ void ReadSdFile(SdFile *out) {
                                   sizeof out->info.elf_sha256) == 0;
 }
 
-esp_err_t StartFromSd() {
+esp_err_t StartFromSd(bool any_project) {
     struct stat st = {};
     if (!sd_card::Mounted() || stat(kSdFile, &st) != 0) {
         return ESP_ERR_NOT_FOUND;
     }
-    const esp_err_t err = Begin(Source::kSd, static_cast<size_t>(st.st_size));
+    const esp_err_t err = Begin(Source::kSd, static_cast<size_t>(st.st_size), any_project);
     if (err != ESP_OK) {
         return err;
     }

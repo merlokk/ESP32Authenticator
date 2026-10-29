@@ -14,8 +14,8 @@ namespace {
 ota::Status g_status;
 ota::SdFile g_sd;
 
-void PrintSdFile() {
-    ota::ReadSdFile(&g_sd);
+void PrintSdFile(bool force) {
+    ota::ReadSdFile(&g_sd, force);
     if (!g_sd.mounted) {
         printf("sd file    no card\n");
         return;
@@ -29,6 +29,12 @@ void PrintSdFile() {
            g_sd.info.version, g_sd.info.date, g_sd.info.time);
     printf("sd check   %s%s\n", ok ? "ok (the rest is checked while writing)" : ota::VerdictName(g_sd.verdict),
            g_sd.same_as_running ? ", the running firmware" : "");
+    if (g_sd.verdict == ota::Verdict::kWrongProject) {
+        printf("           '%s': `ota sd force confirm` installs it, this firmware is gone then\n",
+               g_sd.info.project);
+    } else if (ok && g_sd.info.foreign) {
+        printf("           another firmware, '%s': this one is gone after it\n", g_sd.info.project);
+    }
 }
 
 int CmdInfo(int, char **) {
@@ -54,14 +60,27 @@ int CmdInfo(int, char **) {
         printf(": %s", g_status.error);
     }
     printf("\n");
-    PrintSdFile();
+    PrintSdFile(false);
     return 0;
 }
 
+// ota sd [force] [confirm]: force takes another firmware (CrossPoint) too.
 int CmdFromSd(int argc, char **argv) {
-    if (argc < 2 || strcmp(argv[1], "confirm") != 0) {
-        PrintSdFile();
-        printf("`ota sd confirm` writes it into the next slot and restarts\n");
+    bool force = false;
+    bool confirm = false;
+    for (int i = 1; i < argc; ++i) {
+        if (strcmp(argv[i], "force") == 0) {
+            force = true;
+        } else if (strcmp(argv[i], "confirm") == 0) {
+            confirm = true;
+        } else {
+            printf("usage: ota sd [force] [confirm]\n");
+            return 1;
+        }
+    }
+    if (!confirm) {
+        PrintSdFile(force);
+        printf("`ota sd%s confirm` writes it into the next slot and restarts\n", force ? " force" : "");
         return 0;
     }
     const char *refusal = ota::Refusal();
@@ -69,12 +88,12 @@ int CmdFromSd(int argc, char **argv) {
         printf("not now: %s\n", refusal);
         return 1;
     }
-    ota::ReadSdFile(&g_sd);
+    ota::ReadSdFile(&g_sd, force);
     if (!g_sd.present || g_sd.verdict != ota::Verdict::kMore) {
-        PrintSdFile();
+        PrintSdFile(force);
         return 1;
     }
-    const esp_err_t err = ota::StartFromSd();
+    const esp_err_t err = ota::StartFromSd(force);
     if (err != ESP_OK) {
         printf("not started: %s\n", esp_err_to_name(err));
         return 1;
@@ -91,7 +110,7 @@ int CmdOta(int argc, char **argv) {
         {"info", CmdInfo},
         {"sd", CmdFromSd},
     };
-    return Dispatch(kSubs, argc, argv, "ota [info | sd [confirm]]");
+    return Dispatch(kSubs, argc, argv, "ota [info | sd [force] [confirm]]");
 }
 
 }  // namespace console

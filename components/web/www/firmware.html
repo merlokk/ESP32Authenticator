@@ -66,6 +66,13 @@ body{padding:0 16px 40px}</style>
   </button>
 </nav>
 
+<h2>Another firmware</h2>
+<label class="check">
+  <input type="checkbox" id="another">
+  <span>Install another firmware too (CrossPoint, the stock reader): this one
+    is gone after it, its stores stay on the card</span>
+</label>
+
 <h2>Progress</h2>
 <table>
   <tr><th>job</th><td id="job">&hellip;</td></tr>
@@ -73,7 +80,8 @@ body{padding:0 16px 40px}</style>
 <div class="meter" id="meter"><i></i></div>
 
 <footer>
-  Refused before anything is switched: another chip or project, a chip or
+  Refused before anything is switched: another chip, another project
+  (unless the box above is ticked), a chip or
   eFuse revision out of range, larger than the slot, a broken image,
   checksum or SHA-256. A new firmware that resets before it is confirmed
   falls back to this one.

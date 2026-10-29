@@ -66,6 +66,8 @@
     ".field input:disabled{opacity:.5}",
     ".field input[type=range]{padding:0;border:0;background:none;accent-color:var(--green)}",
     ".field .btn{flex:0 0 auto;width:auto}",
+    ".check{display:flex;align-items:flex-start;gap:12px;margin:0 0 18px;color:var(--text);font-size:14px}",
+    ".check input{flex:0 0 auto;width:22px;height:22px;margin:0;accent-color:var(--green)}",
     ".field .value{flex:0 0 48px;text-align:right;color:var(--faint);font-size:14px;",
     "font-variant-numeric:tabular-nums}",
     "button.reveal{flex:0 0 auto;min-height:48px;padding:0 12px;border:1px solid var(--line);",
@@ -1181,9 +1183,11 @@
       if (!sd.mounted) { text(by("sd"), "no card"); text(by("sd-check"), "-", ""); }
       else if (!sd.present) { text(by("sd"), "not in the card's root"); text(by("sd-check"), "-", ""); }
       else {
-        text(by("sd"), sd.version + " (" + sd.date + "), " + bytes(sd.size));
+        text(by("sd"), (sd.foreign ? sd.project + " " : "") + sd.version + " (" + sd.date + "), " +
+          bytes(sd.size));
         text(by("sd-check"), !sd.ok ? sd.check : sd.same ? "ok: the running firmware" :
-          "ok so far: the rest is checked while writing", sd.ok ? "ok" : "bad");
+          sd.foreign ? "another firmware: installed only with the box below ticked" :
+          "ok so far: the rest is checked while writing", sd.ok && !sd.foreign ? "ok" : sd.ok ? "warn" : "bad");
       }
 
       var j = d.job, busy = j.state === "writing";
@@ -1194,9 +1198,10 @@
       else text(by("job"), "failed: " + j.error, "bad");
       fill(by("meter"), j.total ? 100 * j.written / j.total : 0, 101, 101);
 
-      var refusal = d.refusal;
-      by("sd-go").disabled = !!refusal || !sd.ok || restarting;
+      var refusal = d.refusal, another = by("another").checked;
+      by("sd-go").disabled = !!refusal || !sd.ok || (sd.foreign && !another) || restarting;
       text(by("sd-sub"), refusal || (!sd.ok ? "nothing to install" :
+        sd.foreign && !another ? "another firmware: tick the box below" :
         sd.same ? "the same as the running one" : "tap, then confirm"));
       var file = by("file").files[0];
       by("upload").disabled = !!refusal || !file || restarting;
@@ -1255,6 +1260,12 @@
     }
 
     by("file").addEventListener("change", function () { if (last) paint(last); });
+    by("another").addEventListener("change", function () { if (last) paint(last); });
+
+    // confirm=another: the device takes another project's image too.
+    function confirmWords() {
+      return "?confirm=update" + (by("another").checked ? "&confirm=another" : "");
+    }
 
     armable(by("upload"), "upload-name", "upload-sub", "Upload and install", function () {
       var file = by("file").files[0];
@@ -1263,7 +1274,7 @@
       lamp("warn", "uploading");
       said("Uploading " + file.name + ": keep this page open.", "");
       var r = new XMLHttpRequest();
-      r.open("POST", "/api/firmware/upload?confirm=update", true);
+      r.open("POST", "/api/firmware/upload" + confirmWords(), true);
       r.timeout = 600000;
       r.setRequestHeader("Content-Type", "application/octet-stream");
       r.upload.onprogress = function (e) {
@@ -1291,7 +1302,7 @@
     armable(by("sd-go"), "sd-name", "sd-sub", "Install firmware.bin", function () {
       by("sd-go").disabled = true;
       lamp("warn", "starting");
-      post("/api/firmware/sd?confirm=update", null, function () {
+      post("/api/firmware/sd" + confirmWords(), null, function () {
         said("Writing firmware.bin from the card: the device restarts when it is done.", "");
         follow();
       }, function (why) { said("Not started: " + why, "bad"); load(); });

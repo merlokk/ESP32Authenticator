@@ -545,8 +545,8 @@ and never starts without lwIP (an assert).
 | `GET /api/wifi/scan` | access points (hidden/duplicate names dropped) |
 | `POST /api/action?do=save\|reload\|retry\|light-on\|light-off` | save config.json / reload it / put Wi-Fi settings on the radio / the frontlight on or off (not saved) |
 | `POST /api/reboot?confirm=reboot` | restart |
-| `GET /api/firmware` | running slot / version / OTA state (`trial`, `confirm_in` s), next slot, the image refused at the last boot (`rolled_back`), the job (writing / done / failed, bytes, error), `/sdcard/firmware.bin` (version, size, check of its head, the same as running), `refusal`: why an update cannot start now |
-| `POST /api/firmware/upload?confirm=update` | the app `.bin` as `application/octet-stream`; checked while it streams, written to the next slot, restart. Needs `web.write`, the vault not locked, no trial boot |
+| `GET /api/firmware` | running slot / version / OTA state (`trial`, `confirm_in` s), next slot, the image refused at the last boot (`rolled_back`), the job (writing / done / failed, bytes, error), `/sdcard/firmware.bin` (version, size, check of its head, the same as running, `foreign` + `project`: another firmware), `refusal`: why an update cannot start now |
+| `POST /api/firmware/upload?confirm=update` | the app `.bin` as `application/octet-stream`; checked while it streams, written to the next slot, restart. Needs `web.write`, the vault not locked, no trial boot. `&confirm=another`: another project's image too |
 | `POST /api/firmware/sd?confirm=update` | the same with `/sdcard/firmware.bin`, in a task; the page polls `GET /api/firmware` |
 | `GET /api/vault` | store state, PIN tries / lock, records: id, site, user, whether a password / TOTP secret is set, modified. Never a password or secret |
 | `GET /api/vault/totp?id=N` | the record's code for the current window and the seconds left |
@@ -871,7 +871,8 @@ own OTA path. Keep the stock X4 Pro partition table, 16 MB, dual OTA:
   console `ota`): the app `.bin` from the browser or `/sdcard/firmware.bin`
   into the next slot. `image_check.h` (pure, host-tested) streams the image:
   magic, chip ESP32-S3, chip and eFuse block revision within the image's
-  range, project name `esp32-authenticator` (not the reader's firmware),
+  range, project name `esp32-authenticator` (another firmware, the reader's
+  or CrossPoint, only when asked: `ota sd force`, `confirm=another`),
   segment table, size within the slot, XOR checksum, exact length. The slot
   is erased only once the head (header + app descriptor) passed; then
   `esp_ota_end` checks the SHA-256 and the image, and only then the boot slot
@@ -882,8 +883,10 @@ own OTA path. Keep the stock X4 Pro partition table, 16 MB, dual OTA:
   reason (closes after 8 s).
 - Trial boot: the new app boots `PENDING_VERIFY`; `ota::BootDone()` (end of
   `app_main`) confirms it 30 s later (`ShouldConfirm`). A panic, watchdog or
-  reset before that rolls back; `rolled_back` / `ota` show the refused
-  version. No update starts while the running app is on trial.
+  reset before that rolls back, and so does a boot not done in 2 min
+  (`ota::Boot`'s timer restarts it, `ShouldGiveUp`); `rolled_back` / `ota`
+  show the refused version. No update starts while the running app is on
+  trial.
 - Pages are served with `ETag` = the app's ELF hash and `no-cache`: a browser
   gets 304 until the firmware changes.
 - Stock X4 Pro Wi-Fi OTA accepts only an encrypted `.xota` package

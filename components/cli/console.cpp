@@ -637,8 +637,9 @@ const esp_console_cmd_t kCommands[] = {
     {
         .command = "ota",
         .help = "Firmware update: [info] slots, version, trial state, last job, /sdcard/firmware.bin | "
-                "sd [confirm]: its check / write it into the next slot and restart",
-        .hint = "[info | sd [confirm]]",
+                "sd [force] [confirm]: its check / write it into the next slot and restart "
+                "(force: another firmware too)",
+        .hint = "[info | sd [force] [confirm]]",
         .func = &CmdOta,
         .argtable = nullptr,
         .func_w_context = nullptr,

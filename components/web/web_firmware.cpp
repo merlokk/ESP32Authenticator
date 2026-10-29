@@ -1,5 +1,6 @@
 // The Firmware page's API (web_admin_routes.h): the OTA slots, a .bin
-// uploaded from the browser or /sdcard/firmware.bin (ota_update.h).
+// uploaded from the browser or /sdcard/firmware.bin (ota_update.h). Another
+// firmware (CrossPoint) only with confirm=another beside confirm=update.
 
 #include <cinttypes>
 #include <cstdio>
@@ -29,7 +30,7 @@ constexpr int kMaxStalls = 6;  // receive timeouts in a row before the upload is
 // Static, not on the httpd stack; one request at a time.
 EXT_RAM_BSS_ATTR ota::Status g_ota;
 ota::SdFile g_sd;
-EXT_RAM_BSS_ATTR char g_esc[6][72];
+EXT_RAM_BSS_ATTR char g_esc[7][72];
 
 const char *Esc(int slot, const char *text) {
     Escape(text, g_esc[slot], sizeof g_esc[slot]);
@@ -53,7 +54,7 @@ esp_err_t FirmwareGet(httpd_req_t *request) {
     }
     CountApi();
     ota::GetStatus(&g_ota);
-    ota::ReadSdFile(&g_sd);
+    ota::ReadSdFile(&g_sd, true);  // another firmware shown as such (installed only when asked)
     const char *gate = Gate();
     size_t size = 0;
     char *json = Scratch(&size);
@@ -67,7 +68,7 @@ esp_err_t FirmwareGet(httpd_req_t *request) {
         "\"job\":{\"state\":\"%s\",\"source\":\"%s\",\"written\":%u,\"total\":%u,"
         "\"error\":\"%s\",\"version\":\"%s\"},"
         "\"sd\":{\"mounted\":%s,\"present\":%s,\"size\":%u,\"ok\":%s,\"check\":\"%s\","
-        "\"version\":\"%s\",\"date\":\"%s %s\",\"same\":%s},"
+        "\"version\":\"%s\",\"date\":\"%s %s\",\"same\":%s,\"foreign\":%s,\"project\":\"%s\"},"
         "\"refusal\":\"%s\"}",
         g_ota.running_slot, Esc(0, g_ota.running_version), g_ota.running_date, g_ota.running_time,
         g_ota.running_idf, g_ota.running_state, g_ota.trial ? "true" : "false", g_ota.confirm_in_s,
@@ -78,6 +79,7 @@ esp_err_t FirmwareGet(httpd_req_t *request) {
         g_sd.present ? "true" : "false", static_cast<unsigned>(g_sd.size),
         sd_ok ? "true" : "false", g_sd.present ? (sd_ok ? "ok" : ota::VerdictName(g_sd.verdict)) : "",
         Esc(3, sd.version), Esc(4, sd.date), Esc(5, sd.time), g_sd.same_as_running ? "true" : "false",
+        sd_ok && sd.foreign ? "true" : "false", Esc(6, sd.project),
         gate != nullptr ? gate : "");
     return SendJson(request, nullptr, json);
 }
@@ -123,7 +125,8 @@ esp_err_t UploadPost(httpd_req_t *request) {
     if (request->content_len == 0) {
         return Refuse(request, "400 Bad Request", "no firmware in the body");
     }
-    if (ota::Begin(ota::Source::kWeb, request->content_len) != ESP_OK) {
+    if (ota::Begin(ota::Source::kWeb, request->content_len, Confirms(request->uri, "another")) !=
+        ESP_OK) {
         ota::GetStatus(&g_ota);
         return RefuseAndClose(request, "409 Conflict",
                               g_ota.error[0] != '\0' ? g_ota.error : "cannot start an update");
@@ -174,14 +177,15 @@ esp_err_t SdPost(httpd_req_t *request) {
     if (!MayUpdate(request, &answer)) {
         return answer;
     }
-    ota::ReadSdFile(&g_sd);
+    const bool another = Confirms(request->uri, "another");
+    ota::ReadSdFile(&g_sd, another);
     if (!g_sd.present) {
         return Refuse(request, "404 Not Found", "no firmware.bin in the card's root");
     }
     if (g_sd.verdict != ota::Verdict::kMore) {
         return Refuse(request, "422 Unprocessable Entity", ota::VerdictName(g_sd.verdict));
     }
-    const esp_err_t err = ota::StartFromSd();
+    const esp_err_t err = ota::StartFromSd(another);
     if (err != ESP_OK) {
         return Refuse(request, "409 Conflict", esp_err_to_name(err));
     }

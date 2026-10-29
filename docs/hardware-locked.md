@@ -71,8 +71,16 @@ device. The SD path compares no versions. Its checks
 | board tag `CROSSPOINT-BOARD-V1:<name>;` | only checked if present; none here |
 
 The partition table stays stock and matches `partitions.csv`. The image goes
-to the other slot with otadata state `NEW`: `ota::Boot` confirms it after
-30 s; a reset before that rolls back to CrossPoint (a hang does not).
+to the other slot with otadata state `NEW` (`OtaBootSwitch.cpp`), so it boots
+on trial: confirmed 30 s after `ota::BootDone()` (the end of `app_main`); a
+reset or panic before that rolls back to CrossPoint, and so does a boot not
+done in 2 min (`ota::Boot` restarts it: `ShouldGiveUp`).
+
+First boot on CrossPoint's flash: its NVS is kept (erased only when full or
+of another version); CrossPoint leaves the stock SPIFFS alone (SPIFFS and
+LittleFS off in its `platformio.ini`). If SPIFFS does not mount, nothing
+formats it: no `config.json` or seed until `spiffs format` on the console.
+No `config.json`: Wi-Fi off, USB `jtag`.
 
 ## After the first boot
 
@@ -80,11 +88,18 @@ to the other slot with otadata state `NEW`: `ota::Boot` confirms it after
   boot, flash encryption, `DIS_USB_*`.
 - Console: with only the download mode off, the Serial/JTAG console works.
   With the Serial/JTAG off but OTG on (what the unit above looks like):
-  Settings > Devices > USB port = serial (CDC-ACM). With `DIS_USB_OTG` the TinyUSB modes are refused
+  Settings > Devices > USB port = serial (CDC-ACM). With `DIS_USB_OTG` the
+  TinyUSB modes are refused
   (`ESP_ERR_NOT_SUPPORTED`, the port stays Serial/JTAG) instead of hanging in
   TinyUSB's core reset.
-- Rollback: keep a CrossPoint `.bin` on the card; `/sdcard/firmware.bin`
-  (button, `ota sd confirm`) installs it.
+- The next firmware of ours: the web site (upload, or `/sdcard/firmware.bin`;
+  Wi-Fi switched on in Settings > Wi-Fi), the console (`ota sd confirm`) or
+  Server > Firmware. Not from the screen alone.
+- Back to CrossPoint: its `.bin` as `/sdcard/firmware.bin`, then `ota sd force
+  confirm` or the site with "Install another firmware too" ticked. Without
+  that, another project's image is refused (`kWrongProject`); chip, revision,
+  size, checksum and SHA-256 are checked either way. CrossPoint (Arduino)
+  confirms its own trial boot.
 - Last resort: an SPI programmer on the external flash chip
   (`../crosspoint-reader/docs/fix-bricked-xteink.md`), only with flash
   encryption off.

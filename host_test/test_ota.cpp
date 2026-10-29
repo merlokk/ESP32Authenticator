@@ -86,7 +86,7 @@ std::vector<uint8_t> Image(const Spec &spec = {}) {
 }
 
 ota::Expect Device(size_t max_size = 4096) {
-    return {ota::kChipEsp32S3, 2, 100, kProject, max_size};
+    return {ota::kChipEsp32S3, 2, 100, kProject, max_size, false};
 }
 
 Verdict Check(const std::vector<uint8_t> &image, size_t chunk, const ota::Expect &expect = Device()) {
@@ -172,6 +172,32 @@ void test_ota_refuses_descriptor(void) {
     AssertRefused(s, Verdict::kOk);
 }
 
+void test_ota_any_project(void) {
+    Spec s;
+    s.project = "crosspoint";
+    ota::Expect any = Device();
+    any.any_project = true;
+    const std::vector<uint8_t> image = Image(s);
+    ota::ImageCheck check(any);
+    check.Feed(image.data(), image.size());
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(Verdict::kOk), static_cast<int>(check.Finish()));
+    TEST_ASSERT_TRUE(check.Info().foreign);
+    TEST_ASSERT_EQUAL_STRING("crosspoint", check.Info().project);
+    // Ours: not foreign.
+    ota::ImageCheck own(any);
+    const std::vector<uint8_t> ours = Image();
+    own.Feed(ours.data(), ours.size());
+    TEST_ASSERT_FALSE(own.Info().foreign);
+    // The other checks still hold.
+    s.chip = 5;
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(Verdict::kWrongChip), static_cast<int>(Check(Image(s), 64, any)));
+    s = {};
+    s.project = "crosspoint";
+    s.min_efuse = 101;
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(Verdict::kEfuseRevision),
+                          static_cast<int>(Check(Image(s), 64, any)));
+}
+
 void test_ota_refuses_body(void) {
     std::vector<uint8_t> image = Image();
     image[250] ^= 0x01;  // a data byte past the descriptor: the checksum no longer matches
@@ -226,6 +252,13 @@ void test_ota_should_confirm(void) {
     TEST_ASSERT_TRUE(ota::ShouldConfirm(true, true, ota::kConfirmAfterMs));
 }
 
+void test_ota_should_give_up(void) {
+    TEST_ASSERT_FALSE(ota::ShouldGiveUp(false, false, ota::kTrialDeadlineMs));
+    TEST_ASSERT_FALSE(ota::ShouldGiveUp(true, true, ota::kTrialDeadlineMs));
+    TEST_ASSERT_FALSE(ota::ShouldGiveUp(true, false, ota::kTrialDeadlineMs - 1));
+    TEST_ASSERT_TRUE(ota::ShouldGiveUp(true, false, ota::kTrialDeadlineMs));
+}
+
 }  // namespace
 
 void RegisterOtaTests(void) {
@@ -233,8 +266,10 @@ void RegisterOtaTests(void) {
     RUN_TEST(test_ota_info);
     RUN_TEST(test_ota_refuses_header);
     RUN_TEST(test_ota_refuses_descriptor);
+    RUN_TEST(test_ota_any_project);
     RUN_TEST(test_ota_refuses_body);
     RUN_TEST(test_ota_too_large_for_slot);
     RUN_TEST(test_ota_fault_is_sticky);
     RUN_TEST(test_ota_should_confirm);
+    RUN_TEST(test_ota_should_give_up);
 }

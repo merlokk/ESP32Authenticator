@@ -114,7 +114,8 @@ Verdict ImageCheck::Descriptor() {
     }
     info_.min_efuse = U16(d + 176);
     info_.max_efuse = U16(d + 178);
-    if (!Same(info_.project, expect_.project)) {
+    info_.foreign = !Same(info_.project, expect_.project);
+    if (info_.foreign && !expect_.any_project) {
         return Fail(Verdict::kWrongProject);
     }
     if ((info_.min_efuse != kUnset && expect_.efuse_revision < info_.min_efuse) ||
@@ -253,6 +254,10 @@ Verdict ImageCheck::Finish() {
 
 bool ShouldConfirm(bool pending, bool boot_done, uint32_t uptime_ms) {
     return pending && boot_done && uptime_ms >= kConfirmAfterMs;
+}
+
+bool ShouldGiveUp(bool pending, bool boot_done, uint32_t uptime_ms) {
+    return pending && !boot_done && uptime_ms >= kTrialDeadlineMs;
 }
 
 }  // namespace ota

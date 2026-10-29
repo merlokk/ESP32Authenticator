@@ -8,7 +8,9 @@
 // esp_ota_end (SHA-256, the image as the bootloader sees it). The new app
 // boots PENDING_VERIFY on the stock bootloader (rollback enabled): it is
 // confirmed kConfirmAfterMs after a finished boot (BootDone); a reset, a
-// panic or a watchdog before that boots the previous slot again.
+// panic or a watchdog before that boots the previous slot again, and so does
+// a boot not done by kTrialDeadlineMs (restarted). `any_project`: another
+// firmware (CrossPoint, the stock reader) is accepted too, only when asked.
 
 #include <cstddef>
 #include <cstdint>
@@ -30,8 +32,8 @@ struct Hooks {
 };
 void SetHooks(const Hooks &hooks);
 
-// app_main: first thing, and once the boot is done (starts the confirm timer
-// of a trial boot).
+// app_main: first thing (a trial boot: the give-up timer), and once the boot
+// is done (the confirm timer instead).
 void Boot();
 void BootDone();
 
@@ -67,7 +69,7 @@ const char *Refusal();
 // One update at a time; Write feeds the check and, once the image is named,
 // the slot. Any error aborts (Status::error says why); End switches the boot
 // slot. `total`: the expected length (0 unknown).
-esp_err_t Begin(Source source, size_t total);
+esp_err_t Begin(Source source, size_t total, bool any_project = false);
 esp_err_t Write(const uint8_t *data, size_t length);
 esp_err_t End();
 void Abort(const char *why);
@@ -82,10 +84,10 @@ struct SdFile {
     AppInfo info;
     bool same_as_running;  // the same ELF SHA-256
 };
-void ReadSdFile(SdFile *out);
+void ReadSdFile(SdFile *out, bool any_project = false);
 
 // Checks and writes /sdcard/firmware.bin in a task of its own, then restarts.
-esp_err_t StartFromSd();
+esp_err_t StartFromSd(bool any_project = false);
 
 // before_restart, then esp_restart.
 void Restart();
