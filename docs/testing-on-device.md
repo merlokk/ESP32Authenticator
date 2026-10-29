@@ -16,7 +16,7 @@ site, FIDO2 over BLE. Host tests (no board) are in [build.md](build.md#tests).
 ## Console
 
 `utils/console.py` runs any command ([build.md](build.md#cli) has the list;
-`help` on the device), see [utils/README.md](utils/README.md):
+`help` on the device), see [utils/README.md](../utils/README.md):
 
 ```powershell
 python utils/console.py -p COM7 "fido2 info" "pass" "ui"   # several, in order

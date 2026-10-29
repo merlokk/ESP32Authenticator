@@ -6,7 +6,7 @@ Hardware authenticator firmware for the **XTEINK X4 Pro Pocket eReader** (ESP32-
 - Credentials shown on the e-ink screen.
 - Sent to the host via BLE keyboard (HID) or as a FIDO2 / U2F key (BLE, USB).
 
-User manual: [manual/README.md](manual/README.md).
+User manual: [docs/manual](docs/manual/README.md); all docs: [docs/README.md](docs/README.md).
 
 ## License
 

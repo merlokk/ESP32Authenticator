@@ -33,7 +33,7 @@ python utils/console.py -p COM6 "fido2 delete 905f88d7" # by id prefix (numbers 
 python utils/console.py -p COM6 "wifi static 1 192.168.1.50 255.255.255.0 192.168.1.1"
 ```
 
-The command list is in [build.md](../build.md#cli) (`help` on the device).
+The command list is in [build.md](../docs/build.md#cli) (`help` on the device).
 
 - Prints each command's output (ESP log lines filtered); with several commands
   each starts with `>>> <command>`. Exit code 1 if any command failed; the
@@ -41,7 +41,7 @@ The command list is in [build.md](../build.md#cli) (`help` on the device).
 - Several deletes: use ids, not `#` (the list renumbers after each one).
 - `--log`: when commands time out ("the device does not read its console"),
   read the boot log and panic backtrace; decode the addresses with
-  `xtensa-esp32s3-elf-addr2line` (see [build.md](../build.md)).
+  `xtensa-esp32s3-elf-addr2line` (see [build.md](../docs/build.md)).
 - Secrets typed as arguments (`wifi set <ssid> <password>`) stay in the shell
   history; type them yourself.
 
@@ -93,7 +93,7 @@ python utils/screenshot.py -p COM7 [out.png]   # default screen-<time>.png
 
 - `ui screenshot`: LVGL's 1-bit portrait screen (480x800) as base64 with
   length and CRC32; written as a 1-bit greyscale PNG (no Pillow). Driving the
-  screen (`ui show`, `ui key`, `ui click`, `ui swipe`): [testing-on-device.md](../testing-on-device.md#screen).
+  screen (`ui show`, `ui key`, `ui click`, `ui swipe`): [testing-on-device.md](../docs/testing-on-device.md#screen).
 
 ## Notes
 

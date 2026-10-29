@@ -71,7 +71,7 @@ the vault is locked, GT911 touch as the pointer, `ui`); power-off
   U2F (BLE and USB), EdDSA, authenticatorConfig, minPinLength, PIN complexity,
   hmac-secret-mc, pcmr, attestation formats, encIdentifier, built-in UV
   plumbing (`uv: false`); see
-  lionkey-update-plan.md. Firmware update (OTA): a `.bin` uploaded on the
+  docs/lionkey-update-plan.md. Firmware update (OTA): a `.bin` uploaded on the
   site (Device > Firmware update) or `/sdcard/firmware.bin` (button, `ota
   sd confirm`), checked while streaming (`image_check.h`), trial boot
   confirmed after 30 s, else rolled back.
@@ -80,37 +80,39 @@ the vault is locked, GT911 touch as the pointer, `ui`); power-off
 
 ## Architecture
 
-Functions and status: [architecture.md](architecture.md#functionality); X4 Pro
-screen design: [x4-design.md](x4-design.md).
+All docs: [docs/README.md](docs/README.md).
 
-Stack (ESP-IDF, BLE, Wi-Fi, web), config, tests, flash layout: [architecture.md](architecture.md).
-Wi-Fi and the web site are ported from approver-esp32 (see [sources.md](sources.md)).
+Functions and status: [architecture.md](docs/architecture.md#functionality); X4 Pro
+screen design: [x4-design.md](docs/x4-design.md).
 
-User manual with screenshots: [manual/README.md](manual/README.md).
+Stack (ESP-IDF, BLE, Wi-Fi, web), config, tests, flash layout: [architecture.md](docs/architecture.md).
+Wi-Fi and the web site are ported from approver-esp32 (see [sources.md](docs/sources.md)).
+
+User manual with screenshots: [manual/README.md](docs/manual/README.md).
 
 ## Build
 
-ESP-IDF setup, build/flash, tests, web site access, CLI: [build.md](build.md).
+ESP-IDF setup, build/flash, tests, web site access, CLI: [build.md](docs/build.md).
 
-Windows 11 BLE FIDO2 fix (GATT tail service): [windows-ble-fido.md](windows-ble-fido.md).
+Windows 11 BLE FIDO2 fix (GATT tail service): [windows-ble-fido.md](docs/windows-ble-fido.md).
 
-LionKey fork (CTAP 2.2/2.3 features, EdDSA, U2F): [lionkey-update-plan.md](lionkey-update-plan.md).
+LionKey fork (CTAP 2.2/2.3 features, EdDSA, U2F): [lionkey-update-plan.md](docs/lionkey-update-plan.md).
 
-Credential store encryption, PSRAM store, SD for hundreds of keys (analysis): [storage-encryption.md](storage-encryption.md).
+Credential store encryption, PSRAM store, SD for hundreds of keys (analysis): [storage-encryption.md](docs/storage-encryption.md).
 
-Store file format (header, key, vault/fido payloads, writes): [storage-format.md](storage-format.md).
+Store file format (header, key, vault/fido payloads, writes): [storage-format.md](docs/storage-format.md).
 
 Testing on the board (console, screen screenshots and made-up touches,
-`config test`, the FIDO2 suite): [testing-on-device.md](testing-on-device.md).
+`config test`, the FIDO2 suite): [testing-on-device.md](docs/testing-on-device.md).
 
 ## Hardware
 
-Pinout, display controllers, devices: [hardware.md](hardware.md).
-USB-locked X4 Pro (flashing via CrossPoint): [hardware-locked.md](hardware-locked.md).
+Pinout, display controllers, devices: [hardware.md](docs/hardware.md).
+USB-locked X4 Pro (flashing via CrossPoint): [hardware-locked.md](docs/hardware-locked.md).
 
 ## Sources
 
-Reference projects (local paths + git): [sources.md](sources.md).
+Reference projects (local paths + git): [sources.md](docs/sources.md).
 
 ## Rules
 

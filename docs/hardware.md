@@ -113,7 +113,7 @@ factory serial (`X4CB02EN…`).
   our unit at 25 kHz: steady, GPIO8 cool, GPIO9 warm, 1 LSB of 1023 still visible.
 - Stock firmware (`xteink_app` 7.5.11, ESP-IDF v6.0.1): silent on the USB
   console, exposes the microSD as USB MSC, talks to `api-prod.xteink.cc|cn`.
-  Full backup and details: [originalfw/README.md](originalfw/README.md).
+  Full backup and details: [originalfw/README.md](../originalfw/README.md).
 - Stock partition table:
 
 | Name | Type/SubType | Offset | Size |
