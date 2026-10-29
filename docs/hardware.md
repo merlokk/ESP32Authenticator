@@ -32,8 +32,10 @@ Varies by production batch. Same glass and pinout for all of them; detect the co
 
 Stock firmware 7.5.11 ships waveforms for UC8179 and UC8279 (`*_gray_full`,
 `*_gray_aa`, `*_aa_prebw_mid`) and an `ESP32S3_X4_TL_SSD1677` board name; the
-panel kind is stored in NVS `hw_calib` (`screenType`, `screenId`; both 1 on our
-unit, meaning unknown).
+panel kind is stored in NVS `hw_calib`: `screenType` 1 = UC8179, 2 = UC8279
+(`epd_logic.h` `FromScreenType`; shown only, the probe decides). Our open
+unit: `screenType` 1, `screenId` 1; the locked one: `screenType` 2, no
+`screenId`.
 
 - Write-only SPI (no MISO); BUSY: SSD1677 high while busy, UC81xx low
   (BUSY_N).
@@ -43,7 +45,9 @@ unit, meaning unknown).
   (landscape): 4/2/4/8. Held as a book (portrait, the default) the frame's
   left edge (x 0) is on top and its top edge (y 0) on the right: the UI turns
   it 90 degrees.
-- Our unit: UC8179, FLG 0x13, VER `00 00 01 FF FF` (= stock screenType 1).
+- Our open unit: UC8179, FLG 0x13, VER `00 00 01 FF FF` (= stock screenType 1).
+  The locked one: UC8279, FLG 0x13, VER `00 00 02 00 00` (= screenType 2):
+  B/W only (no 4-grey wallpapers).
   Full refresh 1.9 s, fast 0.9 s, each with the plane uploads and power on/off.
 - The data line reads back: a UC81xx answers FLG (0x71) and VER (0x70) on
   GPIO11 as input (how the controller is detected).
