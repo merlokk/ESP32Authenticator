@@ -70,6 +70,7 @@ struct Job {
     sync::Store store;  // kResolve
     Choice choice;
     char pin[8];        // kResolve: the server's copy's PIN, "" none (wiped after)
+    uint8_t pick;       // kResolve: which of the choices is taken
     bool by_hand;       // kSync: asked for (the other phrases' stores looked at)
     firmware::Release release;  // kInstall
 };
@@ -857,6 +858,10 @@ struct Waiting {
     bool other_store;
 };
 Waiting waiting[sync::kStores] = {};
+// A conflict with several of the account's stores: the ones to pick from.
+sync::Candidate choices[sync::kStores][sync::kMaxChoices] = {};
+// The server's task's: a look's stores.
+sync::Candidate looked[sync::kMaxChoices] = {};
 int64_t sync_tried = -1;  // monotonic seconds, -1: none
 int64_t sync_done = -1;
 uint32_t seen_version[sync::kStores] = {};
@@ -955,9 +960,16 @@ void SetStore(sync::Store s, sync::Phase phase, uint32_t local, uint32_t server 
     snprintf(t.server_at, sizeof t.server_at, "%s", at);
 }
 
-void SetWaiting(sync::Store s, const sync::Copy &server, bool other) {
+// `picks` (`count` of them): the stores the person picks from, 0 none.
+void SetWaiting(sync::Store s, const sync::Copy &server, bool other,
+                const sync::Candidate *picks = nullptr, size_t count = 0) {
     Locked l;
     waiting[Index(s)] = {server, other};
+    count = count > 1 && count <= sync::kMaxChoices ? count : 0;
+    for (size_t i = 0; i < count; ++i) {
+        choices[Index(s)][i] = picks[i];
+    }
+    status.stores[Index(s)].choices = static_cast<uint8_t>(count);
 }
 
 enum class Outcome : uint8_t { kInSync, kUploaded, kTaken, kWaits, kFailed };
@@ -1147,7 +1159,7 @@ Outcome SyncOne(const char *host, sync::Store s, const sync::Copy &local,
     }
     const bool empty = open && hooks->empty(s);
     sync::Step step = sync::Decide(local, was, server, open, empty);
-    sync::Candidate cand;
+    const sync::Candidate &cand = looked[0];
     if (step == sync::Step::kLook) {
         char url[kSyncUrlSize];
         Call call = {url};
@@ -1156,7 +1168,8 @@ Outcome SyncOne(const char *host, sync::Store s, const sync::Copy &local,
                              ? SignedCall(call, host, answer, said, said_size)
                              : -3;
         const int found = code == 200 ? sync::ParseStores(answer.data, answer.length,
-                                                          sync::KindOf(s), local.store_id, &cand)
+                                                          sync::KindOf(s), local.store_id,
+                                                          looked, sync::kMaxChoices)
                                       : -1;
         if (found < 0) {
             if (code == 200) {
@@ -1175,7 +1188,8 @@ Outcome SyncOne(const char *host, sync::Store s, const sync::Copy &local,
         step = sync::AfterLook(empty, static_cast<size_t>(found),
                                sync::SameWrite(local, server));
         if (step == sync::Step::kConflict) {
-            SetWaiting(s, cand.copy, true);
+            const size_t n = static_cast<size_t>(found);
+            SetWaiting(s, cand.copy, true, looked, n < sync::kMaxChoices ? n : sync::kMaxChoices);
             SetStore(s, sync::Phase::kConflict, local.version, cand.copy.version, true, cand.at);
             return Outcome::kWaits;
         }
@@ -1357,6 +1371,9 @@ void Resolve(const Job &r, Body &answer) {
         Locked l;
         w = waiting[i];
         phase = status.stores[i].phase;
+        if (r.choice == Choice::kTakeServer && r.pick < status.stores[i].choices) {
+            w = {choices[i][r.pick].copy, true};
+        }
     }
     sync::Copy local;
     uint8_t seed[sync::kSeedIdSize];
@@ -1430,7 +1447,7 @@ void Task(void *arg) {
 esp_err_t Start(Kind kind, const char *host, const char *email, const Report *report,
                 sync::Store store = sync::Store::kVault, Choice choice = Choice::kKeepMine,
                 const char *pin = nullptr, bool by_hand = false,
-                const firmware::Release *release = nullptr) {
+                const firmware::Release *release = nullptr, uint8_t pick = 0) {
     if (lock == nullptr) {
         return ESP_ERR_INVALID_STATE;
     }
@@ -1479,6 +1496,7 @@ esp_err_t Start(Kind kind, const char *host, const char *email, const Report *re
         }
         r->store = store;
         r->choice = choice;
+        r->pick = pick;
         r->by_hand = by_hand;
         if (release != nullptr) {
             r->release = *release;
@@ -1682,19 +1700,42 @@ esp_err_t StartSync(bool by_hand) {
     return err;
 }
 
-esp_err_t StartResolve(sync::Store store, Choice choice, const char *pin) {
+esp_err_t StartResolve(sync::Store store, Choice choice, const char *pin, uint8_t pick) {
     if (hooks == nullptr) {
         return ESP_ERR_INVALID_STATE;
     }
     {
         Locked l;
-        if (!sync::ByHand(status.stores[static_cast<size_t>(store)].phase)) {
+        const StoreStatus &t = status.stores[static_cast<size_t>(store)];
+        if (!sync::ByHand(t.phase)) {
             return ESP_ERR_INVALID_STATE;
+        }
+        if (pick != 0 && pick >= t.choices) {
+            return ESP_ERR_INVALID_ARG;
         }
     }
     char host[kHostSize];
     hooks->host(host, sizeof host);
-    return Start(Kind::kResolve, host, nullptr, nullptr, store, choice, pin);
+    return Start(Kind::kResolve, host, nullptr, nullptr, store, choice, pin, false, nullptr, pick);
+}
+
+size_t Choices(sync::Store store, StoreChoice *out, size_t max) {
+    if (lock == nullptr) {
+        return 0;
+    }
+    Locked l;
+    const size_t i = Index(store);
+    size_t n = status.stores[i].choices;
+    n = n < max ? n : max;
+    for (size_t k = 0; k < n; ++k) {
+        const sync::Candidate &c = choices[i][k];
+        StoreChoice &o = out[k];
+        o.version = c.copy.version;
+        snprintf(o.at, sizeof o.at, "%s", c.at);
+        snprintf(o.by, sizeof o.by, "%s", c.by);
+        o.this_device = c.by[0] != '\0' && strcmp(c.by, state.client_id) == 0;
+    }
+    return n;
 }
 
 size_t Releases(firmware::Release *out, size_t max) {

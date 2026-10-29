@@ -46,6 +46,7 @@ enum class Page : uint8_t {
     kServerConfig,  // Server > Configure: how often the status and the sync go
     kServerSync,    // Server > Sync: the stores against the server's, what waits
     kServerSyncPin, // Server > Sync: the PIN of the server's copy, on the keyboard
+    kServerSyncPick,  // Server > Sync: which of several stores on the server is taken
     kServerFirmware,  // Server > Firmware: the server's releases, newest first
 };
 
@@ -68,8 +69,8 @@ constexpr Page Parent(Page p) {
            : p == Page::kServerEmail || p == Page::kServerConfig || p == Page::kServerSync ||
                    p == Page::kServerFirmware
                ? Page::kServer
-           : p == Page::kServerSyncPin ? Page::kServerSync
-                                      : Page::kMain;
+           : p == Page::kServerSyncPin || p == Page::kServerSyncPick ? Page::kServerSync
+                                                                    : Page::kMain;
 }
 
 // The main page's rows, under the frontlight.
@@ -114,6 +115,7 @@ constexpr const char *Title(Page p) {
         case Page::kServerConfig: return "Configure";
         case Page::kServerSync: return "Sync";
         case Page::kServerSyncPin: return "The copy's PIN";
+        case Page::kServerSyncPick: return "Which copy?";
         case Page::kServerFirmware: return "Firmware";
     }
     return "";
@@ -286,6 +288,22 @@ constexpr const char *SyncStoreTitle(uint8_t store) {
 // The Sync page's taps: store * 2 + 0 keep this device's copy, + 1 take the
 // server's (or type its PIN).
 constexpr int SyncTap(uint8_t store, bool take) { return store * 2 + (take ? 1 : 0); }
+
+// Sync > Which copy?: one of the account's stores a conflict can take
+// (ServerHooks::sync_choices), the newest sync first.
+struct SyncChoice {
+    uint32_t version;
+    char at[17];      // when it reached the server (UTC), "" unknown
+    char by[9];       // the device that sent it: its id's first 8 characters
+    bool this_device;
+};
+inline constexpr uint8_t kSyncChoices = 4;
+
+// The row's mark on the right.
+constexpr const char *SyncChoiceTag(const SyncChoice &c, uint8_t row) {
+    return row == 0 ? (c.this_device ? "newest, this device" : "newest")
+                    : c.this_device ? "this device" : "";
+}
 
 // Server > Firmware: a release on a row (ServerHooks::firmware), newest first.
 struct FirmwareRow {

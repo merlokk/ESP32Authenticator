@@ -206,7 +206,10 @@ the last sync, or the server's copy is damaged.
 - **Keep mine**: this device's copy goes to the server and replaces the
   other one there. The other device takes it at its next sync.
 - **Take server's**: the server's copy replaces this device's. **Changes
-  made here since the last sync are lost.**
+  made here since the last sync are lost.** Several copies on the server
+  under this seed phrase (*N other stores: pick one*): it opens **Which
+  copy?**, each with its version, when it was sent and from which device;
+  tap the one to take.
 
 The server keeps the last 20 copies of each store.
 

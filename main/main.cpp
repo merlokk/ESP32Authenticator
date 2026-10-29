@@ -696,7 +696,10 @@ void DescribeSync(char *out, size_t size) {
             Put(out, size, name, "%s, v%u / v%u",
                 t.phase == sy::Phase::kNeedPin ? "its PIN" : sy::PhaseText(t.phase),
                 static_cast<unsigned>(t.local_version), static_cast<unsigned>(t.server_version));
-            if (t.other_store) {
+            if (t.choices > 1) {
+                Put(out, size, "  server's", "%u other stores: pick one",
+                    static_cast<unsigned>(t.choices));
+            } else if (t.other_store) {
                 Put(out, size, "  server's", "another store");
             }
             if (t.server_at[0] != '\0') {
@@ -770,18 +773,32 @@ uint8_t SyncWaits() {
     return bits;
 }
 
-const char *SyncResolve(uint8_t store, bool take, const char *pin) {
+const char *SyncResolve(uint8_t store, bool take, uint8_t pick, const char *pin) {
     if (const char *why = ServerBlocked()) {
         return why;
     }
     switch (server::StartResolve(static_cast<server::sync::Store>(store),
                                  take ? server::Choice::kTakeServer : server::Choice::kKeepMine,
-                                 pin)) {
+                                 pin, pick)) {
         case ESP_OK: return take ? "taking the server's copy..." : "sending this device's copy...";
         case ESP_ERR_NOT_FOUND: return "not registered";
         case ESP_ERR_INVALID_STATE: return "busy, or nothing waits";
+        case ESP_ERR_INVALID_ARG: return "that copy is gone: look again";
         default: return "cannot resolve";
     }
+}
+
+uint8_t SyncChoices(uint8_t store, ui::settings::SyncChoice *out, uint8_t max) {
+    server::StoreChoice got[server::sync::kMaxChoices];
+    const size_t n = server::Choices(static_cast<server::sync::Store>(store), got,
+                                     max < server::sync::kMaxChoices ? max : server::sync::kMaxChoices);
+    for (size_t i = 0; i < n; ++i) {
+        out[i].version = got[i].version;
+        snprintf(out[i].at, sizeof out[i].at, "%s", got[i].at);
+        snprintf(out[i].by, sizeof out[i].by, "%.8s", got[i].by);
+        out[i].this_device = got[i].this_device;
+    }
+    return static_cast<uint8_t>(n);
 }
 
 // --- Server > Firmware (ui::ServerHooks) ---------------------------------------------
@@ -949,7 +966,7 @@ const char *ServerSetStatusMinutes(uint8_t minutes) {
 const ui::ServerHooks kServerHooks = {ServerEmail,       ServerRegister,       ServerStatusMinutes,
                                       ServerSetStatusMinutes, ServerSyncMinutes, ServerSetSyncMinutes,
                                       SyncSummary,       SyncWaits,            SyncResolve,
-                                      FirmwareRows,      FirmwareSummary,      FirmwareNote,
+                                      SyncChoices,       FirmwareRows,      FirmwareSummary,      FirmwareNote,
                                       FirmwareInstall};
 
 // The status schedule (server::Hooks): from the scheduler's task.
@@ -1036,6 +1053,7 @@ void SettingsDescribe(ui::settings::Page page, bool summary, char *out, size_t s
         case Page::kServerEmail:
         case Page::kServerConfig:
         case Page::kServerSyncPin: break;
+        case Page::kServerSyncPick: break;
         case Page::kServerSync:
             if (!summary) {
                 DescribeSync(out, size);

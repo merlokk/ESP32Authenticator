@@ -604,10 +604,10 @@ const esp_console_cmd_t kCommands[] = {
         .help = "The authentication server (config.json server.host): status | check: is it "
                 "there | register [email]: a new key and TOTP secret, then the registration | "
                 "code: the TOTP code for it | host <name>: the server (saved) | report: the "
-                "status now | sync: the stores now | sync keep|take passwords|passkeys [pin]: "
-                "a store that waits, this device's copy or the server's | firmware [check | "
+                "status now | sync: the stores now | sync keep|take passwords|passkeys [<n>] [pin]: "
+                "a store that waits, this device's copy or the server's (<n>: which of several) | firmware [check | "
                 "install <#>]: the server's releases, newest first; one installed",
-        .hint = "[check|report|sync [keep|take passwords|passkeys [pin]]|firmware [check|install <#>]|"
+        .hint = "[check|report|sync [keep|take passwords|passkeys [<n>] [pin]]|firmware [check|install <#>]|"
                 "register [email]|code|host <name>]",
         .func = &CmdServer,
         .argtable = nullptr,

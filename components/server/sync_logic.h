@@ -436,11 +436,14 @@ struct Candidate {
     char at[17] = "";                 // when: "2026-10-27 19:07" (UTC)
 };
 
+// Several of them: the person picks one (Settings > Server > Sync).
+inline constexpr size_t kMaxChoices = 4;
+
 // The account's stores of `kind` other than `ours`: how many, and the first
-// (the newest sync: the server lists them so) into `first`. -1: not the
-// answer.
+// `max` (the newest sync first: the server lists them so) into `out`. -1:
+// not the answer.
 constexpr int ParseStores(const char *body, size_t len, uint8_t kind,
-                          const uint8_t ours[kStoreIdSize], Candidate *first) {
+                          const uint8_t ours[kStoreIdSize], Candidate *out, size_t max) {
     if (FindValue(body, len, "stores") == nullptr) {
         return -1;
     }
@@ -459,7 +462,7 @@ constexpr int ParseStores(const char *body, size_t len, uint8_t kind,
         if (!c.copy.has) {
             continue;
         }
-        if (++found > 1) {
+        if (static_cast<size_t>(++found) > max) {
             continue;
         }
         char key[2 * kKeyIdSize + 1] = {};
@@ -477,7 +480,7 @@ constexpr int ParseStores(const char *body, size_t len, uint8_t kind,
             }
             c.at[16] = '\0';
         }
-        *first = c;
+        out[found - 1] = c;
     }
     return found;
 }

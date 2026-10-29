@@ -640,6 +640,14 @@ void test_settings_pages(void) {
     TEST_ASSERT_FALSE(st::SyncConflict(0x08, 1));
     TEST_ASSERT_EQUAL(3, st::SyncTap(1, true));
     TEST_ASSERT_EQUAL_STRING("Passkeys", st::SyncStoreTitle(1));
+    TEST_ASSERT_TRUE(st::Parent(st::Page::kServerSyncPick) == st::Page::kServerSync);
+    TEST_ASSERT_EQUAL_STRING("Which copy?", st::Title(st::Page::kServerSyncPick));
+    st::SyncChoice pick = {};
+    TEST_ASSERT_EQUAL_STRING("newest", st::SyncChoiceTag(pick, 0));
+    TEST_ASSERT_EQUAL_STRING("", st::SyncChoiceTag(pick, 1));
+    pick.this_device = true;
+    TEST_ASSERT_EQUAL_STRING("newest, this device", st::SyncChoiceTag(pick, 0));
+    TEST_ASSERT_EQUAL_STRING("this device", st::SyncChoiceTag(pick, 2));
     TEST_ASSERT_TRUE(st::Parent(st::Page::kServerFirmware) == st::Page::kServer);
     TEST_ASSERT_EQUAL_STRING("Firmware", st::Title(st::Page::kServerFirmware));
     TEST_ASSERT_TRUE(st::PageAction(st::Page::kServerFirmware) == st::Action::kServerFirmware);

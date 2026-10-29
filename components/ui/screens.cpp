@@ -152,7 +152,7 @@ enum class JobKind : uint8_t {
     kServerRegister,  // Server: a new key, registered with the e-mail `password`
     kServerStatusEvery,  // Server > Configure: the status every `id` minutes
     kServerSyncEvery,    // Server > Configure: the sync every `id` minutes
-    kServerResolve,      // Server > Sync: store `which`, take it (`flag`) or keep ours; PIN `password`
+    kServerResolve,      // Server > Sync: store `which`, take (`flag`) pick `id` or keep ours; PIN `password`
     kServerInstall,      // Server > Firmware: the release `password` (its id) installed
 };
 
@@ -3467,6 +3467,52 @@ void ShowServerFirmware() {
 // Sync > the PIN of the server's copy.
 uint8_t sync_pin_store = 0;
 
+// Sync > Which copy?: the store, its choices as drawn, the row tapped.
+uint8_t sync_pick_store = 0;
+settings::SyncChoice sync_picks[settings::kSyncChoices];
+uint8_t sync_pick_count = 0;
+int sync_pick_tapped = -1;
+
+void OnSyncPick(lv_event_t *event) {
+    if (LastWasTap()) {
+        sync_pick_tapped = static_cast<int>(reinterpret_cast<intptr_t>(lv_event_get_user_data(event)));
+    }
+}
+
+void ShowServerSyncPick() {
+    TitleBar(settings::Title(settings::Page::kServerSyncPick));
+    sync_pick_count = server_hooks->sync_choices(sync_pick_store, sync_picks, settings::kSyncChoices);
+    char what[160];
+    snprintf(what, sizeof what,
+             "%s: %u copies on the server under this seed phrase. Tap the one to take: "
+             "this device's is replaced.",
+             settings::SyncStoreTitle(sync_pick_store), static_cast<unsigned>(sync_pick_count));
+    Stub(nullptr, what, kTitleHeight + 12);
+    constexpr int32_t kRow = 76;
+    int32_t y = kTitleHeight + 140;
+    for (uint8_t i = 0; i < sync_pick_count; ++i, y += kRow + 6) {
+        const settings::SyncChoice &c = sync_picks[i];
+        lv_obj_t *row = Panel(content, y, kRow);
+        lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_add_event_cb(row, OnSyncPick, LV_EVENT_CLICKED,
+                            reinterpret_cast<void *>(static_cast<intptr_t>(i)));
+        lv_obj_t *version = Label(row, &lv_font_montserrat_24);
+        lv_label_set_text_fmt(version, "v%u", static_cast<unsigned>(c.version));
+        lv_obj_set_pos(version, 12, 6);
+        lv_obj_t *tag = Label(row, &lv_font_montserrat_20);
+        lv_label_set_text(tag, settings::SyncChoiceTag(c, i));
+        lv_obj_align(tag, LV_ALIGN_TOP_RIGHT, -12, 10);
+        lv_obj_t *sent = Label(row, &lv_font_montserrat_20);
+        lv_label_set_text_fmt(sent, "%s%s%s%s", c.at[0] != '\0' ? c.at : "",
+                              c.at[0] != '\0' ? " UTC" : "", c.by[0] != '\0' ? ", device " : "",
+                              c.by);
+        lv_obj_set_pos(sent, 12, 42);
+    }
+    if (sync_pick_count == 0) {
+        Stub(nullptr, "Nothing to pick now: back to Sync.", y + 24);
+    }
+}
+
 void ShowServerSyncPin() {
     lv_obj_t *kb = KeyboardPage("The copy's PIN", "PIN", "", true, 6,
                                 "The server's copy was written under another PIN (changed on "
@@ -3551,15 +3597,32 @@ bool PollServer() {
         const bool take = tap % 2 == 1;
         const uint8_t waits = server_hooks->sync_waits();
         if (page == settings::Page::kServerSync && store < settings::kSyncStores) {
+            settings::SyncChoice probe[settings::kSyncChoices];
             if (take && settings::SyncPinAsked(waits, store)) {
                 sync_pin_store = store;
                 changed |= nav_state.OpenSettings(static_cast<uint8_t>(settings::Page::kServerSyncPin));
+            } else if (take && settings::SyncConflict(waits, store) &&
+                       server_hooks->sync_choices(store, probe, settings::kSyncChoices) > 1) {
+                sync_pick_store = store;
+                changed |= nav_state.OpenSettings(static_cast<uint8_t>(settings::Page::kServerSyncPick));
             } else {
                 Job job = MakeJob(JobKind::kServerResolve);
                 job.which = store;
                 job.flag = take;
                 SendJob(job);
             }
+        }
+    }
+    if (sync_pick_tapped >= 0) {
+        const int i = sync_pick_tapped;
+        sync_pick_tapped = -1;
+        if (page == settings::Page::kServerSyncPick && i < sync_pick_count) {
+            Job job = MakeJob(JobKind::kServerResolve);
+            job.which = sync_pick_store;
+            job.flag = true;
+            job.id = static_cast<uint32_t>(i);
+            SendJob(job);
+            changed |= nav_state.Back();
         }
     }
     if (page == settings::Page::kServerSyncPin) {
@@ -3871,6 +3934,10 @@ void ShowSettings() {
     }
     if (server_hooks != nullptr && page == settings::Page::kServerSyncPin) {
         ShowServerSyncPin();
+        return;
+    }
+    if (server_hooks != nullptr && page == settings::Page::kServerSyncPick) {
+        ShowServerSyncPick();
         return;
     }
     if (server_hooks != nullptr && settings_hooks != nullptr &&
@@ -4194,7 +4261,8 @@ void TypeTask(void *) {
                     said = server_hooks->set_sync_minutes(static_cast<uint8_t>(job.id));
                     break;
                 case JobKind::kServerResolve:
-                    said = server_hooks->resolve(job.which, job.flag, job.password);
+                    said = server_hooks->resolve(job.which, job.flag, static_cast<uint8_t>(job.id),
+                                                 job.password);
                     break;
                 case JobKind::kServerInstall: said = server_hooks->firmware_install(job.password); break;
                 case JobKind::kDisplaySet:
@@ -4594,6 +4662,7 @@ void Poll(lv_timer_t *) {
         settings_page != settings::Page::kServerEmail &&
         settings_page != settings::Page::kServerConfig &&
         settings_page != settings::Page::kServerSyncPin &&
+        settings_page != settings::Page::kServerSyncPick &&
         lv_tick_elaps(settings_looked_at) >= kSettingsMs) {
         settings_looked_at = lv_tick_get();
         if (settings_page == settings::Page::kWifi && wifi_hooks != nullptr) {

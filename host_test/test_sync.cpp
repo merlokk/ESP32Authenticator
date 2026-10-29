@@ -191,7 +191,13 @@ void test_sync_stores(void) {
     uint8_t ours[8];
     memset(ours, 0x44, sizeof ours);
     server::sync::Candidate c;
-    TEST_ASSERT_EQUAL(2, server::sync::ParseStores(kAnswer, strlen(kAnswer), 2, ours, &c));
+    server::sync::Candidate both[2];
+    TEST_ASSERT_EQUAL(2, server::sync::ParseStores(kAnswer, strlen(kAnswer), 2, ours, both, 2));
+    TEST_ASSERT_EQUAL_UINT32(2, both[0].copy.version);
+    TEST_ASSERT_EQUAL_UINT32(9, both[1].copy.version);
+    TEST_ASSERT_EQUAL_HEX8(0x22, both[1].copy.store_id[0]);
+    TEST_ASSERT_EQUAL_STRING("", both[1].at);
+    TEST_ASSERT_EQUAL(2, server::sync::ParseStores(kAnswer, strlen(kAnswer), 2, ours, &c, 1));
     TEST_ASSERT_EQUAL_UINT32(2, c.copy.version);
     TEST_ASSERT_TRUE(c.copy.store_id[0] == 0xa1);
     TEST_ASSERT_EQUAL_HEX8(0x11, c.key_id[7]);
@@ -199,11 +205,11 @@ void test_sync_stores(void) {
     TEST_ASSERT_EQUAL_STRING("01a17ec2-98d3-7bbb-a8de-9aa8e0089116", c.by);
     TEST_ASSERT_EQUAL_STRING("2026-10-27 19:07", c.at);
     memset(ours, 0x22, sizeof ours);  // ours is not counted
-    TEST_ASSERT_EQUAL(1, server::sync::ParseStores(kAnswer, strlen(kAnswer), 2, ours, &c));
-    TEST_ASSERT_EQUAL(1, server::sync::ParseStores(kAnswer, strlen(kAnswer), 1, ours, &c));
+    TEST_ASSERT_EQUAL(1, server::sync::ParseStores(kAnswer, strlen(kAnswer), 2, ours, &c, 1));
+    TEST_ASSERT_EQUAL(1, server::sync::ParseStores(kAnswer, strlen(kAnswer), 1, ours, &c, 1));
     TEST_ASSERT_EQUAL_UINT32(1, c.copy.version);
-    TEST_ASSERT_EQUAL(0, server::sync::ParseStores(R"({"stores":[]})", 13, 2, ours, &c));
-    TEST_ASSERT_EQUAL(-1, server::sync::ParseStores("{}", 2, 2, ours, &c));
+    TEST_ASSERT_EQUAL(0, server::sync::ParseStores(R"({"stores":[]})", 13, 2, ours, &c, 1));
+    TEST_ASSERT_EQUAL(-1, server::sync::ParseStores("{}", 2, 2, ours, &c, 1));
 }
 
 void test_sync_others(void) {

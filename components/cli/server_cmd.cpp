@@ -79,6 +79,17 @@ void PrintStatus() {
             printf(" (%s UTC)", t.server_at);
         }
         printf("\n");
+        server::StoreChoice picks[server::sync::kMaxChoices];
+        const size_t n = t.choices > 1 ? server::Choices(store, picks, server::sync::kMaxChoices) : 0;
+        for (size_t i = 0; i < n; ++i) {
+            printf("  %u: v%u%s%s%s%.8s%s\n", static_cast<unsigned>(i + 1),
+                   static_cast<unsigned>(picks[i].version), picks[i].at[0] != '\0' ? ", " : "",
+                   picks[i].at, picks[i].by[0] != '\0' ? " UTC, device " : "", picks[i].by,
+                   picks[i].this_device ? " (this one)" : "");
+        }
+        if (n != 0) {
+            printf("  pick one: server sync take %s <n> [pin]\n", server::sync::StoreName(store));
+        }
     }
     server::Ago(now, s.synced_at, ago, sizeof ago);
     printf("synced      %s", ago);
@@ -210,24 +221,33 @@ int CmdServer(int argc, char **argv) {
                                                       : esp_err_to_name(err));
         return err == ESP_OK ? 0 : 1;
     }
-    if (strcmp(sub, "sync") == 0 && (argc == 4 || argc == 5) &&
+    if (strcmp(sub, "sync") == 0 && argc >= 4 && argc <= 6 &&
         (strcmp(argv[2], "keep") == 0 || strcmp(argv[2], "take") == 0)) {
         const bool passwords = strcmp(argv[3], "passwords") == 0;
-        if (!passwords && strcmp(argv[3], "passkeys") != 0) {
-            printf("usage: server sync keep|take passwords|passkeys [pin]\n");
+        const bool take = argv[2][0] == 't';
+        // take: <n> (1..4, of the copies `server` lists), then the PIN.
+        int at = 4;
+        unsigned pick = 0;
+        if (take && at < argc && strlen(argv[at]) == 1 && argv[at][0] >= '1' &&
+            argv[at][0] <= '0' + static_cast<int>(server::sync::kMaxChoices)) {
+            pick = static_cast<unsigned>(argv[at++][0] - '1');
+        }
+        const char *pin = at < argc ? argv[at++] : nullptr;
+        if ((!passwords && strcmp(argv[3], "passkeys") != 0) || at != argc) {
+            printf("usage: server sync keep|take passwords|passkeys [<n>] [pin]\n");
             return 1;
         }
         if (!Ready()) {
             return 1;
         }
-        const bool take = argv[2][0] == 't';
         const esp_err_t err = server::StartResolve(
             passwords ? server::sync::Store::kVault : server::sync::Store::kFido,
-            take ? server::Choice::kTakeServer : server::Choice::kKeepMine,
-            argc == 5 ? argv[4] : nullptr);
+            take ? server::Choice::kTakeServer : server::Choice::kKeepMine, pin,
+            static_cast<uint8_t>(pick));
         printf("%s\n", err == ESP_OK                ? "resolving: `server` shows the outcome"
                        : err == ESP_ERR_NOT_FOUND     ? "not registered"
                        : err == ESP_ERR_INVALID_STATE ? "busy, or that store does not wait"
+                       : err == ESP_ERR_INVALID_ARG   ? "no such copy: see `server`"
                                                       : esp_err_to_name(err));
         return err == ESP_OK ? 0 : 1;
     }
@@ -294,7 +314,7 @@ int CmdServer(int argc, char **argv) {
                            : esp_err_to_name(err));
         return err == ESP_OK ? 0 : 1;
     }
-    printf("usage: server [check | report | sync [keep|take passwords|passkeys [pin]] |\n"
+    printf("usage: server [check | report | sync [keep|take passwords|passkeys [<n>] [pin]] |\n"
            "               firmware [check | install <#>] | register [email] | code | host <name>]\n");
     return 1;
 }

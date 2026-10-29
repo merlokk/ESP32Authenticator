@@ -186,8 +186,12 @@ struct ServerHooks {
     // Which stores wait for a person (settings::SyncConflict / SyncPinAsked). ui task.
     uint8_t (*sync_waits)();
     // A store that waits: this device's copy kept, or the server's taken
-    // (`pin`: its PIN, "" none). The ui's own task, saying what happened.
-    const char *(*resolve)(uint8_t store, bool take, const char *pin);
+    // (`pick`: which of sync_choices, 0 the newest; `pin`: its PIN, "" none).
+    // The ui's own task, saying what happened.
+    const char *(*resolve)(uint8_t store, bool take, uint8_t pick, const char *pin);
+    // A conflict with several of the account's stores: up to `max` into
+    // `out`, newest first; their count (0 or 1: nothing to pick). ui task.
+    uint8_t (*sync_choices)(uint8_t store, settings::SyncChoice *out, uint8_t max);
     // Firmware: the server's releases for this board, newest first (up to
     // `max` into `out`); their count. ui task.
     uint8_t (*firmware)(settings::FirmwareRow *out, uint8_t max);

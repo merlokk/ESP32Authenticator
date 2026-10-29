@@ -27,6 +27,15 @@ struct StoreStatus {
     uint32_t server_version;  // the server's copy (a conflict, a PIN asked), 0 unknown
     bool other_store;         // that copy is another store of the account (never synced)
     char server_at[17];       // when it reached the server ("2026-10-27 19:07" UTC), or ""
+    uint8_t choices;          // a conflict with several such stores: how many (Choices)
+};
+
+// One of the account's stores a conflict can take (Choices), newest sync first.
+struct StoreChoice {
+    uint32_t version;
+    char at[17];                // when it reached the server (UTC), or ""
+    char by[kClientIdSize + 1];  // the device that sent it, "" unknown
+    bool this_device;           // sent from here (under an old store)
 };
 
 struct Status {
@@ -122,10 +131,15 @@ esp_err_t StartSync(bool by_hand = true);
 
 // A store waiting for a person (sync::ByHand): keep this device's copy (its
 // version above the server's, uploaded), or take the server's (with `pin`
-// when it has another PIN: this device takes that PIN). ESP_ERR_INVALID_STATE:
-// busy, or the store does not wait.
+// when it has another PIN: this device takes that PIN; `pick`: which of
+// StoreStatus::choices, 0 the newest). ESP_ERR_INVALID_STATE: busy, or the
+// store does not wait; ESP_ERR_INVALID_ARG: no such pick.
 enum class Choice : uint8_t { kKeepMine, kTakeServer };
-esp_err_t StartResolve(sync::Store store, Choice choice, const char *pin);
+esp_err_t StartResolve(sync::Store store, Choice choice, const char *pin, uint8_t pick = 0);
+
+// A conflict's stores to pick from (StoreStatus::choices): up to `max` into
+// `out`; their count.
+size_t Choices(sync::Store store, StoreChoice *out, size_t max);
 
 // This board's releases on the server, newest first (firmware_logic.h), as
 // last looked at: up to `max` into `out`; their count. Looked at after each

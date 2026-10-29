@@ -797,7 +797,9 @@ account on the authentication server (`config.json` `server.host`).
   at the account's stores under its seed id first (`GET
   /api/device/stores?seedId=`), an empty one even when its own upload is
   there (not kept before the PIN): none: upload; one and ours empty: taken
-  (its store id from then); else a conflict. A 409 (another device first) with
+  (its store id from then); else a conflict, with several the person picks
+  one (up to 4, newest sync first: Server > Sync > Which copy?, `server
+  sync take <store> <n>`). A 409 (another device first) with
   ours changed: a conflict. Another key on the server's copy (the PIN
   changed on another device): its PIN asked; this device takes that key for
   both stores (a PIN change's commit), so its PIN becomes that one. Runs in
