@@ -6,11 +6,36 @@ from the PC. What our locked unit has burned: below.
 
 ## Our locked unit (2026-10-29)
 
-Bought locked, CrossPoint (`arduino-lib-builder ee57070`, IDF 5.5.5) put on
-by the unlocker, then this firmware from CrossPoint's SD update (0.7.0, it
-confirmed its trial boot). Read with `hwinfo` on the console:
+Bought locked (AliExpress, China firmware), CrossPoint (`arduino-lib-builder
+ee57070`, IDF 5.5.5) put on by the unlocker, then this firmware from
+CrossPoint's SD update (0.7.0, it confirmed its trial boot). Read on our
+console (`hwinfo`, `efuse`, `nvs ls`):
 
-| | |
+| Hardware | |
+|---|---|
+| chip | ESP32-S3 rev v0.2, 2 cores; MAC `b8:1f:3f:cf:fb:0c` (BT `…:0e`) |
+| flash | 16 MB XTX (JEDEC `0b4018`), not the Puya of our open unit |
+| PSRAM | 8 MB, AP 3.3 V, 85 °C (eFuse) |
+| panel, touch | UC8279 (stock `screenType` 2), GT911 (firmware `0x1060`, 480 x 800) |
+| clock, battery | BM8563 at `0x51`; CW2017 at `0x63`, charger STAT on GPIO21 |
+| LED | none |
+| bootloader | IDF v6.0.1, Jul 14 2026 (the open unit's: Sep 15 2026) |
+| factory serial (`BLOCK3`) | `X4CB02CN26081005511` (`CN`; our open unit `X4CB02EN…`) |
+
+| Stock settings (NVS) | |
+|---|---|
+| `hw_calib` | `screenType` 2, `region` 1 (the open unit: 2) |
+| `user_config` | `timeZone` 8 (UTC+8; the open unit: -5), `language` 1, `sysFontMid` "misans-demibold" |
+| Xteink cloud | `cloud_dev_id` "13630220_B8_1F_3F_CF_FB_0C" (`<id>_<MAC>`), `cloud_bind_st` 2, `activate` 0 |
+| stock Wi-Fi | `sta_ssid` "XT", `sta_pwd` 8 chars, `wifi_creds` 110 chars, in plain text |
+
+| Firmware now | |
+|---|---|
+| `app0`, `app1` | ours (0.7.0-5 running, 0.7.0 beside it); CrossPoint no longer in the flash |
+| `/sdcard/firmware.bin` | CrossPoint 1.6.5 (`crosspoint-1.6.5-x4pro.bin`): the way back |
+| `config.json` | `usb.mode` serial (the console on `303a:4001`) |
+
+| eFuse | |
 |---|---|
 | `DIS_USB_SERIAL_JTAG` | **1**: the Serial/JTAG controller off (no ROM flashing, no `jtag` console) |
 | `DIS_USB_SERIAL_JTAG_DOWNLOAD_MODE` | **1** |
@@ -21,11 +46,7 @@ confirmed its trial boot). Read with `hwinfo` on the console:
 | secure boot, flash encryption (`SPI_BOOT_CRYPT_CNT`) | off, 0; key blocks unused |
 | `RD_DIS`, `WR_DIS` | 0: nothing write-protected |
 | blk version | v1.4 |
-| flash | 16 MB XTX (JEDEC `0b4018`), not the Puya of our open unit |
-| bootloader | IDF v6.0.1, Jul 14 2026 |
-| panel, touch | UC8279 (stock `screenType` 2), GT911 |
 | key blocks `KEY0`..`KEY5`, `SYS_DATA_PART2` | all zero, `KEY_PURPOSE_*` 0: no key burned |
-| `BLOCK3` (user data) | factory serial `X4CB02CN26081005511` (`CN`; our open unit `X4CB02EN…`) |
 | the rest of `BLOCK0` | as on our open unit: `VDD_SPI_FORCE`/`TIEH`/`XPD` 1 (flash at 3.3 V), `PIN_POWER_SELECTION` 1 |
 
 So the lock is only the USB ROM download; everything else is open:
@@ -39,22 +60,20 @@ So the lock is only the USB ROM download; everything else is open:
   its release `.bin` (`crosspoint-<v>-x4pro.bin`: board tag `x4pro`, the
   descriptor says `arduino-lib-builder`, not its version) as
   `/sdcard/firmware.bin`, then About > Firmware from SD (or `ota sd force
-  confirm`) goes back. Our locked unit keeps CrossPoint 1.6.5 there.
+  confirm`) goes back. `utils/firmware.py put` replaces that file: put
+  CrossPoint back after our update.
 - Nothing is write-protected (`WR_DIS` 0): a later stock firmware or stock
   OTA could burn more (download mode, secure boot, flash encryption). Do not
   put the stock firmware back on a locked unit.
 
-What the stock firmware left (`nvs ls`, `spiffs ls`; secrets by length only):
+What else the stock firmware left (`nvs ls`, `spiffs ls`; secrets by length
+only):
 
-- NVS `user_config` (21 keys): `cloud_dev_id` "13630220_B8_1F_3F_CF_FB_0C"
-  (the Xteink cloud's `<numeric id>_<MAC>`), `cloud_bind_st` 2, `activate` 0;
-  `sta_ssid` "XT", `sta_pwd` (8 chars), `wifi_creds` (110 chars): the last
-  Wi-Fi, in plain text (no flash encryption); `language` 1, `timeZone` 8
-  (UTC+8), `sysFontMid` "misans-demibold", `sysFontSm` / `sysFontBd` (SHA-256
-  of font files), `lightBri` 100, `wallpMode` 3, `otaPromptDay` 2026281.
-  `hw_calib`: `screenType` 2 (UC8279), `region` 1 (our open unit: 2, its
-  `timeZone` -5). `phy` calibration. Ours beside them: `vault` / `fido`
-  (`store_ver`), `nimble_bond`. `nvs rm user_config <key>` drops one.
+- NVS `user_config` (21 keys, the table above has the telling ones): also
+  `sysFontSm` / `sysFontBd` (SHA-256 of font files), `lightBri` 100,
+  `wallpMode` 3, `otaPromptDay` 2026281; `phy` calibration. Ours beside
+  them: `vault` / `fido` (`store_ver`), `nimble_bond`. `nvs rm user_config
+  <key>` drops one (the stock Wi-Fi: `sta_ssid`, `sta_pwd`, `wifi_creds`).
 - SPIFFS: the stock `README.md` (38 bytes), then ours: `seed.txt`,
   `config.json`.
 
