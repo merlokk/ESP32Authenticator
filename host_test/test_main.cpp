@@ -37,6 +37,7 @@ void RegisterRngTests(void);
 void RegisterServerTests(void);
 void RegisterSyncTests(void);
 void RegisterFirmwareTests(void);
+void RegisterNvsShowTests(void);
 
 void setUp(void) {}
 
@@ -97,5 +98,6 @@ int main(int argc, char **argv) {
     if (Wanted("server")) RegisterServerTests();
     if (Wanted("sync")) RegisterSyncTests();
     if (Wanted("firmware")) RegisterFirmwareTests();
+    if (Wanted("nvs_show")) RegisterNvsShowTests();
     return UNITY_END();
 }

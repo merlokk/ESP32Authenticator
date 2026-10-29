@@ -200,7 +200,7 @@ after `usb mode jtag`, or hold BOOT).
 | `pass delete <#>` / `pass code <#>` | delete a record / its TOTP codes now |
 | `pass move <#> <to #>` / `pass sort` | the list order (the screen's): one record to a place / all by site, then user |
 | `pass reset` / `pass reset confirm [pin]` | say what would go / delete every record. Locked or refused: the PIN is required and becomes the new store's PIN; the way out of a refused file |
-| `nvs ls [namespace]` / `nvs rm <namespace> <key>` | development: NVS keys (namespace, key, type; never values) / erase one key |
+| `nvs ls [namespace]` / `nvs rm <namespace> <key>` | development: NVS keys (namespace, key, type, value: numbers, strings cut to 64 chars, a password / credential / key as `*** (n chars)`, blobs by size) / erase one key |
 | `pin [info]` | vault locked / open / refused, key derivation (iterations, ms) |
 | `pin <6 digits>` | unlock the vault (nothing is decrypted before); no store yet: makes one with this PIN. `test.pin` in config.json does it at boot |
 | `pin change <old> <new>` / `pin lock` | new PIN: a new key, `vault.bin` and `fido.bin` rewritten from memory together (`.new` + marker) / wipe the key, records and FIDO2 store from memory (FIDO2 off until the PIN) |

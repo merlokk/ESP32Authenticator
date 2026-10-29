@@ -63,6 +63,7 @@ add_executable(host_test
     test_server.cpp
     test_sync.cpp
     test_firmware.cpp
+    test_nvs_show.cpp
     fakes/fake_platform.cpp
     fakes/fake_store.cpp
 
@@ -121,6 +122,7 @@ target_include_directories(host_test PRIVATE
     ../components/storefile
     ../components/vault
     ../components/ota
+    ../components/cli
     "${CJSON_DIR}"
     "${UNITY_DIR}"
 )
