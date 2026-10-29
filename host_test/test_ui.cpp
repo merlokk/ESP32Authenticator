@@ -572,6 +572,25 @@ void test_dialog_hold(void) {
     TEST_ASSERT_EQUAL_UINT8(1, h.Fill(0x100u));
 }
 
+void test_settings_sd_firmware(void) {
+    using ui::settings::SdFirmware;
+    SdFirmware f = {};
+    f.state = SdFirmware::State::kNoCard;
+    TEST_ASSERT_EQUAL_STRING("no card", ui::settings::SdFirmwareSummary(f));
+    f.state = SdFirmware::State::kNone;
+    TEST_ASSERT_EQUAL_STRING("none", ui::settings::SdFirmwareSummary(f));
+    f.state = SdFirmware::State::kRefused;
+    TEST_ASSERT_EQUAL_STRING("refused", ui::settings::SdFirmwareSummary(f));
+    f.state = SdFirmware::State::kOk;
+    snprintf(f.version, sizeof f.version, "0.7.0");
+    snprintf(f.project, sizeof f.project, "crosspoint");
+    TEST_ASSERT_EQUAL_STRING("0.7.0", ui::settings::SdFirmwareSummary(f));
+    f.foreign = true;
+    TEST_ASSERT_EQUAL_STRING("crosspoint", ui::settings::SdFirmwareSummary(f));
+    f.running = true;
+    TEST_ASSERT_EQUAL_STRING("the running one", ui::settings::SdFirmwareSummary(f));
+}
+
 void test_settings_pages(void) {
     namespace st = ui::settings;
     using ui::nav::Gesture;
@@ -1344,6 +1363,7 @@ void RegisterUiTests(void) {
     RUN_TEST(test_dialog_hold);
     RUN_TEST(test_update_progress);
     RUN_TEST(test_settings_pages);
+    RUN_TEST(test_settings_sd_firmware);
     RUN_TEST(test_wifi_view);
     RUN_TEST(test_wifi_settings);
     RUN_TEST(test_touch_calibration);

@@ -1057,6 +1057,42 @@ void SettingsDescribe(ui::settings::Page page, bool summary, char *out, size_t s
     }
 }
 
+// About > Firmware from SD. Static: the check object is a few hundred bytes.
+ota::SdFile g_sd_file;
+
+void SettingsSdFirmware(ui::settings::SdFirmware *out) {
+    using State = ui::settings::SdFirmware::State;
+    *out = {};
+    ota::ReadSdFile(&g_sd_file, true);  // another firmware shown as such
+    const ota::AppInfo &info = g_sd_file.info;
+    out->state = !g_sd_file.mounted                         ? State::kNoCard
+                 : !g_sd_file.present                       ? State::kNone
+                 : g_sd_file.verdict != ota::Verdict::kMore ? State::kRefused
+                                                            : State::kOk;
+    out->foreign = info.foreign;
+    out->running = g_sd_file.same_as_running;
+    snprintf(out->version, sizeof out->version, "%s", info.version);
+    snprintf(out->built, sizeof out->built, "%s %s", info.date, info.time);
+    snprintf(out->project, sizeof out->project, "%s", info.project);
+    snprintf(out->why, sizeof out->why, "%s", ota::VerdictName(g_sd_file.verdict));
+}
+
+// Read again: the card may have changed since the question.
+const char *SdInstall(bool other) {
+    if (const char *why = ota::Refusal()) {
+        return why;
+    }
+    ota::ReadSdFile(&g_sd_file, other);
+    if (!g_sd_file.present) {
+        return "no firmware.bin in the card's root";
+    }
+    if (g_sd_file.verdict != ota::Verdict::kMore) {
+        return ota::VerdictName(g_sd_file.verdict);
+    }
+    return ota::StartFromSd(other) == ESP_OK ? "installing from the SD card"
+                                             : "cannot start the update";
+}
+
 const char *SettingsAct(ui::settings::Action action) {
     using ui::settings::Action;
     switch (action) {
@@ -1108,6 +1144,8 @@ const char *SettingsAct(ui::settings::Action action) {
                 case ESP_ERR_INVALID_STATE: return "busy: a request is under way";
                 default: return "cannot ask the server";
             }
+        case Action::kSdInstall: return SdInstall(false);
+        case Action::kSdInstallOther: return SdInstall(true);
         case Action::kServerRegister:  // the ui asks the e-mail (ServerRegister)
         case Action::kNone: break;
     }
@@ -1707,7 +1745,7 @@ const ui::WifiHooks kWifiHooks = {WifiView,      WifiScan,      WifiSetActive, W
 
 
 const ui::SettingsHooks kSettingsHooks = {SettingsLight, SettingsSetLight, SettingsSaveLight,
-                                          SettingsDescribe, SettingsAct};
+                                          SettingsDescribe, SettingsAct, SettingsSdFirmware};
 
 }  // namespace
 

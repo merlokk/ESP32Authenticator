@@ -72,8 +72,8 @@ the vault is locked, GT911 touch as the pointer, `ui`); power-off
   hmac-secret-mc, pcmr, attestation formats, encIdentifier, built-in UV
   plumbing (`uv: false`); see
   docs/lionkey-update-plan.md. Firmware update (OTA): a `.bin` uploaded on the
-  site (Device > Firmware update) or `/sdcard/firmware.bin` (button, `ota
-  sd confirm`), checked while streaming (`image_check.h`; another firmware
+  site (Device > Firmware update) or `/sdcard/firmware.bin` (Settings > About >
+  Firmware from SD, the site's button, `ota sd confirm`), checked while streaming (`image_check.h`; another firmware
   such as CrossPoint only with `ota sd force` / the site's box), trial boot
   confirmed after 30 s, else rolled back (also when not booted in 2 min).
 - Not yet: eFuse-bound key; the sync of another seed phrase's stores (only

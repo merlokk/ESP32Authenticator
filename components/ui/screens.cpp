@@ -640,6 +640,9 @@ constexpr int kResetNo = 200;
 constexpr int kResetYes = 201;
 constexpr int kInstallNo = 300;
 constexpr int kInstallYes = 301;
+constexpr int kSdInstallNo = 400;
+constexpr int kSdInstallYes = 401;
+constexpr int kSdOtherYes = 402;  // another firmware, as asked
 fido_ctap_credential_t asked;  // the key asked about (the list may be read again)
 
 // The made-up keys: site, user, display name, algorithm, kind.
@@ -1125,6 +1128,15 @@ extern const ServerHooks *server_hooks;
 bool server_config_tapped = false;
 bool server_sync_tapped = false;
 bool server_firmware_tapped = false;
+bool sd_firmware_tapped = false;
+settings::SdFirmware sd_firmware_shown;  // About's row, read as the page opens
+uint32_t sd_looked_at = 0;
+
+void OnSdFirmware(lv_event_t *) {
+    if (LastWasTap()) {
+        sd_firmware_tapped = true;
+    }
+}
 
 void OnServerFirmware(lv_event_t *) {
     if (LastWasTap()) {
@@ -3017,7 +3029,14 @@ void ShowAbout() {
     }
     y += 80;
     constexpr int32_t kLine = 40;
-    const int32_t bottom = kScreenBottom - kContentTop - 100;
+    int32_t bottom = kScreenBottom - kContentTop - 100;
+    // Firmware from SD over Restart: an update with no Wi-Fi or console.
+    if (settings_hooks->sd_firmware != nullptr) {
+        settings_hooks->sd_firmware(&sd_firmware_shown);
+        bottom -= kNetRow + 8;
+        ChoiceRow(bottom + 8, "Firmware from SD", settings::SdFirmwareSummary(sd_firmware_shown),
+                  false, OnSdFirmware, 0);
+    }
     for (; y + kLine <= bottom && settings::Line(settings_shown, i, label, sizeof label, value,
                                                  sizeof value);
          ++i, y += kLine) {
@@ -4420,6 +4439,17 @@ void Poll(lv_timer_t *) {
         }
         case kInstallNo:
             break;
+        case kSdInstallYes:
+        case kSdOtherYes: {
+            Job job = MakeJob(JobKind::kAct);
+            job.action = answer == kSdOtherYes ? settings::Action::kSdInstallOther
+                                               : settings::Action::kSdInstall;
+            Toast("installing from the SD card...");
+            SendJob(job);
+            break;
+        }
+        case kSdInstallNo:
+            break;
         default:
             sheet_choice = answer;
             break;
@@ -4453,6 +4483,36 @@ void Poll(lv_timer_t *) {
             }
         } else if (xQueueSend(jobs, &job, 0) != pdTRUE) {
             Toast("busy typing");
+        }
+    }
+    if (sd_firmware_tapped) {
+        sd_firmware_tapped = false;
+        if (nav_state.settings_page() == static_cast<uint8_t>(settings::Page::kAbout) &&
+            settings_hooks != nullptr && settings_hooks->sd_firmware != nullptr &&
+            !dialog::IsOpen()) {
+            settings::SdFirmware &f = sd_firmware_shown;
+            settings_hooks->sd_firmware(&f);  // the card as it is now
+            using State = settings::SdFirmware::State;
+            if (f.state == State::kNoCard) {
+                Toast("no SD card");
+            } else if (f.state == State::kNone) {
+                Toast("no firmware.bin in the card's root");
+            } else if (f.state == State::kRefused) {
+                Toast(f.why);
+            } else if (f.running) {
+                Toast("this device runs it already");
+            } else if (f.foreign) {
+                dialog::Confirm("Install another firmware?", f.project, f.version,
+                                "From the SD card. This firmware is gone after it; the "
+                                "stores stay on the card. If it does not start, this one "
+                                "comes back.",
+                                "Install: hold 4 s", kSdInstallNo, kSdOtherYes);
+            } else {
+                dialog::Confirm("Install firmware.bin?", f.version, f.built,
+                                "From the SD card, checked, then the device restarts into "
+                                "it. If it does not start, the running one comes back.",
+                                "Install: hold 4 s", kSdInstallNo, kSdInstallYes);
+            }
         }
     }
     if (sheet_choice != 0 &&
@@ -4502,6 +4562,17 @@ void Poll(lv_timer_t *) {
     }
     if (nav_state.mode() == nav::Mode::kSettings && server_hooks != nullptr) {
         changed |= PollServer();
+    }
+    // About is a snapshot, but for Firmware from SD: the card's file put,
+    // changed or gone.
+    if (nav_state.mode() == nav::Mode::kSettings && settings_page == settings::Page::kAbout &&
+        settings_hooks != nullptr && settings_hooks->sd_firmware != nullptr && HomeShown() &&
+        !FingerDown() && !dialog::IsOpen() && lv_tick_elaps(sd_looked_at) >= kSettingsMs) {
+        sd_looked_at = lv_tick_get();
+        static settings::SdFirmware sd_now;
+        settings_hooks->sd_firmware(&sd_now);
+        changed |= strcmp(settings::SdFirmwareSummary(sd_now),
+                          settings::SdFirmwareSummary(sd_firmware_shown)) != 0;
     }
     // Settings' texts (Wi-Fi joined, the clock); the switch follows Power x2.
     // Not under a dialog, nor over a password being typed or a scan.

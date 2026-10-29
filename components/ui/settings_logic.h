@@ -131,6 +131,8 @@ enum class Action : uint8_t {
     kServerStatus,    // Server > Configure: the status now
     kServerSync,      // Server > Sync: the sync now
     kServerFirmware,  // Server > Firmware: the releases looked at again
+    kSdInstall,       // About > Firmware from SD (held): /sdcard/firmware.bin, ours
+    kSdInstallOther,  // the same, another firmware (CrossPoint) as shown
 };
 
 constexpr Action PageAction(Page p) {
@@ -157,6 +159,29 @@ constexpr const char *ActionText(Action a) {
            : a == Action::kServerSync     ? "Sync now"
            : a == Action::kServerFirmware ? "Check the server"
                                     : "";
+}
+
+// About > Firmware from SD: /sdcard/firmware.bin as the device read it (its
+// head checked; the rest while it is written). No Wi-Fi or console needed.
+struct SdFirmware {
+    enum class State : uint8_t { kNoCard, kNone, kRefused, kOk };
+    State state;
+    bool foreign;   // another firmware (CrossPoint): installed only when asked
+    bool running;   // the same as the running one
+    char version[33];
+    char built[34];  // date and time
+    char project[33];
+    char why[48];    // kRefused: the check's verdict
+};
+
+// The row's text.
+constexpr const char *SdFirmwareSummary(const SdFirmware &f) {
+    return f.state == SdFirmware::State::kNoCard ? "no card"
+           : f.state == SdFirmware::State::kNone ? "none"
+           : f.state == SdFirmware::State::kRefused ? "refused"
+           : f.running                             ? "the running one"
+           : f.foreign                             ? f.project
+                                                   : f.version;
 }
 
 // Line `index` of "label\tvalue\n" lines into `label` / `value` (cut to

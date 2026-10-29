@@ -93,7 +93,8 @@ or Home closes it.
 - **Frontlight**: the switch, Level and Warmth.
 - A row per page with its summary: Wi-Fi (and the web site), Bluetooth,
   Devices (power, display, USB, the touchscreen's calibration), Security,
-  Server, Date & time, About (versions, Restart).
+  Server, Date & time, About (versions, firmware from the SD card's
+  `firmware.bin`, Restart).
 
 <br clear="right">
 

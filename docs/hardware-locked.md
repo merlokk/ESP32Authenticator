@@ -92,22 +92,41 @@ No `config.json`: Wi-Fi off, USB `jtag`.
   TinyUSB modes are refused
   (`ESP_ERR_NOT_SUPPORTED`, the port stays Serial/JTAG) instead of hanging in
   TinyUSB's core reset.
-- The next firmware of ours: the web site (upload, or `/sdcard/firmware.bin`;
-  Wi-Fi switched on in Settings > Wi-Fi), the console (`ota sd confirm`) or
-  Server > Firmware. Not from the screen alone.
-- Back to CrossPoint: its `.bin` as `/sdcard/firmware.bin`, then `ota sd force
+- The next firmware of ours: `/sdcard/firmware.bin` and Settings > About >
+  Firmware from SD (held Yes; no Wi-Fi or console needed), the web site
+  (upload or the card; Wi-Fi switched on in Settings > Wi-Fi), the console
+  (`ota sd confirm`) or Server > Firmware.
+- Back to CrossPoint: its `.bin` as `/sdcard/firmware.bin`, then About >
+  Firmware from SD ("Install another firmware?", held Yes), `ota sd force
   confirm` or the site with "Install another firmware too" ticked. Without
   that, another project's image is refused (`kWrongProject`); chip, revision,
   size, checksum and SHA-256 are checked either way. CrossPoint (Arduino)
   confirms its own trial boot.
-- Last resort: an SPI programmer on the external flash chip
-  (`../crosspoint-reader/docs/fix-bricked-xteink.md`), only with flash
-  encryption off.
+
+## When a firmware gets stuck
+
+[crosspoint-reader #3917](https://github.com/crosspoint-reader/crosspoint-reader/issues/3917)
+(Oct 2026, open): a USB-locked X4 Pro took a broken CrossPoint fork
+(CrossPink 8.10) from the SD card; it crashes at random and has no menu to
+flash another one. The only way out left is the SPI flash chip.
+
+- Why this firmware keeps a way out: a first boot that crashes, hangs or
+  resets rolls back (above); once confirmed, About > Firmware from SD needs
+  only the card and the screen.
+- SPI programmer (`../crosspoint-reader/docs/fix-bricked-xteink.md`: the
+  screen glued, a clip on the flash): only with flash encryption off. A full
+  dump is exactly 16,777,216 bytes; the web flasher's backup times out, and a
+  locked unit cannot be dumped over USB at all.
+- Image for it: `originalfw/x4pro_full_16MB.bin` (our unlocked unit, stock
+  firmware, checked by `verify-flash`; not in git, see
+  [originalfw/README.md](../originalfw/README.md)). It carries our unit's NVS
+  (PHY calibration, `screenType`), not the other unit's. #3917 links another
+  X4 Pro's full dump (esptool `read-flash 0 0x1000000 --no-stub`).
 
 ## Sources
 
 - [XTEink-Lab-X4-Pro](https://github.com/jglerner/XTEink-Lab-X4-Pro): X4 Pro research (USB, the OTA unlock, X4ProAirFlash).
-
 - [unlocker-tool README](https://github.com/crosspoint-reader/crosspoint-tools/blob/master/unlocker-tool/README.md): `.xota`, flash layout, OTA state.
 - [crosspoint-reader #1918](https://github.com/crosspoint-reader/crosspoint-reader/issues/1918): OTA on a USB-locked X4.
+- [crosspoint-reader #3917](https://github.com/crosspoint-reader/crosspoint-reader/issues/3917): a locked X4 Pro stuck on a broken firmware, SPI recovery.
 - [pocketink.io firmware FAQ](https://pocketink.io/firmware/faq/), [CrossPoint](https://pocketink.io/firmware/crosspoint/).

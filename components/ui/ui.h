@@ -75,6 +75,8 @@ struct SettingsHooks {
     void (*describe)(settings::Page page, bool summary, char *out, size_t size);
     // A page's button (settings::PageAction); what to say. The ui's own task.
     const char *(*act)(settings::Action action);
+    // /sdcard/firmware.bin and the check of its head (About). ui task.
+    void (*sd_firmware)(settings::SdFirmware *out);
 };
 void SetSettingsHooks(const SettingsHooks *hooks);
 

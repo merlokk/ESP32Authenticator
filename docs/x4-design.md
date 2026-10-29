@@ -96,8 +96,10 @@ Portrait, 480x800. The panel scans landscape (hardware.md): `ui_logic.h` turns t
   given; Show the keys (the list), Reset FIDO2 (held 4 s: every key and its
   PIN erased). About: the name and the model big, then
   firmware, build, ESP-IDF, LVGL, chip, flash and PSRAM, the MACs, the web
-  site, uptime, free memory, SD card (a snapshot), Restart (asked first: the
-  PIN after it). Server: registered or not, connected (checked every
+  site, uptime, free memory, SD card (a snapshot), Firmware from SD
+  (`/sdcard/firmware.bin`: its version, or another firmware's project; a
+  held Yes installs it, no Wi-Fi or console needed), Restart (asked first:
+  the PIN after it). Server: registered or not, connected (checked every
   minute while shown), the last sync, the TOTP code for the server, the
   host, the e-mail, the last outcome; Register (asked first: a new key and
   TOTP secret, then the e-mail on the keyboard). Wi-Fi > Web site: running or why not, the address and its QR code,
