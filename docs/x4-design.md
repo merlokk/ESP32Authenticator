@@ -142,7 +142,8 @@ Yes go fast; hiding a password is full (no ghost).
   now) wipes the key and stops FIDO2. Off is deep sleep (Power held, idle
   `power.idleMinutes`, Power x3, `off`): BLE off, a random wallpaper from
   `/sdcard/wallpapers` (none, or one that does not decode: the project's name
-  and version on white, so the off device does not look on); a wake is a reboot (PIN again, unless
+  and version on white, an arrow to the Power button at the right edge just
+  under the status bar's height, so the off device does not look on); a wake is a reboot (PIN again, unless
   `power.keepPinHours` kept the key in RTC memory; Power x3: always the PIN).
 - A special **wipe PIN** (config) erases the store and the FIDO2 credentials
   (as `fido2 reset`) and the key in RAM when typed on the PIN pad.

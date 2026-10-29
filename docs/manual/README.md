@@ -301,8 +301,8 @@ sign in, U2F), the site and the account(s).
 - **Power button**: twice: frontlight on / off; three times: off and
   locked (the PIN at the wake); held: off. Power wakes the device.
 - Off, the screen keeps a random picture from the card's `wallpapers`
-  folder; with none there, "ESP32 Authenticator", the version and "Off.
-  Power turns it on."
+  folder; with none there, "ESP32 Authenticator", the version, "Off.
+  Power turns it on." and an arrow to the Power button.
 - **Charging**: USB-C; the status bar shows the bolt.
 - Settings > **Devices**: the battery; *Light off after* and *Power
   off after* (and their values on USB power); *PIN after sleep*;

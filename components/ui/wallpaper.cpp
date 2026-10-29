@@ -165,6 +165,32 @@ esp_err_t ShowCard() {
         const lv_area_t area = {0, line.y, kWidth - 1, line.y + 40};
         lv_draw_label(&layer, &d, &area);
     }
+    // The Power button on the right edge starts where the status bar ends
+    // (y 52): an arrow to it just below, "Power" before it.
+    constexpr int32_t kArrowY = 78;
+    constexpr int32_t kTipX = kWidth - kInsetRight - 2;
+    lv_draw_label_dsc_t power;
+    lv_draw_label_dsc_init(&power);
+    power.font = &lv_font_montserrat_24;
+    power.color = lv_color_black();
+    power.align = LV_TEXT_ALIGN_RIGHT;
+    power.text = "Power";
+    const lv_area_t power_area = {kWidth / 2, kArrowY - 14, kTipX - 88, kArrowY + 16};
+    lv_draw_label(&layer, &power, &power_area);
+    lv_draw_line_dsc_t shaft;
+    lv_draw_line_dsc_init(&shaft);
+    shaft.color = lv_color_black();
+    shaft.width = 5;
+    shaft.p1 = {kTipX - 80, kArrowY};
+    shaft.p2 = {kTipX - 20, kArrowY};
+    lv_draw_line(&layer, &shaft);
+    lv_draw_triangle_dsc_t head;
+    lv_draw_triangle_dsc_init(&head);
+    head.color = lv_color_black();
+    head.p[0] = {kTipX - 24, kArrowY - 13};
+    head.p[1] = {kTipX, kArrowY};
+    head.p[2] = {kTipX - 24, kArrowY + 13};
+    lv_draw_triangle(&layer, &head);
     lv_canvas_finish_layer(canvas, &layer);
     // Rows to a w x h array (the stride may pad them).
     const uint32_t stride = buf->header.stride;
