@@ -93,7 +93,11 @@ key (4) | size (4) | is_deleted (4) | padding (4) | data (size, padded to 4)
 | 7 | persistent pinUvAuthTokens |
 | 8 | encIdentifier device id |
 
-Deleted items are flagged and dropped (compaction) at load.
+The file holds only the live items: each write seals a compacted copy of the
+RAM log, so a deleted credential never reaches the file or the sync server,
+and loading the file rewrites nothing (no new version for synced devices to
+race over). In RAM, deleted items stay flagged until the next load: the core
+keeps item offsets.
 
 ## Writes and rollback
 

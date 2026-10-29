@@ -11,8 +11,12 @@
 //   NVS (`fido/store_ver`) keeps the highest one accepted, written after the
 //   file. A file below it (an old copy put back) is refused and left as is;
 //   so is no file at all once a version is kept.
-// - Deleted items are dropped (compaction) only at init: later the core keeps
-//   item handles (offsets), which compaction would move.
+// - The file holds only the live items: every write seals a compacted copy
+//   of the log, so a deleted credential never reaches the file (nor the sync
+//   server), and loading it changes nothing (no rewrite: no new version that
+//   synced devices would race to upload). The log itself drops deleted items
+//   (compaction) only at init: later the core keeps item handles (offsets),
+//   which compaction would move.
 // - The global signature counter lives in NVS: otherwise every assertion
 //   would append an item to the log.
 // - At most max_credentials credentials (lionkey stores non-discoverable ones
@@ -122,18 +126,51 @@ static void set_version(uint32_t version) {
     }
 }
 
-// The RAM log, sealed with `key`, into `out_path`. `changed`: the credentials
-// or PIN changed (the modification time moves); false: only the layout
-// (compaction) or the key. *header: what was written.
+// A zeroed buffer of the log's size: PSRAM, like the RAM log itself
+// (fido_ctap.c); internal RAM only if full. NULL: out of memory.
+static uint8_t *log_buffer(size_t size) {
+    uint8_t *b = heap_caps_calloc(1, size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    return b != NULL ? b : heap_caps_calloc(1, size, MALLOC_CAP_8BIT);
+}
+
+// The live items of `mem`, rebuilt from the start of `out` (mem->memory_size
+// bytes, zeroed): their length.
+static size_t live_items(ctap_memory_storage_context_t *mem, uint8_t *out) {
+    const ctap_storage_t in = CTAP_MEMORY_STORAGE_CONST_INIT(mem);
+    ctap_memory_storage_context_t out_ctx = {
+        .memory_size = mem->memory_size,
+        .memory = out,
+        .write_index = 0,
+    };
+    const ctap_storage_t dst = CTAP_MEMORY_STORAGE_CONST_INIT(&out_ctx);
+    ctap_storage_item_t item = {.handle = 0, .key = 0};
+    while (ctap_memory_storage_find_item(&in, &item) == CTAP_STORAGE_OK) {
+        ctap_storage_item_t copy = {.handle = 0, .key = item.key, .size = item.size,
+                                    .data = item.data};
+        ctap_memory_storage_create_or_update_item(&dst, &copy);
+        item.key = 0;  // keep iterating over all keys
+    }
+    return out_ctx.write_index;
+}
+
+// The RAM log's live items, sealed with `key`, into `out_path`. `changed`:
+// the credentials or PIN changed (the modification time moves); false: only
+// the layout (compaction) or the key. *header: what was written.
 static ctap_storage_status_t write_file(ctap_file_storage_context_t *ctx,
                                         const fido_ctap_key_t *key, const char *out_path,
                                         bool changed, store_header_t *header) {
+    uint8_t *live = log_buffer(ctx->mem.memory_size);
+    if (live == NULL) {
+        ESP_LOGE(TAG, "out of memory: %s not written", ctx->path);
+        return CTAP_STORAGE_ERROR;
+    }
+    const size_t n = live_items(&ctx->mem, live);
     uint32_t kept;
     nvs_version(&kept);
     *header = (store_header_t){
         .cipher = 1,
         .version = store_header_next_version(ctx->version, kept),
-        .length = (uint32_t)ctx->mem.write_index,
+        .length = (uint32_t)n,
         .modified_utc = ctx->modified_utc,
         .kdf_iterations = key->iterations,
     };
@@ -152,10 +189,12 @@ static ctap_storage_status_t write_file(ctap_file_storage_context_t *ctx,
     fido_store_random(header->nonce, sizeof header->nonce);
     uint8_t head[STORE_HEADER_SIZE];
     store_header_encode(STORE_KIND_FIDO, header, head);
-    const size_t n = ctx->mem.write_index;
     uint8_t *sealed = scratch(n + STORE_TAG_SIZE);
-    if (sealed == NULL ||
-        !fido_store_seal(key->key, header->nonce, head, sizeof head, ctx->mem.memory, n, sealed)) {
+    const bool sealed_ok =
+        sealed != NULL && fido_store_seal(key->key, header->nonce, head, sizeof head, live, n, sealed);
+    memset(live, 0, ctx->mem.memory_size);  // private keys
+    heap_caps_free(live);
+    if (!sealed_ok) {
         ESP_LOGE(TAG, "encrypting %s failed", ctx->path);
         heap_caps_free(sealed);
         return CTAP_STORAGE_ERROR;
@@ -286,30 +325,13 @@ ctap_storage_status_t ctap_file_storage_rewrite(const ctap_storage_t *storage,
 // used). Returns false if out of memory.
 static bool compact(const ctap_storage_t *storage) {
     ctap_file_storage_context_t *ctx = ctx_of(storage);
-    // PSRAM, like the RAM log itself (fido_ctap.c); internal RAM only if full.
-    uint8_t *fresh =
-        heap_caps_calloc(1, ctx->mem.memory_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    if (fresh == NULL) {
-        fresh = heap_caps_calloc(1, ctx->mem.memory_size, MALLOC_CAP_8BIT);
-    }
+    uint8_t *fresh = log_buffer(ctx->mem.memory_size);
     if (fresh == NULL) {
         return false;
     }
-    ctap_memory_storage_context_t out_ctx = {
-        .memory_size = ctx->mem.memory_size,
-        .memory = fresh,
-        .write_index = 0,
-    };
-    const ctap_storage_t out = CTAP_MEMORY_STORAGE_CONST_INIT(&out_ctx);
-    ctap_storage_item_t item = {.handle = 0, .key = 0};
-    while (ctap_memory_storage_find_item(storage, &item) == CTAP_STORAGE_OK) {
-        ctap_storage_item_t copy = {.handle = 0, .key = item.key, .size = item.size,
-                                    .data = item.data};
-        ctap_memory_storage_create_or_update_item(&out, &copy);
-        item.key = 0;  // keep iterating over all keys
-    }
+    const size_t n = live_items(&ctx->mem, fresh);
     memcpy(ctx->mem.memory, fresh, ctx->mem.memory_size);
-    ctx->mem.write_index = out_ctx.write_index;
+    ctx->mem.write_index = n;
     memset(fresh, 0, ctx->mem.memory_size);  // private keys
     heap_caps_free(fresh);
     return true;
