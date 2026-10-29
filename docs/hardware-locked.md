@@ -68,7 +68,7 @@ device. The SD path compares no versions. Its checks
 | chip id | ESP32-S3 |
 | header, segments, XOR checksum, SHA-256 trailer | as `idf.py build` writes them |
 | size <= slot (0x7E0000) | ~2.5 MB |
-| board tag `CROSSPOINT-BOARD-V1:<name>;` | only checked if present; none here |
+| board tag `CROSSPOINT-BOARD-V1:<name>;` | `x4pro` (`X4Pro::crosspoint_tag`): CrossPoint on another board refuses it |
 
 The partition table stays stock and matches `partitions.csv`. The image goes
 to the other slot with otadata state `NEW` (`OtaBootSwitch.cpp`), so it boots

@@ -47,6 +47,10 @@ void PrintUtc(const char *label, int64_t utc_us) {
 
 esp_err_t Init() {
     ESP_LOGI(TAG, "%s", kBoard.name);
+    if (kBoard.crosspoint_tag != nullptr) {
+        // A read the compiler keeps: the tag stays in the image (--gc-sections).
+        static_cast<void>(*static_cast<const volatile char *>(kBoard.crosspoint_tag));
+    }
     if (kBoard.led == LedType::kWs2812 &&
         led::Init(kLedUart, static_cast<gpio_num_t>(kBoard.led_pins.data)) == ESP_OK) {
         // Red solid while booting: a dark board is a hardware fault, a red one

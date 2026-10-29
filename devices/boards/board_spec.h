@@ -108,6 +108,10 @@ public:
     // scan response).
     const char *ble_name = "ESP32 Auth";
 
+    // CrossPoint's board tag, kept in the image (boards::Init): its SD and USB
+    // DFU updates refuse an image tagged for another board (nullptr: none).
+    const char *crosspoint_tag = nullptr;
+
     // Store files (fido.bin, vault.bin) live on the SD card when the board has
     // one, else on SPIFFS (80 KB, shared with the stock data on the X4 Pro;
     // a save needs room for a second copy).

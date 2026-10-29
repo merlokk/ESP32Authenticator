@@ -13,6 +13,7 @@ public:
     constexpr X4Pro() {
         name = "XTEINK X4 Pro";
         ble_name = "ESP32 Auth X4Pro";
+        crosspoint_tag = "CROSSPOINT-BOARD-V1:x4pro;";  // its FirmwareBoardTag.cpp
         hw_clock = HwClockType::kBm8563;
         display = DisplayType::kEink800x480;
         touch = TouchType::kGt911;
