@@ -2,7 +2,38 @@
 
 Some X4 Pro units (Chinese retail, `device_type=ESP32S3_X4_TL_SSD1677`) ship
 with flashing over USB-C off: esptool does not connect, eFuses cannot be read
-from the PC. Which bits are burned is not documented anywhere.
+from the PC. What our locked unit has burned: below.
+
+## Our locked unit (2026-10-29)
+
+Bought locked, CrossPoint (`arduino-lib-builder ee57070`, IDF 5.5.5) put on
+by the unlocker, then this firmware from CrossPoint's SD update (0.7.0, it
+confirmed its trial boot). Read with `hwinfo` on the console:
+
+| | |
+|---|---|
+| `DIS_USB_SERIAL_JTAG` | **1**: the Serial/JTAG controller off (no ROM flashing, no `jtag` console) |
+| `DIS_USB_SERIAL_JTAG_DOWNLOAD_MODE` | **1** |
+| `DIS_USB_OTG_DOWNLOAD_MODE` | **1**: no ROM flashing over USB-OTG either |
+| `DIS_USB_OTG` | 0: TinyUSB works (`usb mode serial`: `303a:4001`, the console) |
+| `DIS_DOWNLOAD_MODE`, `DIS_FORCE_DOWNLOAD` | 0: the ROM's UART download is still there |
+| `DIS_USB_JTAG`, `DIS_PAD_JTAG`, `SOFT_DIS_JTAG` | 0 |
+| secure boot, flash encryption (`SPI_BOOT_CRYPT_CNT`) | off, 0; key blocks unused |
+| `RD_DIS`, `WR_DIS` | 0: nothing write-protected |
+| blk version | v1.4 |
+| flash | 16 MB XTX (JEDEC `0b4018`), not the Puya of our open unit |
+| bootloader | IDF v6.0.1, Jul 14 2026 |
+| panel, touch | UC8279 (stock `screenType` 2), GT911 |
+
+So the lock is only the USB ROM download; everything else is open:
+
+- The console: Settings > Devices > USB port = serial (saved in
+  `config.json`), then the CDC port. `jtag` mode shows nothing on this unit.
+- Recovery without USB: the ROM's UART download (UART0: GPIO43 TX / GPIO44
+  RX on a USB-UART adapter, the case open; GPIO0 is the Left button: held at
+  reset) or an SPI programmer on the flash: both work, no flash encryption.
+- `app0` still holds CrossPoint: About > Firmware from SD with its `.bin`
+  (or `ota sd force confirm`) goes back.
 
 ## What the lock is
 
@@ -11,10 +42,9 @@ from the PC. Which bits are burned is not documented anywhere.
   encryption, not eFuse flash encryption. The Xteink Unlocker
   ([unlocker-tool](https://github.com/crosspoint-reader/crosspoint-tools/blob/master/unlocker-tool/README.md))
   wraps CrossPoint into it and serves it from a spoofed update server.
-- Secure boot: off in practice (CrossPoint, not signed by Xteink, boots).
-- Flash encryption (eFuse): unknown, and no firmware can turn it off. It does
-  not matter for OTA: `esp_partition_write` / `esp_ota_write` encrypt
-  themselves on an encrypted chip.
+- Secure boot and flash encryption: off on our locked unit (above). Flash
+  encryption would not matter for OTA anyway: `esp_partition_write` /
+  `esp_ota_write` encrypt themselves on an encrypted chip.
 
 ## Stock OTA (X4 Pro)
 

@@ -7,7 +7,7 @@ Not the ESP32-C3 XTEINK X4: the X4 Pro is a different board.
 | Item | Value |
 |---|---|
 | MCU | ESP32-S3 (QFN56) rev v0.2, 40 MHz XTAL |
-| Flash | 16 MB Puya (JEDEC 0x85/0x2018), quad; stock image header DIO 80 MHz |
+| Flash | 16 MB, quad: Puya (JEDEC 0x85/0x2018) on our open unit, XTX (0x0b/0x4018) on the locked one; stock image header DIO 80 MHz |
 | PSRAM | 8 MB embedded octal, AP 3.3 V |
 | Radio | 2.4 GHz Wi-Fi, BLE |
 | Display | 4.3" e-ink, 800×480 B/W (4 grey levels on the UC8179: `epd::RefreshGrey`), 219 PPI |
@@ -96,12 +96,15 @@ Burned bits cannot be cleared. Some X4 Pro units ship with flashing disabled;
 check with `hwinfo` / `efuse`; installing on one:
 [hardware-locked.md](hardware-locked.md). Our unit (2026-10): all of these 0, secure boot
 and flash encryption off, key blocks empty; BLOCK3 (user data) holds the
-factory serial (`X4CB02EN…`).
+factory serial (`X4CB02EN…`). Our locked unit: `DIS_USB_SERIAL_JTAG`,
+`DIS_USB_SERIAL_JTAG_DOWNLOAD_MODE`, `DIS_USB_OTG_DOWNLOAD_MODE` burned, the
+rest 0 ([hardware-locked.md](hardware-locked.md#our-locked-unit-2026-10-29)).
 
 | eFuse = 1 | Effect |
 |---|---|
 | `DIS_USB_SERIAL_JTAG` | USB Serial/JTAG controller off; cannot be re-enabled in software |
 | `DIS_USB_SERIAL_JTAG_DOWNLOAD_MODE` | no ROM flashing over USB Serial/JTAG; the app console still works |
+| `DIS_USB_OTG_DOWNLOAD_MODE` | no ROM flashing over USB-OTG |
 | `DIS_DOWNLOAD_MODE` | ROM download mode off entirely (all interfaces) |
 
 ## Notes
