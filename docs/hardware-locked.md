@@ -35,20 +35,26 @@ So the lock is only the USB ROM download; everything else is open:
 - Recovery without USB: the ROM's UART download (UART0: GPIO43 TX / GPIO44
   RX on a USB-UART adapter, the case open; GPIO0 is the Left button: held at
   reset) or an SPI programmer on the flash: both work, no flash encryption.
-- `app0` still holds CrossPoint: About > Firmware from SD with its `.bin`
-  (or `ota sd force confirm`) goes back.
+- CrossPoint is gone from the flash once our next update takes its slot;
+  its release `.bin` (`crosspoint-<v>-x4pro.bin`: board tag `x4pro`, the
+  descriptor says `arduino-lib-builder`, not its version) as
+  `/sdcard/firmware.bin`, then About > Firmware from SD (or `ota sd force
+  confirm`) goes back. Our locked unit keeps CrossPoint 1.6.5 there.
 - Nothing is write-protected (`WR_DIS` 0): a later stock firmware or stock
   OTA could burn more (download mode, secure boot, flash encryption). Do not
   put the stock firmware back on a locked unit.
 
-What the stock firmware left (read with `nvs ls` / `spiffs ls`, names only):
+What the stock firmware left (`nvs ls`, `spiffs ls`; secrets by length only):
 
-- NVS `user_config` (21 keys): `cloud_dev_id`, `activate`, `cloud_bind_st`
-  (the Xteink cloud), `sta_ssid`, `sta_pwd`, `wifi_creds` (the last Wi-Fi it
-  joined, the unlocker's hotspot included, in plain text: no flash
-  encryption), language, time zone, fonts, light, `otaPromptDay`; `hw_calib`:
-  `screenType`, `region`; `phy` calibration. Ours beside them: `vault` /
-  `fido` (`store_ver`), `nimble_bond`. `nvs rm user_config <key>` drops one.
+- NVS `user_config` (21 keys): `cloud_dev_id` "13630220_B8_1F_3F_CF_FB_0C"
+  (the Xteink cloud's `<numeric id>_<MAC>`), `cloud_bind_st` 2, `activate` 0;
+  `sta_ssid` "XT", `sta_pwd` (8 chars), `wifi_creds` (110 chars): the last
+  Wi-Fi, in plain text (no flash encryption); `language` 1, `timeZone` 8
+  (UTC+8), `sysFontMid` "misans-demibold", `sysFontSm` / `sysFontBd` (SHA-256
+  of font files), `lightBri` 100, `wallpMode` 3, `otaPromptDay` 2026281.
+  `hw_calib`: `screenType` 2 (UC8279), `region` 1 (our open unit: 2, its
+  `timeZone` -5). `phy` calibration. Ours beside them: `vault` / `fido`
+  (`store_ver`), `nimble_bond`. `nvs rm user_config <key>` drops one.
 - SPIFFS: the stock `README.md` (38 bytes), then ours: `seed.txt`,
   `config.json`.
 
