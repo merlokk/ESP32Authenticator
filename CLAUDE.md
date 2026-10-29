@@ -121,6 +121,11 @@ Reference projects (local paths + git): [sources.md](docs/sources.md).
 - Docs are as compact as possible.
 - Commit directly to `main` and push right after committing.
 - Commits and MRs: append ` +ai` to the subject/title; no `Co-Authored-By` or similar trailers.
+- Release (when the user asks): a lightweight tag, the next `x.y.z` after the
+  latest (`git tag --sort=-creatordate`), on the last pushed commit of `main`;
+  `git push origin <tag>` runs the release workflow ([build.md](docs/build.md)).
+  Auto mode may block the tag push: then leave it to the user (`! git push
+  origin <tag>`). Then `idf.py reconfigure` so builds carry the tag.
 - Reply in the language of the request.
 - Decisions live in pure headers (`<cstdint>`/`<cstddef>` only) with host tests;
   hardware code only carries them out. Run `host_test\run.cmd` after changes
