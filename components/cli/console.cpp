@@ -28,6 +28,7 @@
 #include "power.h"
 #include "ui.h"
 #include "ui_logic.h"
+#include "wallpaper_logic.h"
 #include "fido_cmd.h"
 #include "pass_cmd.h"
 #include "nvs_cmd.h"
@@ -104,15 +105,46 @@ int CmdOff(int argc, char **argv) {
     return 0;
 }
 
+// ui wallpaper [grey|bw|card] [<n>]: the arguments after "wallpaper".
+// False: not that.
+bool WallpaperArgs(int argc, char **argv, config::WallpaperMode *mode, bool *card, int *want) {
+    *card = false;
+    *want = -1;
+    for (int i = 2; i < argc; ++i) {
+        char *end = nullptr;
+        const long n = strtol(argv[i], &end, 10);
+        if (*want < 0 && end != argv[i] && *end == '\0' && n >= 1 && n <= 1000) {
+            *want = static_cast<int>(n - 1);
+        } else if (i == 2 && strcmp(argv[i], "card") == 0) {
+            *card = true;
+        } else if (i != 2 || !config::ParseWallpaperMode(argv[i], mode)) {
+            return false;
+        }
+    }
+    return !(*card && *want >= 0);
+}
+
 int CmdUi(int argc, char **argv) {
     config::WallpaperMode mode = config::Get().display.wallpaper;
-    const bool card = argc == 3 && strcmp(argv[2], "card") == 0;
-    if ((argc == 2 || card || (argc == 3 && config::ParseWallpaperMode(argv[2], &mode))) &&
-        strcmp(argv[1], "wallpaper") == 0) {
-        const char *shown = "";
+    bool card = false;
+    int want = -1;
+    if (argc >= 2 && argc <= 4 && strcmp(argv[1], "wallpaper") == 0 &&
+        WallpaperArgs(argc, argv, &mode, &card, &want)) {
+        ui::WallpaperShown shown = {"", 0, -1};
         const esp_err_t err =
-            ui::PreviewWallpaper(mode == config::WallpaperMode::kGrey, &shown, card);
-        printf("%s: %s\n", shown[0] != '\0' ? shown : "wallpaper", esp_err_to_name(err));
+            ui::PreviewWallpaper(mode == config::WallpaperMode::kGrey, card, want, &shown);
+        if (card) {
+            printf("card: %s\n", esp_err_to_name(err));
+        } else if (shown.index >= 0) {
+            printf("%s %d of %u: %s: %s\n", want >= 0 ? "wallpaper" : "random", shown.index + 1,
+                   static_cast<unsigned>(shown.count), shown.path, esp_err_to_name(err));
+        } else if (want >= 0 && err == ESP_ERR_NOT_FOUND) {
+            printf("no wallpaper %d: %u in %s\n", want + 1, static_cast<unsigned>(shown.count),
+                   ui::wallpaper::kDir);
+        } else {
+            printf("none of %u: the card shown: %s\n", static_cast<unsigned>(shown.count),
+                   esp_err_to_name(err));
+        }
         return err == ESP_OK ? 0 : 1;
     }
     const bool click = (argc == 4 || argc == 5) && strcmp(argv[1], "click") == 0;
@@ -682,14 +714,16 @@ const esp_console_cmd_t kCommands[] = {
     {
         .command = "ui",
         .help = "LVGL display: [info] size, refreshes, the last one, the ui task's free stack | "
-                "wallpaper [grey|bw|card]: draw a random power-off wallpaper now, as display.wallpaper in "
-                "config.json or as given (stays on; card: the built-in one, name and version) | demo prompt [n]: the FIDO2 prompt, made up (n accounts) | demo fido [n] / demo off: n (10) made-up keys in the "
+                "wallpaper [grey|bw|card] [<n>]: draw a power-off wallpaper now (a random one, or "
+                "number n as `sd ls wallpapers` lists them; prints how many and which), as "
+                "display.wallpaper in config.json or as given (stays on; card: the built-in one, "
+                "name and version) | demo prompt [n]: the FIDO2 prompt, made up (n accounts) | demo fido [n] / demo off: n (10) made-up keys in the "
                 "U2F / FIDO2 list, on the screen only | show list|settings|fido: that screen | "
                 "click <x> <y> [hold ms] / swipe <x0> <y0> <x1> <y1>: a made-up finger (portrait "
                 "px) | "
                 "key left|right|home: as the button | "
                 "screenshot: the screen as base64 (utils/screenshot.py makes a PNG)",
-        .hint = "[wallpaper [grey|bw|card] | show <screen> | key <key> | click <x> <y> [ms] | "
+        .hint = "[wallpaper [grey|bw|card] [<n>] | show <screen> | key <key> | click <x> <y> [ms] | "
                 "swipe <x0> <y0> <x1> <y1> | "
                 "demo fido [n] | demo prompt [n] | demo off | screenshot]",
         .func = &CmdUi,

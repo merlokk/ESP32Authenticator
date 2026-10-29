@@ -44,9 +44,16 @@ esp_err_t ShowWallpaper(bool grey = true);
 // never lets go); the next LVGL change after a release redraws it all.
 void HoldPanel(bool hold);
 // Console `ui wallpaper`: ShowWallpaper in a task of its own (under Lock),
-// waits for it; `shown` is the file. `card`: the built-in one whatever the
-// card holds. The device stays on; the next LVGL change draws over it.
-esp_err_t PreviewWallpaper(bool grey, const char **shown, bool card = false);
+// waits for it. `card`: the built-in one whatever the card holds; `want`:
+// that wallpaper (0-based, directory order; -1 a random one; not there:
+// ESP_ERR_NOT_FOUND, nothing drawn). The device stays on; the next LVGL
+// change draws over it.
+struct WallpaperShown {
+    const char *path;  // the file, "" none
+    uint32_t count;    // the wallpapers counted
+    int index;         // the one taken (0-based), -1 none
+};
+esp_err_t PreviewWallpaper(bool grey, bool card, int want, WallpaperShown *shown);
 
 // The next frame's refresh (ui_logic.h Refresh: full when a dialog appears,
 // fast for a PIN dot), merged with the frames that go out with it. ui task,

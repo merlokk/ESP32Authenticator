@@ -35,7 +35,12 @@ SemaphoreHandle_t preview_done = nullptr;
 esp_err_t preview_err = ESP_OK;
 bool preview_grey = true;
 bool preview_card = false;
+int preview_want = -1;  // the wallpaper to show (0-based, directory order), -1 a random one
+// The last Pick: the images it counted and the one it took (-1 none).
+uint32_t picked_count = 0;
+int picked_index = -1;
 esp_err_t ShowCard();
+esp_err_t ShowAt(bool grey, int want);
 
 void PreviewTask(void *) {
     Lock();
@@ -43,7 +48,7 @@ void PreviewTask(void *) {
         HoldPanel(true);
         preview_err = ShowCard();
     } else {
-        preview_err = ShowWallpaper(preview_grey);
+        preview_err = ShowAt(preview_grey, preview_want);
     }
     HoldPanel(false);
     Unlock();
@@ -51,8 +56,12 @@ void PreviewTask(void *) {
     vTaskDeleteWithCaps(nullptr);
 }
 
-// A random wallpaper's full path into `path`; false when there is none.
-bool Pick() {
+// Wallpaper `want` (0-based, directory order; -1 a random one): its full
+// path into `path`; false when there is none. picked_count / picked_index
+// say what it saw.
+bool Pick(int want) {
+    picked_count = 0;
+    picked_index = -1;
     DIR *dir = opendir(wallpaper::kDir);
     if (dir == nullptr) {
         return false;
@@ -61,9 +70,11 @@ bool Pick() {
     for (dirent *e = readdir(dir); e != nullptr; e = readdir(dir)) {
         count += e->d_type != DT_DIR && wallpaper::IsImageName(e->d_name) ? 1 : 0;
     }
+    picked_count = count;
     bool found = false;
-    if (count > 0) {
-        uint32_t left = esp_random() % count;
+    if (count > 0 && want < static_cast<int>(count)) {
+        const uint32_t chosen = want >= 0 ? static_cast<uint32_t>(want) : esp_random() % count;
+        uint32_t left = chosen;
         rewinddir(dir);
         for (dirent *e = readdir(dir); e != nullptr; e = readdir(dir)) {
             if (e->d_type == DT_DIR || !wallpaper::IsImageName(e->d_name)) {
@@ -72,6 +83,7 @@ bool Pick() {
             if (left-- == 0) {
                 found = snprintf(path, sizeof path, "%s/%s", wallpaper::kDir, e->d_name) <
                         static_cast<int>(sizeof path);
+                picked_index = found ? static_cast<int>(chosen) : -1;
                 break;
             }
         }
@@ -207,14 +219,25 @@ esp_err_t ShowCard() {
 
 }  // namespace
 
-esp_err_t ShowWallpaper(bool grey) {
+esp_err_t ShowWallpaper(bool grey) { return ShowAt(grey, -1); }
+
+namespace {
+
+// ShowWallpaper with wallpaper `want` (Pick); one that is not there: nothing
+// drawn, ESP_ERR_NOT_FOUND.
+esp_err_t ShowAt(bool grey, int want) {
     if (!epd::Ready()) {
         return ESP_ERR_NOT_SUPPORTED;
     }
-    HoldPanel(true);  // LVGL's frames stay off it now
-    if (!Pick()) {
+    path[0] = '\0';
+    if (!Pick(want)) {
+        if (want >= 0) {
+            return ESP_ERR_NOT_FOUND;
+        }
+        HoldPanel(true);  // LVGL's frames stay off it now
         return ShowCard();
     }
+    HoldPanel(true);
     size_t size = 0;
     uint8_t *png = ReadFile(&size);
     if (png == nullptr) {
@@ -245,9 +268,15 @@ esp_err_t ShowWallpaper(bool grey) {
     return err;
 }
 
-esp_err_t PreviewWallpaper(bool grey, const char **shown, bool card) {
+}  // namespace
+
+esp_err_t PreviewWallpaper(bool grey, bool card, int want, WallpaperShown *shown) {
     preview_grey = grey;
     preview_card = card;
+    preview_want = want;
+    picked_count = 0;
+    picked_index = -1;
+    path[0] = '\0';
     if (preview_done == nullptr) {
         preview_done = xSemaphoreCreateBinary();
     }
@@ -257,7 +286,9 @@ esp_err_t PreviewWallpaper(bool grey, const char **shown, bool card) {
         return ESP_ERR_NO_MEM;
     }
     xSemaphoreTake(preview_done, portMAX_DELAY);
-    *shown = path;
+    shown->path = path;
+    shown->count = picked_count;
+    shown->index = picked_index;
     return preview_err;
 }
 
