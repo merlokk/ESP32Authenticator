@@ -11,12 +11,13 @@ using server::sync::Copy;
 using server::sync::Phase;
 using server::sync::Step;
 
-Copy Make(uint8_t store, uint32_t version, uint8_t nonce) {
+Copy Make(uint8_t store, uint32_t version, uint8_t nonce, uint8_t seed = 0x5e) {
     Copy c;
     c.has = true;
     memset(c.store_id, store, sizeof c.store_id);
     c.version = version;
     memset(c.nonce, nonce, sizeof c.nonce);
+    memset(c.seed_id, seed, sizeof c.seed_id);
     return c;
 }
 
@@ -27,38 +28,50 @@ void test_sync_decide(void) {
         Copy local;
         Copy synced;
         Copy server;
+        bool open;
         bool empty;
         Step step;
         const char *what;
     };
     const Case kCases[] = {
-        {none, synced, Make(1, 3, 0x33), false, Step::kNothing, "no local store"},
-        {Make(1, 3, 0x33), synced, Make(1, 3, 0x33), false, Step::kNothing, "in sync"},
-        {Make(1, 4, 0x44), none, Make(1, 4, 0x44), false, Step::kRecord, "the same, not kept yet"},
-        {Make(1, 4, 0x44), synced, none, false, Step::kUpload, "the server lost it"},
-        {Make(1, 4, 0x44), synced, Make(1, 3, 0x33), false, Step::kUpload, "ours changed"},
-        {Make(1, 3, 0x33), synced, Make(1, 5, 0x55), false, Step::kDownload, "theirs changed"},
-        {Make(1, 3, 0x33), synced, Make(1, 3, 0x99), false, Step::kUpload,
+        {none, synced, Make(1, 3, 0x33), true, false, Step::kNothing, "no local store"},
+        {Make(1, 3, 0x33), synced, Make(1, 3, 0x33), true, false, Step::kNothing, "in sync"},
+        {Make(1, 4, 0x44), none, Make(1, 4, 0x44), true, false, Step::kRecord, "the same, not kept yet"},
+        {Make(1, 4, 0x44), none, Make(1, 4, 0x44), false, false, Step::kNothing,
+         "the same, not kept, locked: empty or not unknown"},
+        {Make(1, 4, 0x44), none, Make(1, 4, 0x44), true, true, Step::kLook,
+         "the same, not kept, empty: another device's store first"},
+        {Make(1, 4, 0x44, 0x4c), Make(1, 3, 0x33, 0x48), Make(1, 4, 0x44, 0x4c), true, true,
+         Step::kLook, "uploaded under a new phrase (seed set): another device's store first"},
+        {Make(1, 4, 0x44), Make(1, 4, 0x44, 0), Make(1, 4, 0x44), true, true, Step::kNothing,
+         "an old record (no seed id): ours"},
+        {Make(1, 4, 0x44), synced, none, true, false, Step::kUpload, "the server lost it"},
+        {Make(1, 4, 0x44), synced, Make(1, 3, 0x33), true, false, Step::kUpload, "ours changed"},
+        {Make(1, 3, 0x33), synced, Make(1, 5, 0x55), true, false, Step::kDownload, "theirs changed"},
+        {Make(1, 3, 0x33), synced, Make(1, 3, 0x99), true, false, Step::kUpload,
          "theirs at our version but another write: not above, ours goes"},
-        {Make(1, 4, 0x44), synced, Make(1, 5, 0x55), false, Step::kConflict, "both changed"},
-        {Make(1, 4, 0x44), synced, Make(1, 4, 0x45), false, Step::kConflict, "one version, two writes"},
-        {Make(2, 1, 0x11), none, none, true, Step::kLook, "never synced, not on the server"},
-        {Make(2, 1, 0x11), synced, none, false, Step::kLook, "another store than the synced one"},
-        {Make(1, 1, 0x11), none, Make(1, 5, 0x55), true, Step::kDownload, "never synced, empty"},
-        {Make(1, 6, 0x11), none, Make(1, 5, 0x55), false, Step::kConflict, "never synced, ours full"},
-        {Make(1, 6, 0x11), none, Make(1, 5, 0x55), true, Step::kConflict, "empty but not below"},
+        {Make(1, 4, 0x44), synced, Make(1, 5, 0x55), true, false, Step::kConflict, "both changed"},
+        {Make(1, 4, 0x44), synced, Make(1, 4, 0x45), true, false, Step::kConflict, "one version, two writes"},
+        {Make(2, 1, 0x11), none, none, true, true, Step::kLook, "never synced, not on the server"},
+        {Make(2, 1, 0x11), synced, none, true, false, Step::kLook, "another store than the synced one"},
+        {Make(1, 4, 0x44, 0x4c), synced, none, true, false, Step::kLook,
+         "a new phrase (seed set / seed new): not on the server under it"},
+        {Make(1, 1, 0x11), none, Make(1, 5, 0x55), true, true, Step::kDownload, "never synced, empty"},
+        {Make(1, 6, 0x11), none, Make(1, 5, 0x55), true, false, Step::kConflict, "never synced, ours full"},
+        {Make(1, 6, 0x11), none, Make(1, 5, 0x55), true, true, Step::kConflict, "empty but not below"},
     };
     for (const Case &c : kCases) {
         TEST_ASSERT_EQUAL_MESSAGE(static_cast<int>(c.step),
                                   static_cast<int>(server::sync::Decide(c.local, c.synced,
-                                                                        c.server, c.empty)),
+                                                                        c.server, c.open, c.empty)),
                                   c.what);
     }
-    TEST_ASSERT_TRUE(server::sync::AfterLook(false, 0) == Step::kUpload);
-    TEST_ASSERT_TRUE(server::sync::AfterLook(true, 0) == Step::kUpload);
-    TEST_ASSERT_TRUE(server::sync::AfterLook(true, 1) == Step::kAdopt);
-    TEST_ASSERT_TRUE(server::sync::AfterLook(true, 2) == Step::kConflict);
-    TEST_ASSERT_TRUE(server::sync::AfterLook(false, 1) == Step::kConflict);
+    TEST_ASSERT_TRUE(server::sync::AfterLook(false, 0, false) == Step::kUpload);
+    TEST_ASSERT_TRUE(server::sync::AfterLook(true, 0, false) == Step::kUpload);
+    TEST_ASSERT_TRUE(server::sync::AfterLook(true, 0, true) == Step::kRecord);
+    TEST_ASSERT_TRUE(server::sync::AfterLook(true, 1, true) == Step::kAdopt);
+    TEST_ASSERT_TRUE(server::sync::AfterLook(true, 2, false) == Step::kConflict);
+    TEST_ASSERT_TRUE(server::sync::AfterLook(false, 1, false) == Step::kConflict);
     TEST_ASSERT_EQUAL_UINT32(8, server::sync::KeepVersion(7));
 }
 
@@ -101,8 +114,16 @@ void test_sync_synced_round_trip(void) {
     server::sync::EncodeSynced(in, bytes);
     TEST_ASSERT_EQUAL_HEX8(0x04, bytes[8]);
     TEST_ASSERT_EQUAL_HEX8(0x01, bytes[11]);
-    const Copy out = server::sync::DecodeSynced(bytes);
+    TEST_ASSERT_EQUAL_HEX8(0x5e, bytes[24]);
+    const Copy out = server::sync::DecodeSynced(bytes, sizeof bytes);
     TEST_ASSERT_TRUE(server::sync::SameWrite(in, out));
+    TEST_ASSERT_TRUE(server::sync::Known(in, out));
+    // An old record (no seed id): taken as ours under any phrase.
+    const Copy old = server::sync::DecodeSynced(bytes, server::sync::kSyncedOldSize);
+    TEST_ASSERT_TRUE(server::sync::SameWrite(in, old));
+    TEST_ASSERT_EQUAL_HEX8(0, old.seed_id[0]);
+    TEST_ASSERT_TRUE(server::sync::Known(Make(0xA5, 1, 1, 0x77), old));
+    TEST_ASSERT_FALSE(server::sync::Known(Make(0xA5, 1, 1, 0x77), out));
 }
 
 void test_sync_requests(void) {

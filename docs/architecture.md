@@ -791,10 +791,13 @@ account on the authentication server (`config.json` `server.host`).
   /api/device/stores/files`, the file as it is); only the server's: download
   (`GET .../files/{store}/{seed}/{kind}?above=`) to `<file>.dl`, taken by
   `vault::Adopt` (kind, seed id, store id, a version above the kept one, the
-  GCM tag) once the PIN is in; both: a conflict. A store never synced looks
+  GCM tag) once the PIN is in; both: a conflict. A store never synced (the
+  NVS record also names the seed id: a `seed set` makes the store a new one
+  to sync; a record without it, from older firmware, counts as ours) looks
   at the account's stores under its seed id first (`GET
-  /api/device/stores?seedId=`): none: upload; one and ours empty: taken (its
-  store id from then); else a conflict. A 409 (another device first) with
+  /api/device/stores?seedId=`), an empty one even when its own upload is
+  there (not kept before the PIN): none: upload; one and ours empty: taken
+  (its store id from then); else a conflict. A 409 (another device first) with
   ours changed: a conflict. Another key on the server's copy (the PIN
   changed on another device): its PIN asked; this device takes that key for
   both stores (a PIN change's commit), so its PIN becomes that one. Runs in

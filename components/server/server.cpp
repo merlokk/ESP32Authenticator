@@ -875,9 +875,10 @@ void LoadSynced() {
         const char key[3] = {'s', static_cast<char>('0' + i), '\0'};
         uint8_t bytes[sync::kSyncedSize];
         size_t n = sizeof bytes;
-        if (nvs_get_blob(h, key, bytes, &n) == ESP_OK && n == sizeof bytes) {
+        if (nvs_get_blob(h, key, bytes, &n) == ESP_OK &&
+            (n == sizeof bytes || n == sync::kSyncedOldSize)) {
             Locked l;
-            synced[i] = sync::DecodeSynced(bytes);
+            synced[i] = sync::DecodeSynced(bytes, n);
         }
     }
     nvs_close(h);
@@ -937,6 +938,7 @@ bool ReadLocal(sync::Store s, sync::Copy *out, uint8_t seed_id[sync::kSeedIdSize
     memcpy(out->store_id, h.store_id, sizeof out->store_id);
     out->version = h.version;
     memcpy(out->nonce, h.nonce, sizeof out->nonce);
+    memcpy(out->seed_id, h.seed_id, sizeof out->seed_id);
     memcpy(seed_id, h.seed_id, sync::kSeedIdSize);
     *size = static_cast<size_t>(st.st_size);
     return true;
@@ -1144,7 +1146,7 @@ Outcome SyncOne(const char *host, sync::Store s, const sync::Copy &local,
         was = synced[Index(s)];
     }
     const bool empty = open && hooks->empty(s);
-    sync::Step step = sync::Decide(local, was, server, empty);
+    sync::Step step = sync::Decide(local, was, server, open, empty);
     sync::Candidate cand;
     if (step == sync::Step::kLook) {
         char url[kSyncUrlSize];
@@ -1170,7 +1172,8 @@ Outcome SyncOne(const char *host, sync::Store s, const sync::Copy &local,
             SetStore(s, sync::Phase::kNewer, local.version, cand.copy.version, true, cand.at);
             return Outcome::kWaits;
         }
-        step = sync::AfterLook(empty, static_cast<size_t>(found));
+        step = sync::AfterLook(empty, static_cast<size_t>(found),
+                               sync::SameWrite(local, server));
         if (step == sync::Step::kConflict) {
             SetWaiting(s, cand.copy, true);
             SetStore(s, sync::Phase::kConflict, local.version, cand.copy.version, true, cand.at);

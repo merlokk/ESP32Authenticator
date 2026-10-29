@@ -9,8 +9,9 @@
 // the last sync, so a change on either side shows: only ours changed:
 // upload; only the server's: download; both: a conflict, resolved by hand
 // (Settings > Server > Sync), the automatic sync stopped until then. A store
-// never synced looks at the account's stores under its seed phrase first: none:
-// upload; one and ours empty: take it; else a conflict too.
+// never synced (or synced under another seed phrase) looks at the account's
+// stores under its phrase first: none: upload; one and ours empty: take it;
+// else a conflict too.
 
 #include <cstddef>
 #include <cstdint>
@@ -42,12 +43,14 @@ constexpr bool SameBytes(const uint8_t *a, const uint8_t *b, size_t n) {
     return true;
 }
 
-// One write of a store.
+// One write of a store. seed_id: ours and the synced one's (zeros: an old
+// NVS record, taken as ours).
 struct Copy {
     bool has = false;
     uint8_t store_id[kStoreIdSize] = {};
     uint32_t version = 0;
     uint8_t nonce[kNonceSize] = {};
+    uint8_t seed_id[kSeedIdSize] = {};
 };
 
 constexpr bool SameWrite(const Copy &a, const Copy &b) {
@@ -66,17 +69,33 @@ enum class Step : uint8_t {
     kConflict,  // both changed, or two stores: by hand
 };
 
+// The synced copy is of our store under our seed phrase (a seed change makes
+// the store a new one to sync: `seed set` joins another device's).
+constexpr bool Known(const Copy &local, const Copy &synced) {
+    constexpr uint8_t kNoSeed[kSeedIdSize] = {};
+    return synced.has && SameBytes(synced.store_id, local.store_id, kStoreIdSize) &&
+           (SameBytes(synced.seed_id, kNoSeed, kSeedIdSize) ||
+            SameBytes(synced.seed_id, local.seed_id, kSeedIdSize));
+}
+
 // `local`: our file's header; `synced`: what both had at the last sync (NVS,
 // !has: never); `server`: the server's newest of our store id (heads, its
-// store id ours; !has: it has none); `empty`: our store holds nothing.
-constexpr Step Decide(const Copy &local, const Copy &synced, const Copy &server, bool empty) {
+// store id ours; !has: it has none); `open`: the PIN is in; `empty`: our
+// store holds nothing (known only when open).
+constexpr Step Decide(const Copy &local, const Copy &synced, const Copy &server, bool open,
+                      bool empty) {
     if (!local.has) {
         return Step::kNothing;
     }
+    const bool known = Known(local, synced);
     if (SameWrite(local, server)) {
-        return SameWrite(local, synced) ? Step::kNothing : Step::kRecord;
+        if (known) {
+            return SameWrite(local, synced) ? Step::kNothing : Step::kRecord;
+        }
+        // Never synced but already there (our own upload): an empty one may
+        // still take another device's store, so not kept before the PIN.
+        return !open ? Step::kNothing : empty ? Step::kLook : Step::kRecord;
     }
-    const bool known = synced.has && SameBytes(synced.store_id, local.store_id, kStoreIdSize);
     if (!known) {
         // Never synced (or NVS lost): only an empty store gives way unasked.
         if (!server.has) {
@@ -98,9 +117,12 @@ constexpr Step Decide(const Copy &local, const Copy &synced, const Copy &server,
     return Step::kConflict;
 }
 
-// After kLook: `found` stores of this kind under our seed phrase (not ours).
-constexpr Step AfterLook(bool empty, size_t found) {
-    return found == 0 ? Step::kUpload : empty && found == 1 ? Step::kAdopt : Step::kConflict;
+// After kLook: `found` stores of this kind under our seed phrase (not ours);
+// `there`: the server has our write already.
+constexpr Step AfterLook(bool empty, size_t found, bool there) {
+    return found == 0                ? (there ? Step::kRecord : Step::kUpload)
+           : empty && found == 1 ? Step::kAdopt
+                                 : Step::kConflict;
 }
 
 // The version "keep this device's" writes ours with: above the server's.
@@ -188,8 +210,10 @@ constexpr bool SyncDue(bool ready, uint8_t minutes, bool by_hand, bool changed, 
 
 // --- NVS: the synced copy -------------------------------------------------------
 
-// store id (8), version (4, LE), nonce (12).
-inline constexpr size_t kSyncedSize = kStoreIdSize + 4 + kNonceSize;
+// store id (8), version (4, LE), nonce (12), seed id (4; an old record
+// stops before it).
+inline constexpr size_t kSyncedOldSize = kStoreIdSize + 4 + kNonceSize;
+inline constexpr size_t kSyncedSize = kSyncedOldSize + kSeedIdSize;
 
 constexpr void EncodeSynced(const Copy &c, uint8_t out[kSyncedSize]) {
     for (size_t i = 0; i < kStoreIdSize; ++i) {
@@ -201,9 +225,13 @@ constexpr void EncodeSynced(const Copy &c, uint8_t out[kSyncedSize]) {
     for (size_t i = 0; i < kNonceSize; ++i) {
         out[kStoreIdSize + 4 + i] = c.nonce[i];
     }
+    for (size_t i = 0; i < kSeedIdSize; ++i) {
+        out[kSyncedOldSize + i] = c.seed_id[i];
+    }
 }
 
-constexpr Copy DecodeSynced(const uint8_t in[kSyncedSize]) {
+// `size`: kSyncedSize or kSyncedOldSize.
+constexpr Copy DecodeSynced(const uint8_t *in, size_t size) {
     Copy c;
     c.has = true;
     for (size_t i = 0; i < kStoreIdSize; ++i) {
@@ -214,6 +242,9 @@ constexpr Copy DecodeSynced(const uint8_t in[kSyncedSize]) {
     }
     for (size_t i = 0; i < kNonceSize; ++i) {
         c.nonce[i] = in[kStoreIdSize + 4 + i];
+    }
+    for (size_t i = 0; size == kSyncedSize && i < kSeedIdSize; ++i) {
+        c.seed_id[i] = in[kSyncedOldSize + i];
     }
     return c;
 }
