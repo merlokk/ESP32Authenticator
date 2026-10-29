@@ -24,6 +24,9 @@ confirmed its trial boot). Read with `hwinfo` on the console:
 | flash | 16 MB XTX (JEDEC `0b4018`), not the Puya of our open unit |
 | bootloader | IDF v6.0.1, Jul 14 2026 |
 | panel, touch | UC8279 (stock `screenType` 2), GT911 |
+| key blocks `KEY0`..`KEY5`, `SYS_DATA_PART2` | all zero, `KEY_PURPOSE_*` 0: no key burned |
+| `BLOCK3` (user data) | factory serial `X4CB02CN26081005511` (`CN`; our open unit `X4CB02EN…`) |
+| the rest of `BLOCK0` | as on our open unit: `VDD_SPI_FORCE`/`TIEH`/`XPD` 1 (flash at 3.3 V), `PIN_POWER_SELECTION` 1 |
 
 So the lock is only the USB ROM download; everything else is open:
 
@@ -34,6 +37,20 @@ So the lock is only the USB ROM download; everything else is open:
   reset) or an SPI programmer on the flash: both work, no flash encryption.
 - `app0` still holds CrossPoint: About > Firmware from SD with its `.bin`
   (or `ota sd force confirm`) goes back.
+- Nothing is write-protected (`WR_DIS` 0): a later stock firmware or stock
+  OTA could burn more (download mode, secure boot, flash encryption). Do not
+  put the stock firmware back on a locked unit.
+
+What the stock firmware left (read with `nvs ls` / `spiffs ls`, names only):
+
+- NVS `user_config` (21 keys): `cloud_dev_id`, `activate`, `cloud_bind_st`
+  (the Xteink cloud), `sta_ssid`, `sta_pwd`, `wifi_creds` (the last Wi-Fi it
+  joined, the unlocker's hotspot included, in plain text: no flash
+  encryption), language, time zone, fonts, light, `otaPromptDay`; `hw_calib`:
+  `screenType`, `region`; `phy` calibration. Ours beside them: `vault` /
+  `fido` (`store_ver`), `nimble_bond`. `nvs rm user_config <key>` drops one.
+- SPIFFS: the stock `README.md` (38 bytes), then ours: `seed.txt`,
+  `config.json`.
 
 ## What the lock is
 
