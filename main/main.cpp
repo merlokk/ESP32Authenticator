@@ -67,6 +67,12 @@ void InitNvs() {
 // board has a card slot, else SPIFFS. nullptr when that file system is not
 // mounted: no card is no stores, never a second set on SPIFFS.
 const char *StorageDir() {
+    // The seed phrase is in SPIFFS: without it no store opens or can be made,
+    // and a PIN pad would only lock Settings away (the USB port, the SD update).
+    if (!spiffs_fs::Mounted()) {
+        ESP_LOGE(TAG, "SPIFFS not mounted: no seed phrase, no store files, no PIN");
+        return nullptr;
+    }
     if (boards::kBoard.has_sd_card) {
         if (!sd_card::Mounted()) {
             ESP_LOGE(TAG, "SD card: %s, no store files", sd_card::Name(sd_card::Status()));
@@ -79,7 +85,7 @@ const char *StorageDir() {
         }
         return sd_card::kStoreDir;
     }
-    return spiffs_fs::Mounted() ? spiffs_fs::kBasePath : nullptr;
+    return spiffs_fs::kBasePath;
 }
 
 // A FIDO2 request waits for the user: Left / Right answer it, not the screens.

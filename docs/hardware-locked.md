@@ -78,9 +78,23 @@ done in 2 min (`ota::Boot` restarts it: `ShouldGiveUp`).
 
 First boot on CrossPoint's flash: its NVS is kept (erased only when full or
 of another version); CrossPoint leaves the stock SPIFFS alone (SPIFFS and
-LittleFS off in its `platformio.ini`). If SPIFFS does not mount, nothing
-formats it: no `config.json` or seed until `spiffs format` on the console.
-No `config.json`: Wi-Fi off, USB `jtag`.
+LittleFS off in its `platformio.ini`). No `config.json`: Wi-Fi off, USB
+`jtag`.
+
+The PIN pad on a fresh unit (card in): no `vault.bin` yet, so the PIN typed
+(twice) makes the store and, in SPIFFS, the seed phrase; Settings open after
+it. No card: no stores, no PIN pad.
+
+- SPIFFS not mounted (nothing formats it): no seed phrase, so no store opens
+  or can be made; the stores are off and there is no PIN pad (`StorageDir`),
+  Settings open. `spiffs format` on the console, then a restart. Only on a
+  fresh unit: on one in use it erases the seed phrase, and the stores on the
+  card never open again without its 12 words.
+- Stuck on the PIN pad anyway (the store cannot be made, the card refused):
+  Power held (off), the card out, Power: no stores, no PIN pad; Settings >
+  Devices > USB port = serial, then the console (`hwinfo`, `sd`, `spiffs`).
+  The card in again and a restart. Without the card at boot About > Firmware
+  from SD has nothing to read (the card mounts at boot only).
 
 ## After the first boot
 
@@ -109,6 +123,12 @@ No `config.json`: Wi-Fi off, USB `jtag`.
 (Oct 2026, open): a USB-locked X4 Pro took a broken CrossPoint fork
 (CrossPink 8.10) from the SD card; it crashes at random and has no menu to
 flash another one. The only way out left is the SPI flash chip.
+
+![X4 Pro opened](images/x4pro-inside.jpg)
+
+*An X4 Pro opened (photo from #3917): the board `X4-2 PRO V07`, the panel's
+cable `UC8279D`, the ESP32-S3 in the middle with the 8-pin SPI flash (XTX)
+beside it, the microSD slot on the right.*
 
 - Why this firmware keeps a way out: a first boot that crashes, hangs or
   resets rolls back (above); once confirmed, About > Firmware from SD needs
