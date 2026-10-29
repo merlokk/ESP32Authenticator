@@ -188,6 +188,13 @@ constexpr Icon IconOf(bool host, bool registered, const Phase (&phases)[kStores]
 inline constexpr int64_t kRetrySeconds = 60;
 
 // Is a sync due? `ready`: registered, Wi-Fi online, the clock set;
+// After a sync: the store's loaded version `now` is no change to sync again
+// only when this sync saw it: the one it read (`read`) or the one it left
+// both sides with (`synced`, !has: none). A write during the sync shows.
+constexpr bool SeenBySync(uint32_t now, uint32_t read, const Copy &synced) {
+    return now == read || (synced.has && synced.version == now);
+}
+
 // `minutes`: server.syncMinutes (0: never on its own); `by_hand`: a store
 // waits for a person (ByHand): nothing on its own until then; `changed`: a
 // store changed here (or the PIN came) since the last one started. `now`,

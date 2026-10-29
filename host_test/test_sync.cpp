@@ -95,6 +95,12 @@ void test_sync_icon(void) {
 }
 
 void test_sync_due(void) {
+    using server::sync::SeenBySync;
+    const Copy kept = Make(1, 340, 0x40);
+    TEST_ASSERT_TRUE(SeenBySync(340, 340, kept));   // read and sent
+    TEST_ASSERT_TRUE(SeenBySync(341, 339, Make(1, 341, 0x41)));  // taken from the server
+    TEST_ASSERT_FALSE(SeenBySync(341, 340, kept));  // written while the sync ran
+    TEST_ASSERT_FALSE(SeenBySync(341, 340, Copy()));
     using server::sync::SyncDue;
     TEST_ASSERT_FALSE(SyncDue(false, 10, false, true, 100, -1, -1));  // not ready
     TEST_ASSERT_FALSE(SyncDue(true, 0, false, true, 100, -1, -1));    // never

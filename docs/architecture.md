@@ -808,7 +808,8 @@ account on the authentication server (`config.json` `server.host`).
   the server's task: the first once registered and online, then after each
   change (the stores' versions, the PIN coming in: a look every 5 s) and
   every `server.syncMinutes` (0: only by hand), a failed one again in a
-  minute; a store waiting for a person stops it until resolved: Server >
+  minute (a write while it runs, or one that taking a copy makes, starts
+  another); a store waiting for a person stops it until resolved: Server >
   Sync, per store "Keep mine" (written again above the server's version,
   uploaded) or "Take server's" / "Type its PIN"; console `server sync`,
   `server sync keep|take passwords|passkeys [pin]`. Status bar: the sync

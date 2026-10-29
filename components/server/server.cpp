@@ -928,10 +928,10 @@ void SaveSynced(sync::Store s, const sync::Copy &c) {
 
 // Our file's header: the copy, its seed id and the file's size. False: no
 // file here, or not an encrypted store.
-bool ReadLocal(sync::Store s, sync::Copy *out, uint8_t seed_id[sync::kSeedIdSize],
-               size_t *size) {
+// A store file's header at `path`: the copy, its seed id and the file's size.
+bool ReadHeader(const char *path, sync::Store s, sync::Copy *out,
+                uint8_t seed_id[sync::kSeedIdSize], size_t *size) {
     *out = sync::Copy();
-    const char *path = hooks->store_path(s);
     struct stat st;
     if (path == nullptr || stat(path, &st) != 0) {
         return false;
@@ -957,6 +957,11 @@ bool ReadLocal(sync::Store s, sync::Copy *out, uint8_t seed_id[sync::kSeedIdSize
     memcpy(seed_id, h.seed_id, sync::kSeedIdSize);
     *size = static_cast<size_t>(st.st_size);
     return true;
+}
+
+bool ReadLocal(sync::Store s, sync::Copy *out, uint8_t seed_id[sync::kSeedIdSize],
+               size_t *size) {
+    return ReadHeader(hooks->store_path(s), s, out, seed_id, size);
 }
 
 void SetStore(sync::Store s, sync::Phase phase, uint32_t local, uint32_t server = 0,
@@ -1122,17 +1127,28 @@ Outcome Take(const char *host, sync::Store s, const sync::Copy &local,
         SetStore(s, sync::Phase::kFailed, local.version, server.version, other);
         return Outcome::kFailed;
     }
+    // The synced one is the server's copy as it came: taking it may write ours
+    // again (fido.bin frees its deleted items when loaded), a change to send.
+    sync::Copy got;
+    uint8_t got_seed[sync::kSeedIdSize];
+    size_t got_size = 0;
+    const bool read = ReadHeader(dl, s, &got, got_seed, &got_size);
     const Taken t = hooks->take(s, dl, server.store_id, force, pin, said, said_size);
     remove(dl);
     if (t == Taken::kOk) {
         sync::Copy now;
         uint8_t seed[sync::kSeedIdSize];
         size_t size = 0;
-        if (ReadLocal(s, &now, seed, &size)) {
+        const bool here = ReadLocal(s, &now, seed, &size);
+        if (read) {
+            SaveSynced(s, got);
+        } else if (here) {
             SaveSynced(s, now);
         }
         SetWaiting(s, sync::Copy(), false);
-        SetStore(s, sync::Phase::kInSync, now.version);
+        SetStore(s, read && here && !sync::SameWrite(now, got) ? sync::Phase::kChanged
+                                                                : sync::Phase::kInSync,
+                 now.version);
         return Outcome::kTaken;
     }
     if (t == Taken::kNeedPin || t == Taken::kWrongPin) {
@@ -1364,10 +1380,15 @@ void Sync(const Job &r, Body &answer) {
             status.others = others;
         }
     }
-    // What this sync did here is no change to sync again.
+    // What this sync did here is no change to sync again; a write made while
+    // it ran is.
     Locked l;
     for (const sync::Store s : sync::kAll) {
-        seen_version[Index(s)] = hooks->store_version(s);
+        const size_t i = Index(s);
+        const uint32_t now = hooks->store_version(s);
+        if (sync::SeenBySync(now, local[i].version, synced[i])) {
+            seen_version[i] = now;
+        }
     }
 }
 
