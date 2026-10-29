@@ -761,6 +761,8 @@ void Install(const Job &r, Body &answer) {
     FirmwareSaid(why);
 }
 
+bool ReadLocal(sync::Store s, sync::Copy *out, uint8_t seed_id[sync::kSeedIdSize], size_t *size);
+
 // POST /api/device/status (signed in first when the token is out); a 401
 // signs in again once. The answer: the server's clock and the update.
 void SendStatus(const Job &r, Body &answer) {
