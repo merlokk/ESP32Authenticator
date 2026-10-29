@@ -36,16 +36,17 @@ void Unlock();
 // A random PNG from /sdcard/wallpapers (wallpaper_logic.h), dithered to 4
 // grey levels where the panel has them (`grey` false: B/W), full refresh;
 // blocks for seconds. The caller holds Lock, or the ui task may draw over it.
-// ESP_ERR_NOT_FOUND: no folder or no PNG in it.
+// No folder, no PNG in it or one that does not decode: the project's name
+// and version on white instead (an e-ink that is off must not look on).
 esp_err_t ShowWallpaper(bool grey = true);
 // LVGL's frames kept off the panel (a wallpaper on it) or let through again;
 // holding waits for a refresh under way. ShowWallpaper holds (power-off
 // never lets go); the next LVGL change after a release redraws it all.
 void HoldPanel(bool hold);
 // Console `ui wallpaper`: ShowWallpaper in a task of its own (under Lock),
-// waits for it; `shown` is the file. The device stays on; the next LVGL
-// change draws over it.
-esp_err_t PreviewWallpaper(bool grey, const char **shown);
+// waits for it; `shown` is the file. `card`: the built-in one whatever the
+// card holds. The device stays on; the next LVGL change draws over it.
+esp_err_t PreviewWallpaper(bool grey, const char **shown, bool card = false);
 
 // The next frame's refresh (ui_logic.h Refresh: full when a dialog appears,
 // fast for a PIN dot), merged with the frames that go out with it. ui task,

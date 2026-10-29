@@ -106,11 +106,12 @@ int CmdOff(int argc, char **argv) {
 
 int CmdUi(int argc, char **argv) {
     config::WallpaperMode mode = config::Get().display.wallpaper;
-    if ((argc == 2 || (argc == 3 && config::ParseWallpaperMode(argv[2], &mode))) &&
+    const bool card = argc == 3 && strcmp(argv[2], "card") == 0;
+    if ((argc == 2 || card || (argc == 3 && config::ParseWallpaperMode(argv[2], &mode))) &&
         strcmp(argv[1], "wallpaper") == 0) {
         const char *shown = "";
         const esp_err_t err =
-            ui::PreviewWallpaper(mode == config::WallpaperMode::kGrey, &shown);
+            ui::PreviewWallpaper(mode == config::WallpaperMode::kGrey, &shown, card);
         printf("%s: %s\n", shown[0] != '\0' ? shown : "wallpaper", esp_err_to_name(err));
         return err == ESP_OK ? 0 : 1;
     }
@@ -681,14 +682,14 @@ const esp_console_cmd_t kCommands[] = {
     {
         .command = "ui",
         .help = "LVGL display: [info] size, refreshes, the last one, the ui task's free stack | "
-                "wallpaper [grey|bw]: draw a random power-off wallpaper now, as display.wallpaper in "
-                "config.json or as given (stays on) | demo prompt [n]: the FIDO2 prompt, made up (n accounts) | demo fido [n] / demo off: n (10) made-up keys in the "
+                "wallpaper [grey|bw|card]: draw a random power-off wallpaper now, as display.wallpaper in "
+                "config.json or as given (stays on; card: the built-in one, name and version) | demo prompt [n]: the FIDO2 prompt, made up (n accounts) | demo fido [n] / demo off: n (10) made-up keys in the "
                 "U2F / FIDO2 list, on the screen only | show list|settings|fido: that screen | "
                 "click <x> <y> [hold ms] / swipe <x0> <y0> <x1> <y1>: a made-up finger (portrait "
                 "px) | "
                 "key left|right|home: as the button | "
                 "screenshot: the screen as base64 (utils/screenshot.py makes a PNG)",
-        .hint = "[wallpaper [grey|bw] | show <screen> | key <key> | click <x> <y> [ms] | "
+        .hint = "[wallpaper [grey|bw|card] | show <screen> | key <key> | click <x> <y> [ms] | "
                 "swipe <x0> <y0> <x1> <y1> | "
                 "demo fido [n] | demo prompt [n] | demo off | screenshot]",
         .func = &CmdUi,

@@ -57,7 +57,7 @@ a device with real secrets; turn both off after a run.
 | `touch watch [s]` / `keys watch [s]` | raw GT911 frames / button events (pressed, released, long, click xN) |
 | `led <colour> [effect] [s]`, `light <1..100>` | LED, frontlight |
 | `battery`, `battery regs` | gauge, charger |
-| `ui wallpaper [grey\|bw]` | a power-off wallpaper drawn now |
+| `ui wallpaper [grey\|bw\|card]` | a power-off wallpaper drawn now (`card`: the built-in one, shown with no PNG) |
 | `off wake <s>` | power-off and a timer wake (the kept PIN: `config power keep`) |
 | `date sync`, `wifi ping` | time server, internet check |
 | `ble kb "text"` (`utils/ble.py kb`) | typing on the connected host (US layout) |

@@ -41,7 +41,7 @@ Firmware: C/C++ on **ESP-IDF**.
 the vault is locked, GT911 touch as the pointer, `ui`); power-off
   (Power held / x3 locked / idle `power.idleMinutes` / `off`): a random PNG from
   `/sdcard/wallpapers` (dithered to 4 grey levels on
-  the UC8179 or B/W, `display.wallpaper`), deep
+  the UC8179 or B/W, `display.wallpaper`; none: the name and version), deep
   sleep, Power wakes; the vault key kept in RTC memory through the sleep for
   `power.keepPinHours` (no PIN after the wake);
   password records (site/user/password/TOTP) in `vault.bin` with
