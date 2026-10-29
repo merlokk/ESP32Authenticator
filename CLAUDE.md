@@ -106,6 +106,7 @@ Testing on the board (console, screen screenshots and made-up touches,
 ## Hardware
 
 Pinout, display controllers, devices: [hardware.md](hardware.md).
+USB-locked X4 Pro (flashing via CrossPoint): [hardware-locked.md](hardware-locked.md).
 
 ## Sources
 

@@ -93,7 +93,8 @@ Power-up order: GPIO1 HIGH → GPIO2 LOW (touch) → GPIO5 pulse (SD).
 ## eFuse: flashing switches
 
 Burned bits cannot be cleared. Some X4 Pro units ship with flashing disabled;
-check with `hwinfo` / `efuse`. Our unit (2026-10): all of these 0, secure boot
+check with `hwinfo` / `efuse`; installing on one:
+[hardware-locked.md](hardware-locked.md). Our unit (2026-10): all of these 0, secure boot
 and flash encryption off, key blocks empty; BLOCK3 (user data) holds the
 factory serial (`X4CB02EN…`).
 
