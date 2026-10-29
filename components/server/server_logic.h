@@ -583,9 +583,13 @@ struct Report {
     int battery;      // percent; -1: none (left out)
     int64_t uptime;   // seconds since the boot
     int64_t time;     // the clock; 0: not set
+    uint32_t passwords_version;  // vault.bin's header; 0: no store (left out)
+    uint32_t passkeys_version;   // fido.bin's
+    bool has_seed;               // a seed phrase on the device (else seedId left out)
+    uint8_t seed_id[4];          // SHA-256(seed entropy)[0..4], as in the store headers
 };
 
-inline constexpr size_t kStatusBodySize = 256;
+inline constexpr size_t kStatusBodySize = 320;
 
 // The JSON body. Its length, 0 when it does not fit.
 constexpr size_t StatusBody(const Report &r, char *out, size_t size) {
@@ -599,8 +603,25 @@ constexpr size_t StatusBody(const Report &r, char *out, size_t size) {
         ok = PutRaw(",\"battery\":", out, size, &n) && PutNumber(r.battery, out, size, &n);
     }
     ok = ok && PutRaw(",\"uptime\":", out, size, &n) && PutNumber(r.uptime, out, size, &n) &&
-         PutRaw(",\"time\":", out, size, &n) && PutNumber(r.time, out, size, &n) &&
-         PutRaw("}", out, size, &n);
+         PutRaw(",\"time\":", out, size, &n) && PutNumber(r.time, out, size, &n);
+    if (ok && r.passwords_version != 0) {
+        ok = PutRaw(",\"passwordsVersion\":", out, size, &n) &&
+             PutNumber(r.passwords_version, out, size, &n);
+    }
+    if (ok && r.passkeys_version != 0) {
+        ok = PutRaw(",\"passkeysVersion\":", out, size, &n) &&
+             PutNumber(r.passkeys_version, out, size, &n);
+    }
+    if (ok && r.has_seed) {
+        constexpr char kHex[] = "0123456789abcdef";
+        char seed[2 * sizeof r.seed_id + 1] = {};
+        for (size_t i = 0; i < sizeof r.seed_id; ++i) {
+            seed[2 * i] = kHex[r.seed_id[i] >> 4];
+            seed[2 * i + 1] = kHex[r.seed_id[i] & 0xf];
+        }
+        ok = PutRaw(",\"seedId\":", out, size, &n) && PutString(seed, out, size, &n);
+    }
+    ok = ok && PutRaw("}", out, size, &n);
     return ok ? n : 0;
 }
 

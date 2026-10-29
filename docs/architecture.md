@@ -777,7 +777,9 @@ account on the authentication server (`config.json` `server.host`).
   `expires_in` (30 s early: signed in again), never logged; a 401 signs in
   again once.
 - Status: `POST /api/device/status` (`firmware`, `board` `x4pro` / `dev`,
-  `mac`, `wifi`, `ble`, `battery`, `uptime`, `time`), signed in first. Its
+  `mac`, `wifi`, `ble`, `battery`, `uptime`, `time`, the stores' header
+  versions `passwordsVersion` / `passkeysVersion`, the phrase's `seedId`),
+  signed in first. Its
   own task (`server_due`, 4 KB, a look every 5 s): the first once registered
   with a client id, Wi-Fi online and the clock set (at the boot, or when
   Wi-Fi first connects), then every `server.statusMinutes` (0 never, 1, 10,

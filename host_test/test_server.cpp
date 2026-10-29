@@ -1,5 +1,6 @@
 // The authentication server's pure side (components/server/server_logic.h).
 
+#include <cstdint>
 #include <cstring>
 
 #include "server_logic.h"
@@ -364,6 +365,15 @@ void test_server_status(void) {
         R"("wifi":true,"ble":false,"battery":87,"uptime":3600,"time":1793128050})",
         body);
     TEST_ASSERT_EQUAL_UINT(std::strlen(body), n);
+    server::Report stores = r;
+    stores.passwords_version = 57;
+    stores.passkeys_version = 328;
+    stores.has_seed = true;
+    const uint8_t seed[4] = {0x4c, 0x8b, 0xe8, 0x6e};
+    std::memcpy(stores.seed_id, seed, sizeof seed);
+    server::StatusBody(stores, body, sizeof body);
+    TEST_ASSERT_NOT_NULL(std::strstr(
+        body, R"("time":1793128050,"passwordsVersion":57,"passkeysVersion":328,"seedId":"4c8be86e"})"));
     server::Report none = r;
     none.battery = -1;
     none.time = 0;
@@ -375,6 +385,14 @@ void test_server_status(void) {
     std::memset(version, 'v', 32);
     version[32] = '\0';
     none.firmware = version;
+    TEST_ASSERT_GREATER_THAN(0, server::StatusBody(none, body, sizeof body));
+    // ... with everything at its longest.
+    none.battery = 100;
+    none.uptime = INT64_MAX;
+    none.time = INT64_MAX;
+    none.passwords_version = UINT32_MAX;
+    none.passkeys_version = UINT32_MAX;
+    none.has_seed = true;
     TEST_ASSERT_GREATER_THAN(0, server::StatusBody(none, body, sizeof body));
 
     char update[server::kVersionSize];

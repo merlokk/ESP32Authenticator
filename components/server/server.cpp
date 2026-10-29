@@ -768,6 +768,14 @@ void SendStatus(const Job &r, Body &answer) {
     Mac(mac);
     Report report = r.report;
     report.mac = mac;
+    // The stores' versions from their headers (known while locked too).
+    for (const sync::Store s : sync::kAll) {
+        sync::Copy local;
+        uint8_t seed[sync::kSeedIdSize];
+        size_t size = 0;
+        const uint32_t v = ReadLocal(s, &local, seed, &size) ? local.version : 0;
+        (s == sync::Store::kVault ? report.passwords_version : report.passkeys_version) = v;
+    }
     char body[kStatusBodySize];
     const size_t body_len = StatusBody(report, body, sizeof body);
     char url[kUrlSize];
