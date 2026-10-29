@@ -1,0 +1,80 @@
+# On an x.y.z git tag (no "v"): builds the firmware with ESP-IDF and puts the app
+# image (the one OTA takes) and its SHA-256 into the GitHub release of that tag.
+#   esp32-authenticator-<tag>.bin, esp32-authenticator-<tag>.bin.sha256
+
+name: Release
+
+on:
+  push:
+    tags: ["[0-9]+.[0-9]+.[0-9]+"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: espressif/idf:v6.0.2
+    defaults:
+      run:
+        shell: bash
+    steps:
+      # cmake/version.cmake runs git describe: the tags and the history back to the last one.
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      # Only the parts of LionKey the build uses (not tinyusb), as in build.md.
+      - name: Submodules
+        run: |
+          git config --global --add safe.directory '*'
+          git submodule update --init lib/lionkey
+          git -C lib/lionkey submodule update --init lib/tinycbor crypto/micro-ecc crypto/tiny-AES-c crypto/tinymt
+
+      - name: Build
+        run: |
+          . "$IDF_PATH/export.sh"
+          idf.py build
+
+      - name: Package
+        run: |
+          ver=$(python3 -c "import json; print(json.load(open('build/project_description.json'))['project_version'])")
+          name="esp32-authenticator-${GITHUB_REF_NAME}.bin"
+          echo "Firmware version: $ver"
+          if [ "$GITHUB_REF_TYPE" = tag ] && [[ "$ver" != "${GITHUB_REF_NAME}-0-g"* ]]; then
+            echo "::error::the image version $ver is not the tag $GITHUB_REF_NAME"; exit 1
+          fi
+          mkdir dist
+          cp build/esp32-authenticator.bin "dist/$name"
+          (cd dist && sha256sum "$name" > "$name.sha256")
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: firmware
+          path: dist/
+
+  release:
+    needs: build
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v5
+        with:
+          name: firmware
+          path: dist
+
+      # A release made by hand for the tag gets the files; else a new one with generated notes.
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          tag="$GITHUB_REF_NAME"
+          if gh release view "$tag" > /dev/null 2>&1; then
+            gh release upload "$tag" dist/* --clobber
+          else
+            gh release create "$tag" dist/* --title "$tag" --generate-notes --verify-tag
+          fi

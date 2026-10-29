@@ -49,6 +49,11 @@ e.g. `0.2.0-3-gabc1234` (no tag: `version.txt` and the commit count)
 (`cmake/version.cmake`). It is computed at configure time: run
 `idf.py reconfigure` to pick up a new commit.
 
+Release: pushing an `x.y.z` tag (`git tag 0.6.0 && git push origin 0.6.0`) runs
+`.github/workflows/release.yml`: ESP-IDF v6.0.2 in Docker builds the app and puts
+`esp32-authenticator-<tag>.bin` (the OTA image) and its `.sha256` into the
+tag's GitHub release (created with generated notes if missing).
+
 ## Utils
 
 `utils/` (Python 3, `pip install -r utils/requirements.txt`): console helpers (`console.py`: any command or the raw log; `spiffs.py`; `wallpaper.py`; `firmware.py`; `ble.py`; `screenshot.py`), see [utils/README.md](utils/README.md).
