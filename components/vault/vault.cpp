@@ -939,6 +939,15 @@ Error MakeWipe(const char *pin, char out[kWipeTextSize]) {
 
 State GetState() { return g_state; }
 
+bool SeedId(uint8_t out[seed::kIdSize]) {
+    if (g_state == State::kOff) {
+        return false;
+    }
+    Guard guard;
+    memcpy(out, g_seed.id, seed::kIdSize);
+    return g_have_seed;
+}
+
 Info GetInfo() {
     Info info = {};
     info.state = g_state;

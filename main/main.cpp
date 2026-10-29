@@ -984,9 +984,7 @@ const server::Hooks kServerSchedule = {
             r->battery = battery::Level();
             r->uptime = esp_timer_get_time() / 1000000;
             r->time = now >= 1704067200 ? static_cast<int64_t>(now) : 0;
-            const vault::Info info = vault::GetInfo();
-            r->has_seed = info.seed_set;
-            memcpy(r->seed_id, info.seed_id, sizeof r->seed_id);
+            r->has_seed = vault::SeedId(r->seed_id);  // the stack is in PSRAM: no GetInfo
         },
     .sync_minutes = ServerSyncMinutes,
     .store_path = SyncPath,

@@ -147,6 +147,9 @@ Error CopySeed(const char *pin, char out[seed::kTextSize]);
 Error MakeWipe(const char *pin, char out[kWipeTextSize]);
 
 Info GetInfo();
+// The seed phrase's id into `out`; false: none. Memory only (no flash or SD:
+// for a task whose stack is in PSRAM).
+bool SeedId(uint8_t out[seed::kIdSize]);
 // The state alone, without the lock (Unlock holds it for the key derivation,
 // a second or more): for a screen that polls.
 State GetState();
