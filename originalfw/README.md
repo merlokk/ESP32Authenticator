@@ -29,7 +29,8 @@ v5.3.1, COM7, USB-Serial/JTAG). Nothing was written to flash or eFuses.
 
 NVS (`hw_calib`, `user_config`): screenType=1, screenId=1, region=2,
 language=1, timeZone=-5, pwrTimingVer=2, Wi-Fi SSID/password empty, plus PHY
-calibration. SPIFFS holds only `/README.md` (default placeholder).
+calibration. SPIFFS holds only `/README.md` (default placeholder, 38 bytes: "spiffs
+分区默认文件夹 根目录"; the same on the locked CN unit).
 
 ## Partition table (0x8000)
 

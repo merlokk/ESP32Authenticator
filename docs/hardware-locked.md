@@ -74,8 +74,13 @@ only):
   `wallpMode` 3, `otaPromptDay` 2026281; `phy` calibration. Ours beside
   them: `vault` / `fido` (`store_ver`), `nimble_bond`. `nvs rm user_config
   <key>` drops one (the stock Wi-Fi: `sta_ssid`, `sta_pwd`, `wifi_creds`).
-- SPIFFS: the stock `README.md` (38 bytes), then ours: `seed.txt`,
-  `config.json`.
+- SPIFFS: the stock `/README.md` in the root (38 bytes, UTF-8): "spiffs
+  分区默认文件夹 根目录" ("spiffs partition default folder, root
+  directory"), a placeholder so the partition is not empty. The same bytes on
+  both units, CN and EN (the open unit's backup,
+  `originalfw/parts/spiffs_0xfd0000.bin`): not by region. Ours beside it:
+  `seed.txt`, `config.json`. Nothing reads it; `spiffs rm README.md` is
+  harmless.
 
 ## What the lock is
 
