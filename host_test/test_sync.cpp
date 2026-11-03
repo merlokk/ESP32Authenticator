@@ -112,6 +112,12 @@ void test_sync_due(void) {
     TEST_ASSERT_FALSE(SyncDue(true, 10, false, false, 140, 90, 50));  // failed: a minute
     TEST_ASSERT_TRUE(SyncDue(true, 10, false, false, 150, 90, 50));
     TEST_ASSERT_TRUE(SyncDue(true, 10, false, false, 150, 90, -1));
+    // Edits in a row: the sync waits until no write came for kSettleSeconds.
+    TEST_ASSERT_FALSE(SyncDue(true, 10, false, true, 100, 90, 95, 95));
+    TEST_ASSERT_FALSE(SyncDue(true, 10, false, true, 109, 90, 95, 100));
+    TEST_ASSERT_TRUE(SyncDue(true, 10, false, true, 110, 90, 95, 100));
+    TEST_ASSERT_FALSE(SyncDue(true, 10, false, false, 30, -1, -1, 25));  // the first, too
+    TEST_ASSERT_TRUE(SyncDue(true, 10, false, false, 35, -1, -1, 25));
 }
 
 void test_sync_synced_round_trip(void) {

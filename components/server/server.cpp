@@ -926,9 +926,27 @@ void SaveSynced(sync::Store s, const sync::Copy &c) {
     }
 }
 
-// Our file's header: the copy, its seed id and the file's size. False: no
-// file here, or not an encrypted store.
+// A store file's header from its first bytes (`got` of them, the file
+// `size` long): the copy and its seed id. False: not an encrypted store.
+bool HeaderOf(const uint8_t *head, size_t got, size_t size, sync::Store s, sync::Copy *out,
+              uint8_t seed_id[sync::kSeedIdSize]) {
+    *out = sync::Copy();
+    storefile::Header h;
+    if (!storefile::Decode(head, got, size, static_cast<storefile::Kind>(sync::KindOf(s)), &h) ||
+        h.cipher != storefile::Cipher::kAesGcm) {
+        return false;
+    }
+    out->has = true;
+    memcpy(out->store_id, h.store_id, sizeof out->store_id);
+    out->version = h.version;
+    memcpy(out->nonce, h.nonce, sizeof out->nonce);
+    memcpy(out->seed_id, h.seed_id, sizeof out->seed_id);
+    memcpy(seed_id, h.seed_id, sync::kSeedIdSize);
+    return true;
+}
+
 // A store file's header at `path`: the copy, its seed id and the file's size.
+// False: no file there, or not an encrypted store.
 bool ReadHeader(const char *path, sync::Store s, sync::Copy *out,
                 uint8_t seed_id[sync::kSeedIdSize], size_t *size) {
     *out = sync::Copy();
@@ -943,18 +961,9 @@ bool ReadHeader(const char *path, sync::Store s, sync::Copy *out,
     uint8_t head[storefile::kHeaderSize];
     const size_t got = fread(head, 1, sizeof head, f);
     fclose(f);
-    storefile::Header h;
-    if (!storefile::Decode(head, got, static_cast<size_t>(st.st_size),
-                           static_cast<storefile::Kind>(sync::KindOf(s)), &h) ||
-        h.cipher != storefile::Cipher::kAesGcm) {
+    if (!HeaderOf(head, got, static_cast<size_t>(st.st_size), s, out, seed_id)) {
         return false;
     }
-    out->has = true;
-    memcpy(out->store_id, h.store_id, sizeof out->store_id);
-    out->version = h.version;
-    memcpy(out->nonce, h.nonce, sizeof out->nonce);
-    memcpy(out->seed_id, h.seed_id, sizeof out->seed_id);
-    memcpy(seed_id, h.seed_id, sync::kSeedIdSize);
     *size = static_cast<size_t>(st.st_size);
     return true;
 }
@@ -989,19 +998,48 @@ void SetWaiting(sync::Store s, const sync::Copy &server, bool other,
 
 enum class Outcome : uint8_t { kInSync, kUploaded, kTaken, kWaits, kFailed };
 
-// POST /api/device/stores/files: our file as it is (read whole into PSRAM,
-// up to 256 KB). 200 kept; 409 not newer (`*theirs` the server's version).
-int Upload(const char *host, const char *path, size_t size, Body &answer, char *said,
-           size_t said_size, uint32_t *theirs) {
-    if (size > sync::kMaxFileBytes) {
-        snprintf(said, said_size, "too large for the server");
-        return -3;
-    }
-    char *data = static_cast<char *>(Psram(size));
-    FILE *f = data != nullptr ? fopen(path, "rb") : nullptr;
-    const bool read = f != nullptr && fread(data, 1, size, f) == size;
-    if (f != nullptr) {
-        fclose(f);
+// POST /api/device/stores/files: our file as it is now (read whole into
+// PSRAM, up to 256 KB), its header into `*sent`: the copy the server gets,
+// maybe newer than the one the sync decided on (a write since heads).
+// 200 kept; 409 not newer (`*theirs` the server's version).
+int Upload(const char *host, sync::Store s, Body &answer, char *said, size_t said_size,
+           sync::Copy *sent, uint32_t *theirs) {
+    const char *path = hooks->store_path(s);
+    // A write swaps the file (a new one renamed over it): the header read
+    // again after the bytes shows one that came meanwhile; then once more.
+    char *data = nullptr;
+    size_t call_size = 0;
+    bool read = false;
+    for (int attempt = 0; attempt < 2 && !read; ++attempt) {
+        free(data);
+        data = nullptr;
+        sync::Copy before;
+        sync::Copy got;
+        sync::Copy after;
+        uint8_t seed[sync::kSeedIdSize];
+        size_t size = 0;
+        size_t size_after = 0;
+        if (!ReadHeader(path, s, &before, seed, &size)) {
+            break;
+        }
+        if (size > sync::kMaxFileBytes) {
+            snprintf(said, said_size, "too large for the server");
+            return -3;
+        }
+        data = static_cast<char *>(Psram(size));
+        FILE *f = data != nullptr ? fopen(path, "rb") : nullptr;
+        read = f != nullptr && fread(data, 1, size, f) == size && fgetc(f) == EOF;
+        if (f != nullptr) {
+            fclose(f);
+        }
+        read = read &&
+               HeaderOf(reinterpret_cast<const uint8_t *>(data), size, size, s, &got, seed) &&
+               ReadHeader(path, s, &after, seed, &size_after) && size_after == size &&
+               sync::SameWrite(got, after);
+        if (read) {
+            *sent = got;
+            call_size = size;
+        }
     }
     char url[kSyncUrlSize];
     if (!read || !Url(host, "/api/device/stores/files", url, sizeof url)) {
@@ -1012,7 +1050,7 @@ int Upload(const char *host, const char *path, size_t size, Body &answer, char *
     Call call = {url};
     call.type = "application/octet-stream";
     call.body = data;
-    call.body_len = size;
+    call.body_len = call_size;
     call.answer = &answer;
     const int code = SignedCall(call, host, answer, said, said_size);
     free(data);
@@ -1077,14 +1115,17 @@ int Download(const char *host, const uint8_t store_id[sync::kStoreIdSize],
     return code;
 }
 
-// Our copy up; 200: the synced one.
-Outcome Send(const char *host, sync::Store s, const sync::Copy &local, size_t size, Body &answer,
-             char *said, size_t said_size) {
+// Our copy up; 200: the synced one is the copy sent (not `local`, the one
+// heads saw: a write since then went up, and kept as synced would make the
+// next write look like a conflict).
+Outcome Send(const char *host, sync::Store s, const sync::Copy &local, Body &answer, char *said,
+             size_t said_size) {
     uint32_t theirs = 0;
-    const int code = Upload(host, hooks->store_path(s), size, answer, said, said_size, &theirs);
+    sync::Copy sent = local;
+    const int code = Upload(host, s, answer, said, said_size, &sent, &theirs);
     if (code == 200) {
-        SaveSynced(s, local);
-        SetStore(s, sync::Phase::kInSync, local.version);
+        SaveSynced(s, sent);
+        SetStore(s, sync::Phase::kInSync, sent.version);
         return Outcome::kUploaded;
     }
     if (code == 409) {
@@ -1094,19 +1135,19 @@ Outcome Send(const char *host, sync::Store s, const sync::Copy &local, size_t si
             Locked l;
             was = synced[Index(s)];
         }
-        if (sync::SameWrite(local, was)) {
+        if (sync::SameWrite(sent, was)) {
             snprintf(said, said_size, "the server has a newer copy: again in a minute");
-            SetStore(s, sync::Phase::kFailed, local.version);
+            SetStore(s, sync::Phase::kFailed, sent.version);
             return Outcome::kFailed;
         }
-        sync::Copy server = local;
+        sync::Copy server = sent;
         server.version = theirs;
         memset(server.nonce, 0, sizeof server.nonce);
         SetWaiting(s, server, false);
-        SetStore(s, sync::Phase::kConflict, local.version, theirs);
+        SetStore(s, sync::Phase::kConflict, sent.version, theirs);
         return Outcome::kWaits;
     }
-    SetStore(s, sync::Phase::kFailed, local.version);
+    SetStore(s, sync::Phase::kFailed, sent.version);
     return Outcome::kFailed;
 }
 
@@ -1133,6 +1174,19 @@ Outcome Take(const char *host, sync::Store s, const sync::Copy &local,
     uint8_t got_seed[sync::kSeedIdSize];
     size_t got_size = 0;
     const bool read = ReadHeader(dl, s, &got, got_seed, &got_size);
+    if (!force) {
+        // A write here since heads (or during the download): ours changed
+        // too, so not taken over it; the next sync decides again.
+        sync::Copy now;
+        uint8_t seed[sync::kSeedIdSize];
+        size_t size = 0;
+        if (!ReadLocal(s, &now, seed, &size) || !sync::SameWrite(now, local)) {
+            remove(dl);
+            snprintf(said, said_size, "changed here meanwhile: again");
+            SetStore(s, sync::Phase::kFailed, local.version, server.version, other);
+            return Outcome::kFailed;
+        }
+    }
     const Taken t = hooks->take(s, dl, server.store_id, force, pin, said, said_size);
     remove(dl);
     if (t == Taken::kOk) {
@@ -1176,7 +1230,7 @@ Outcome Take(const char *host, sync::Store s, const sync::Copy &local,
 
 // One store after heads: what Decide says, carried out.
 Outcome SyncOne(const char *host, sync::Store s, const sync::Copy &local,
-                const uint8_t seed_id[sync::kSeedIdSize], size_t size, const sync::Copy &server,
+                const uint8_t seed_id[sync::kSeedIdSize], const sync::Copy &server,
                 bool open, Body &answer, char *said, size_t said_size) {
     sync::Copy was;
     {
@@ -1230,7 +1284,7 @@ Outcome SyncOne(const char *host, sync::Store s, const sync::Copy &local,
             SetStore(s, sync::Phase::kInSync, local.version);
             return Outcome::kInSync;
         case sync::Step::kUpload:
-            return Send(host, s, local, size, answer, said, said_size);
+            return Send(host, s, local, answer, said, said_size);
         case sync::Step::kDownload:
             if (!open) {
                 SetStore(s, sync::Phase::kNewer, local.version, server.version);
@@ -1350,7 +1404,7 @@ void Sync(const Job &r, Body &answer) {
             continue;
         }
         char one[sizeof said - 12] = "";  // room for the store's name
-        o[n] = SyncOne(r.host, s, local[i], seed[i], size[i], server[i], open, answer, one,
+        o[n] = SyncOne(r.host, s, local[i], seed[i], server[i], open, answer, one,
                        sizeof one);
         if (one[0] != '\0' && (o[n] == Outcome::kFailed || said[0] == '\0')) {
             snprintf(said, sizeof said, "%s: %s", sync::StoreName(s), one);
@@ -1424,7 +1478,7 @@ void Resolve(const Job &r, Body &answer) {
         if (!ok) {
             snprintf(said, sizeof said, "cannot write our copy: unlock?");
         } else {
-            o = Send(r.host, s, local, size, answer, said, sizeof said);
+            o = Send(r.host, s, local, answer, said, sizeof said);
         }
     } else {
         // Taken by hand: also a version not above ours.
@@ -1551,6 +1605,11 @@ StaticTask_t scheduler_task;
 EXT_RAM_BSS_ATTR StackType_t scheduler_stack[kSchedulerStack / sizeof(StackType_t)];
 
 void Scheduler(void *) {
+    // The stores' versions at the last look, and when one last changed: a
+    // change syncs once the writes stop (sync::kSettleSeconds).
+    uint32_t last_version[sync::kStores] = {};
+    bool looked = false;
+    int64_t written = -1;
     for (;;) {
         vTaskDelay(pdMS_TO_TICKS(kTickMs));
         bool registered;
@@ -1573,6 +1632,11 @@ void Scheduler(void *) {
         for (const sync::Store s : sync::kAll) {
             version[Index(s)] = hooks->store_version(s);
         }
+        if (looked && memcmp(version, last_version, sizeof version) != 0) {
+            written = Uptime();
+        }
+        memcpy(last_version, version, sizeof last_version);
+        looked = true;
         const bool open = hooks->open();
         bool changed = open && !seen_open;
         bool by_hand = false;
@@ -1596,7 +1660,7 @@ void Scheduler(void *) {
             sync_done_now = sync_done;
         }
         if (sync::SyncDue(ready, hooks->sync_minutes(), by_hand, changed, Uptime(),
-                          sync_tried_now, sync_done_now)) {
+                          sync_tried_now, sync_done_now, written)) {
             StartSync(false);
         }
     }

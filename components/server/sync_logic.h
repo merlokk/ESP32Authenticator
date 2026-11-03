@@ -195,16 +195,26 @@ constexpr bool SeenBySync(uint32_t now, uint32_t read, const Copy &synced) {
     return now == read || (synced.has && synced.version == now);
 }
 
+// A change waits this long after the last write seen: edits in a row (a
+// record added, then moved) go up as one sync, not one each while the next
+// is being written.
+inline constexpr int64_t kSettleSeconds = 10;
+
 // `minutes`: server.syncMinutes (0: never on its own); `by_hand`: a store
 // waits for a person (ByHand): nothing on its own until then; `changed`: a
-// store changed here (or the PIN came) since the last one started. `now`,
-// `tried` (the last start, -1 none), `done` (the last that went through, -1
-// none since the boot): monotonic seconds. The first once ready, then on a
-// change and every `minutes`; a failed one again in kRetrySeconds.
+// store changed here (or the PIN came) since the last one started;
+// `written`: when a store's version was last seen to change (-1 none).
+// `now`, `tried` (the last start, -1 none), `done` (the last that went
+// through, -1 none since the boot): monotonic seconds. The first once ready,
+// then on a change (kSettleSeconds after the last write) and every
+// `minutes`; a failed one again in kRetrySeconds.
 constexpr bool SyncDue(bool ready, uint8_t minutes, bool by_hand, bool changed, int64_t now,
-                       int64_t tried, int64_t done) {
+                       int64_t tried, int64_t done, int64_t written = -1) {
     if (!ready || minutes == 0 || by_hand) {
         return false;
+    }
+    if (written >= 0 && now - written < kSettleSeconds) {
+        return false;  // still being edited
     }
     if (tried < 0 || changed) {
         return true;

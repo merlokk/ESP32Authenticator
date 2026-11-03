@@ -806,7 +806,10 @@ account on the authentication server (`config.json` `server.host`).
   changed on another device): its PIN asked; this device takes that key for
   both stores (a PIN change's commit), so its PIN becomes that one. Runs in
   the server's task: the first once registered and online, then after each
-  change (the stores' versions, the PIN coming in: a look every 5 s) and
+  change (the stores' versions, the PIN coming in: a look every 5 s; 10 s
+  after the last write, so edits in a row go as one; the upload sends the
+  file as it is then and keeps its header as the synced copy, a download
+  is not taken over a write made since heads) and
   every `server.syncMinutes` (0: only by hand), a failed one again in a
   minute (a write while it runs, or one that taking a copy makes, starts
   another); a store waiting for a person stops it until resolved: Server >
