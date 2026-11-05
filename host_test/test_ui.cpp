@@ -396,8 +396,9 @@ void test_nav_swipes(void) {
     TEST_ASSERT_FALSE(n.Swipe(Gesture::kDown));  // not from the top
     TEST_ASSERT_TRUE(n.Swipe(Gesture::kDownFromTop));
     TEST_ASSERT_TRUE(n.mode() == Mode::kSettings);
-    // In Settings the buttons and tabs do nothing; a swipe up closes it.
-    TEST_ASSERT_FALSE(n.Apply(ui::nav::Input::kRight));
+    // In Settings Left / Right flip its main page (test_settings_pages), its
+    // bar's middle does nothing; a swipe up closes it.
+    TEST_ASSERT_TRUE(n.Apply(ui::nav::Input::kRight));
     TEST_ASSERT_FALSE(n.Tab(1));
     TEST_ASSERT_FALSE(n.Swipe(Gesture::kDownFromTop));
     TEST_ASSERT_TRUE(n.Swipe(Gesture::kUp));
@@ -656,10 +657,40 @@ void test_settings_pages(void) {
     n.OpenSettings(4);
     TEST_ASSERT_TRUE(n.Open(Mode::kSettings));  // the console: the main page
     TEST_ASSERT_EQUAL_UINT8(0, n.settings_page());
+    // The main page's two pages: Left / Right and the bar's arrows flip them;
+    // kept under a row's page, back to the first when Settings closes.
+    TEST_ASSERT_TRUE(n.SettingsPaged());
+    TEST_ASSERT_TRUE(n.Apply(ui::nav::Input::kRight));
+    TEST_ASSERT_EQUAL_UINT8(1, n.settings_main());
+    TEST_ASSERT_TRUE(n.Apply(ui::nav::Input::kRight));
+    TEST_ASSERT_EQUAL_UINT8(0, n.settings_main());
+    TEST_ASSERT_TRUE(n.Tab(0));
+    TEST_ASSERT_EQUAL_UINT8(1, n.settings_main());
+    TEST_ASSERT_FALSE(n.Tab(1));
+    n.OpenSettings(static_cast<uint8_t>(st::Page::kAbout));
+    TEST_ASSERT_FALSE(n.SettingsPaged());
+    TEST_ASSERT_FALSE(n.Apply(ui::nav::Input::kLeft));
+    n.Back();
+    TEST_ASSERT_EQUAL_UINT8(1, n.settings_main());
+    n.Back();
+    TEST_ASSERT_TRUE(n.mode() == Mode::kList);
+    TEST_ASSERT_EQUAL_UINT8(0, n.settings_main());
+    n.Open(Mode::kSettings);
 
     TEST_ASSERT_EQUAL_STRING("Wi-Fi", st::Title(st::kRows[0]));
-    TEST_ASSERT_EQUAL_UINT8(7, st::kRowCount);
-    TEST_ASSERT_TRUE(st::kRows[4] == st::Page::kServer);
+    TEST_ASSERT_EQUAL_UINT8(9, st::kRowCount);
+    TEST_ASSERT_TRUE(st::kRows[2] == st::Page::kServer);
+    TEST_ASSERT_TRUE(st::kRows[4] == st::Page::kUsb);
+    TEST_ASSERT_TRUE(st::kRows[8] == st::Page::kAbout);
+    // Two pages: the frontlight and 7 rows, then the rest.
+    TEST_ASSERT_EQUAL_UINT8(0, st::RowsBegin(0));
+    TEST_ASSERT_EQUAL_UINT8(7, st::RowsEnd(0));
+    TEST_ASSERT_EQUAL_UINT8(7, st::RowsBegin(1));
+    TEST_ASSERT_EQUAL_UINT8(9, st::RowsEnd(1));
+    TEST_ASSERT_TRUE(st::PageAction(st::Page::kPower) == st::Action::kPowerOff);
+    TEST_ASSERT_TRUE(st::PageAction(st::Page::kDisplay) == st::Action::kNone);
+    TEST_ASSERT_TRUE(st::IsChoice(st::Page::kSecurityChoice));
+    TEST_ASSERT_FALSE(st::IsChoice(st::Page::kSecurity));
     TEST_ASSERT_TRUE(st::PageAction(st::Page::kServer) == st::Action::kServerRegister);
     TEST_ASSERT_EQUAL_STRING("Register", st::ActionText(st::Action::kServerRegister));
     TEST_ASSERT_TRUE(st::Parent(st::Page::kServerEmail) == st::Page::kServer);
@@ -936,6 +967,16 @@ void test_display_view(void) {
     namespace dv = ui::display_view;
     namespace st = ui::settings;
     TEST_ASSERT_TRUE(st::Parent(st::Page::kDisplayChoice) == st::Page::kDisplay);
+    // Each setting on its page; its choices go back there.
+    TEST_ASSERT_TRUE(dv::PageOf(dv::Setting::kUsb) == st::Page::kUsb);
+    TEST_ASSERT_TRUE(dv::PageOf(dv::Setting::kKeepPin) == st::Page::kSecurity);
+    TEST_ASSERT_TRUE(dv::PageOf(dv::Setting::kHoldRail) == st::Page::kPower);
+    TEST_ASSERT_TRUE(dv::PageOf(dv::Setting::kWallpaper) == st::Page::kDisplay);
+    for (const dv::Setting s : dv::kSettings) {
+        TEST_ASSERT_TRUE(st::IsChoice(dv::ChoicePage(s)));
+        TEST_ASSERT_TRUE(st::Parent(dv::ChoicePage(s)) == dv::PageOf(s));
+    }
+    TEST_ASSERT_EQUAL_UINT8(4, dv::IndexOf(dv::Setting::kKeepPin));
     TEST_ASSERT_EQUAL_INT(3, dv::Index(dv::Setting::kIdle, 10));
     TEST_ASSERT_EQUAL_INT(0, dv::Index(dv::Setting::kKeepPin, 0));
     TEST_ASSERT_EQUAL_INT(-1, dv::Index(dv::Setting::kIdle, 7));
@@ -1112,7 +1153,7 @@ void test_web_view(void) {
     namespace st = ui::settings;
     TEST_ASSERT_TRUE(st::Parent(st::Page::kWebLogin) == st::Page::kWeb);
     TEST_ASSERT_TRUE(st::Parent(st::Page::kWeb) == st::Page::kWifi);
-    TEST_ASSERT_EQUAL_STRING("Devices", st::Title(st::kRows[2]));
+    TEST_ASSERT_EQUAL_STRING("Display", st::Title(st::kRows[5]));
     TEST_ASSERT_TRUE(wv::UserOk("admin"));
     TEST_ASSERT_FALSE(wv::UserOk(""));
     TEST_ASSERT_FALSE(wv::UserOk("a:b"));

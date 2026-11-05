@@ -18,7 +18,7 @@ Target and status. Screen design and the open questions: [x4-design.md](x4-desig
 | Sync with the authentication server (`vault.bin`, `fido.bin`), conflicts resolved by hand | done (Settings > Server > Sync, console `server sync`) |
 | Authentication server (`auth.merlokk.com`): registration, sign-in with the device's TOTP | device side done (Settings > Server, console `server`); the server is being written |
 | X4 Pro screen: status bar, credential list, pages, settings | status bar, the password list (pages, typing, TOTP), swipes, PIN pad, the U2F / FIDO2 list, Settings done |
-| Settings: frontlight, Wi-Fi | on the screen: frontlight, Wi-Fi (and the web site), Bluetooth, Devices (power, display, USB, touch calibration), security, date & time, about, Help (the "?" in the title: what the buttons do); also the console and the site |
+| Settings: frontlight, Wi-Fi | on the screen: frontlight, Wi-Fi (and the web site), Bluetooth, Server, Security, USB, Display (touch calibration), Power, date & time, about (two pages), Help (the "?" in the title: what the buttons do); also the console and the site |
 | Time: SNTP, zones, clock | done |
 | Battery: voltage, level, charging | done (CW2017 + charger STAT, console `battery`, BLE Battery Level, the status bar) |
 | Wi-Fi, configuration site, console | done |
@@ -345,8 +345,8 @@ waits). The touch reports the finger's moves too: a swipe down from the top
 quarter opens Settings (the frontlight, then pages; `settings_logic.h`, the
 texts and actions from `main.cpp` through `ui::SettingsHooks`; the Wi-Fi
 window: `wifi_view_logic.h`, `ui::WifiHooks`, the scan and the saves in the
-ui's own task; Bluetooth: `ble_view_logic.h`, `ui::BleHooks`; Devices
-(power, display, USB port, touch calibration): `display_view_logic.h`,
+ui's own task; Bluetooth: `ble_view_logic.h`, `ui::BleHooks`; USB, Display
+(touch calibration), Power and Security's PIN after sleep: `display_view_logic.h` (`PageOf`),
 `ui::DisplayHooks`; Date & time:
 `time_view_logic.h`, `ui::TimeHooks`; Security: `security_view_logic.h`,
 `ui::SecurityHooks`, the PINs only in the ui's own task's job, wiped after; Web site:
@@ -439,7 +439,7 @@ rest of the card stays read-only to the console.
 ## USB
 
 `devices/usb`: one port, three saved modes (`usb.mode`, `usb mode`,
-Settings > Devices > USB port) and the card reader for a while, switched
+Settings > USB > USB port) and the card reader for a while, switched
 at once, no restart; the host sees
 the old device leave and the new one arrive. `usb_logic.h` (pure): modes,
 product IDs, line endings.

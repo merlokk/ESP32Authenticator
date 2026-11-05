@@ -34,7 +34,7 @@ Firmware: C/C++ on **ESP-IDF**.
   `/sdcard/.authenticator` on the X4 Pro (no card: no stores); LVGL 9 on the e-ink panel (480x800 portrait, status bar, the password list in pages: a tap types
   the user / password / TOTP or shows the password; Settings (a "?" in the title: Help, the buttons; frontlight; Wi-Fi networks and
   the web site with its QR code and login; Bluetooth hosts and pairing;
-  Devices: power, display, USB port, touch calibration; security: PIN
+  USB port; Display: light, refreshes, touch calibration; Power; security: the stores, PIN
   change, wipe PIN, FIDO2 state and reset; date & time; About with
   Restart; dialogs in `dialog.h`) and the
   U2F / FIDO2 keys by swipes, deleted from their row; a swipe right: the

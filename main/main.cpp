@@ -471,7 +471,31 @@ void DescribeBluetooth(bool summary, char *out, size_t size) {
     }
 }
 
+// The main Settings page's rows for USB, Display and Power (their pages draw
+// their own rows: ui::DisplayHooks).
+void DescribeUsb(bool summary, char *out, size_t size) {
+    if (summary) {
+        ui::display_view::Label(ui::display_view::Setting::kUsb,
+                                static_cast<uint16_t>(usb::GetMode()), out, size);
+        char *note = strstr(out, " (");  // "Serial/JTAG (debug)": the row is narrow
+        if (note != nullptr) {
+            *note = '\0';
+        }
+    }
+}
+
 void DescribeDisplay(bool summary, char *out, size_t size) {
+    const uint16_t off = config::Get().frontlight.off_minutes;
+    if (summary) {
+        if (off == 0) {
+            snprintf(out, size, "light never off");
+        } else {
+            snprintf(out, size, "light off %u min", static_cast<unsigned>(off));
+        }
+    }
+}
+
+void DescribePower(bool summary, char *out, size_t size) {
     const config::Power &p = config::Get().power;
     if (summary) {
         if (p.idle_minutes == 0) {
@@ -479,25 +503,7 @@ void DescribeDisplay(bool summary, char *out, size_t size) {
         } else {
             snprintf(out, size, "off after %u min", static_cast<unsigned>(p.idle_minutes));
         }
-        return;
     }
-    const int level = battery::Level();
-    if (level >= 0) {
-        Put(out, size, "Battery", "%d %%%s", level,
-            battery::ChargeState() == battery::Charge::kCharging ? ", charging" : "");
-    }
-    if (p.idle_minutes == 0) {
-        Put(out, size, "Power off", "never on its own");
-    } else {
-        Put(out, size, "Power off", "after %u min idle", static_cast<unsigned>(p.idle_minutes));
-    }
-    if (p.keep_pin_hours == 0) {
-        Put(out, size, "PIN after sleep", "always");
-    } else {
-        Put(out, size, "PIN after sleep", "after %u h", static_cast<unsigned>(p.keep_pin_hours));
-    }
-    Put(out, size, "Wallpaper", "%s",
-        config::Get().display.wallpaper == config::WallpaperMode::kGrey ? "grey" : "black & white");
 }
 
 void DescribeSecurity(bool summary, char *out, size_t size) {
@@ -693,13 +699,13 @@ void DescribeServer(bool summary, char *out, size_t size) {
     }
     server::Ago(now, s.last_sync, text, sizeof text);
     Put(out, size, "Status sent", "%s", text);
+    Put(out, size, "Server", "%s", c.host[0] != '\0' ? c.host : "none");
     uint32_t code = 0;
     if (s.registered && server::Code(now, &code)) {
         char shown[8];
         server::CodeText(code, shown);
         Put(out, size, "Code", "%s", shown);
     }
-    Put(out, size, "Server", "%s", c.host[0] != '\0' ? c.host : "none");
     Put(out, size, "E-mail", "%s", c.email[0] != '\0' ? c.email : "not set");
     if (s.said[0] != '\0') {
         Put(out, size, "Last", "%s", s.said);
@@ -1041,6 +1047,8 @@ void SettingsDescribe(ui::settings::Page page, bool summary, char *out, size_t s
         case Page::kWifi: DescribeWifi(summary, out, size); break;
         case Page::kBluetooth: DescribeBluetooth(summary, out, size); break;
         case Page::kDisplay: DescribeDisplay(summary, out, size); break;
+        case Page::kUsb: DescribeUsb(summary, out, size); break;
+        case Page::kPower: DescribePower(summary, out, size); break;
         case Page::kSecurity: DescribeSecurity(summary, out, size); break;
         case Page::kTime: DescribeTime(summary, out, size); break;
         case Page::kAbout: DescribeAbout(summary, out, size); break;
@@ -1058,6 +1066,9 @@ void SettingsDescribe(ui::settings::Page page, bool summary, char *out, size_t s
         case Page::kWifiPassword:
         case Page::kBlePair:
         case Page::kDisplayChoice:
+        case Page::kUsbChoice:
+        case Page::kPowerChoice:
+        case Page::kSecurityChoice:
         case Page::kTimeSync:
         case Page::kTimeRegion:
         case Page::kTimeZone:
@@ -1571,6 +1582,7 @@ void SecurityView(ui::security_view::View *out) {
     const vault::Info v = vault::GetInfo();
     out->open = v.state == vault::State::kOpen;
     out->records = static_cast<uint16_t>(v.count);
+    out->vault_version = v.version;
     out->wrong = v.pin_failures;
     out->max_wrong = vault::kMaxPinTries;
     fido_ctap_info_t f = {};
@@ -1580,6 +1592,7 @@ void SecurityView(ui::security_view::View *out) {
         out->fido_keys = static_cast<uint16_t>(f.credentials);
         out->fido_max = static_cast<uint16_t>(f.max_credentials);
         out->fido_pin = f.pin_set;
+        out->fido_version = f.file_version;
     }
     const config::Pin &pin = config::Get().pin;
     out->lock_minutes = pin.lock_minutes;

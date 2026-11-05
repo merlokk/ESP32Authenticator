@@ -124,6 +124,8 @@ class PinFlow {
 struct View {
     bool open;             // the vault
     uint16_t records;
+    uint32_t vault_version;  // the passwords' store file (+1 a write), 0 none yet
+    uint32_t fido_version;   // the passkeys' (FIDO2) store file
     bool fido_known;       // the store answered (not while a request waits)
     uint16_t fido_keys;
     uint16_t fido_max;
@@ -136,7 +138,8 @@ struct View {
 };
 
 constexpr bool Equal(const View &a, const View &b) {
-    return a.open == b.open && a.records == b.records && a.fido_known == b.fido_known &&
+    return a.open == b.open && a.records == b.records && a.vault_version == b.vault_version &&
+           a.fido_version == b.fido_version && a.fido_known == b.fido_known &&
            a.fido_keys == b.fido_keys && a.fido_max == b.fido_max && a.fido_pin == b.fido_pin &&
            a.wrong == b.wrong && a.max_wrong == b.max_wrong && a.lock_minutes == b.lock_minutes &&
            a.wipe == b.wipe && a.complexity == b.complexity;

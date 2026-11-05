@@ -1,14 +1,15 @@
 #pragma once
 
-// The Devices window of Settings (x4-design.md): the battery, then a row per
-// setting with its value (the USB port's too), then the touchscreen's row; a
-// tap lists the choices (a check at the one in use), a tap on one keeps it.
-// The device fills View and keeps a choice (ui::DisplayHooks). Pure
-// (host-tested).
+// The device's settings on their Settings pages (x4-design.md): USB, Display
+// (and the touchscreen's row), Power (the battery first), Security (PIN after
+// sleep); a row per setting with its value, a tap lists the choices (a check
+// at the one in use), a tap on one keeps it. The device fills View and keeps
+// a choice (ui::DisplayHooks). Pure (host-tested).
 
 #include <cstddef>
 #include <cstdint>
 
+#include "settings_logic.h"
 #include "status_logic.h"
 
 namespace ui::display_view {
@@ -32,6 +33,33 @@ inline constexpr Setting kSettings[] = {
     Setting::kKeepPin,  Setting::kWallpaper,      Setting::kHoldRail, Setting::kUsb,
     Setting::kFastRefreshes, Setting::kFullFrom};
 inline constexpr uint8_t kSettingCount = sizeof kSettings / sizeof kSettings[0];
+
+// The Settings page a setting's row is on.
+constexpr settings::Page PageOf(Setting s) {
+    return s == Setting::kUsb     ? settings::Page::kUsb
+           : s == Setting::kKeepPin ? settings::Page::kSecurity
+           : s == Setting::kIdle || s == Setting::kIdleUsb || s == Setting::kHoldRail
+               ? settings::Page::kPower
+               : settings::Page::kDisplay;
+}
+
+// The page of its choices (its back arrow: PageOf).
+constexpr settings::Page ChoicePage(Setting s) {
+    return PageOf(s) == settings::Page::kUsb        ? settings::Page::kUsbChoice
+           : PageOf(s) == settings::Page::kSecurity ? settings::Page::kSecurityChoice
+           : PageOf(s) == settings::Page::kPower    ? settings::Page::kPowerChoice
+                                                    : settings::Page::kDisplayChoice;
+}
+
+// kSettings' index of a setting.
+constexpr uint8_t IndexOf(Setting s) {
+    for (uint8_t i = 0; i < kSettingCount; ++i) {
+        if (kSettings[i] == s) {
+            return i;
+        }
+    }
+    return kSettingCount;
+}
 
 struct Option {
     uint16_t value;

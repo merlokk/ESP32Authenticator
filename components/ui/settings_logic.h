@@ -15,15 +15,15 @@ enum class Page : uint8_t {
     kMain,
     kWifi,
     kBluetooth,
-    kDisplay,  // Devices: power, display, USB, the touch
+    kDisplay,  // the frontlight's timers, the wallpaper, refreshes, the touch
     kSecurity,
     kTime,
     kAbout,
     kWifiScan,      // Wi-Fi's "Add a network": the ones nearby
     kWifiPassword,  // a network's password, on the keyboard
     kBlePair,       // Bluetooth's "Pair a new host": the window, the passkey
-    kTouch,         // Devices: the touch's calibration, five crosses
-    kDisplayChoice, // Devices: one setting's choices
+    kTouch,         // Display: the touch's calibration, five crosses
+    kDisplayChoice, // Display: one setting's choices
     kTimeSync,      // Date & time: how often to sync
     kTimeRegion,    // Date & time: the zone's region
     kTimeZone,      // Date & time: the region's cities
@@ -49,6 +49,11 @@ enum class Page : uint8_t {
     kServerSyncPick,  // Server > Sync: which of several stores on the server is taken
     kServerFirmware,  // Server > Firmware: the server's releases, newest first
     kHelp,            // the "?" in Settings' title: what the buttons do
+    kUsb,             // the USB port's mode
+    kPower,           // the battery, power off after, power in sleep, Power off
+    kUsbChoice,       // USB: the mode's choices
+    kPowerChoice,     // Power: one setting's choices
+    kSecurityChoice,  // Security: one setting's choices (PIN after sleep)
 };
 
 // Where a page's back arrow goes.
@@ -62,6 +67,9 @@ constexpr Page Parent(Page p) {
            : p == Page::kWifiPassword ? Page::kWifiScan
            : p == Page::kBlePair || p == Page::kBleName ? Page::kBluetooth
            : p == Page::kDisplayChoice || p == Page::kTouch ? Page::kDisplay
+           : p == Page::kUsbChoice                         ? Page::kUsb
+           : p == Page::kPowerChoice                       ? Page::kPower
+           : p == Page::kSecurityChoice                    ? Page::kSecurity
            : p == Page::kTimeSync || p == Page::kTimeRegion || p == Page::kTimeSet ? Page::kTime
            : p == Page::kTimeZone ? Page::kTimeRegion
            : p == Page::kSecurityLock || p == Page::kSecurityPin ? Page::kSecurity
@@ -74,18 +82,31 @@ constexpr Page Parent(Page p) {
                                                                     : Page::kMain;
 }
 
-// The main page's rows, under the frontlight.
-inline constexpr Page kRows[] = {Page::kWifi,     Page::kBluetooth, Page::kDisplay,
-                                 Page::kSecurity, Page::kServer,    Page::kTime,
-                                 Page::kAbout};
+// The main page's rows, in two pages: the frontlight and the first
+// kFirstPageRows, then the rest (Left / Right or the bar under them).
+inline constexpr Page kRows[] = {Page::kWifi,  Page::kBluetooth, Page::kServer,
+                                 Page::kSecurity, Page::kUsb,   Page::kDisplay,
+                                 Page::kPower, Page::kTime,      Page::kAbout};
 inline constexpr uint8_t kRowCount = sizeof kRows / sizeof kRows[0];
+inline constexpr uint8_t kFirstPageRows = 7;
+inline constexpr uint8_t kMainPages = 2;
+
+// The main page `page`'s rows: kRows[RowsBegin(page) .. RowsEnd(page)).
+constexpr uint8_t RowsBegin(uint8_t page) { return page == 0 ? 0 : kFirstPageRows; }
+constexpr uint8_t RowsEnd(uint8_t page) { return page == 0 ? kFirstPageRows : kRowCount; }
+
+// The choice pages (one setting's choices, display_view.h).
+constexpr bool IsChoice(Page p) {
+    return p == Page::kDisplayChoice || p == Page::kUsbChoice || p == Page::kPowerChoice ||
+           p == Page::kSecurityChoice;
+}
 
 constexpr const char *Title(Page p) {
     switch (p) {
         case Page::kMain: return "Settings";
         case Page::kWifi: return "Wi-Fi";
         case Page::kBluetooth: return "Bluetooth";
-        case Page::kDisplay: return "Devices";
+        case Page::kDisplay: return "Display";
         case Page::kSecurity: return "Security";
         case Page::kTime: return "Date & time";
         case Page::kAbout: return "About";
@@ -93,7 +114,7 @@ constexpr const char *Title(Page p) {
         case Page::kWifiPassword: return "Password";
         case Page::kBlePair: return "Pair a new host";
         case Page::kTouch: return "Touchscreen";
-        case Page::kDisplayChoice: return "Devices";
+        case Page::kDisplayChoice: return "Display";
         case Page::kTimeSync: return "Sync";
         case Page::kTimeRegion: return "Time zone";
         case Page::kTimeZone: return "Time zone";
@@ -119,6 +140,11 @@ constexpr const char *Title(Page p) {
         case Page::kServerSyncPick: return "Which copy?";
         case Page::kServerFirmware: return "Firmware";
         case Page::kHelp: return "Help";
+        case Page::kUsb: return "USB";
+        case Page::kPower: return "Power";
+        case Page::kUsbChoice: return "USB";
+        case Page::kPowerChoice: return "Power";
+        case Page::kSecurityChoice: return "Security";
     }
     return "";
 }
@@ -126,7 +152,7 @@ constexpr const char *Title(Page p) {
 // A page's button.
 enum class Action : uint8_t {
     kNone,
-    kPowerOff,  // Devices
+    kPowerOff,  // Power
     kLockNow,   // Security
     kSyncTime,  // Date & time
     kRestart,   // About (asked first: the vault locks)
@@ -140,7 +166,7 @@ enum class Action : uint8_t {
 };
 
 constexpr Action PageAction(Page p) {
-    return p == Page::kDisplay    ? Action::kPowerOff
+    return p == Page::kPower      ? Action::kPowerOff
            : p == Page::kSecurity ? Action::kLockNow
            : p == Page::kTime     ? Action::kSyncTime
            : p == Page::kAbout    ? Action::kRestart
@@ -335,7 +361,7 @@ inline constexpr HelpLine kHelp[] = {
     {"x2", "the frontlight on / off"},
     {"Held", "off"},
     {"x3", "off, the PIN after the wake"},
-    {nullptr, "The list"},
+    {nullptr, "The list, Settings"},
     {"Left / Right", "the page before / after"},
     {"Home", "page 1; closes a screen"},
     {"Swipe down", "from the top: Settings"},

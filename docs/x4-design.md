@@ -14,7 +14,7 @@ touch, Left / Right / Power buttons, frontlight, microSD). Status per function:
 | Password generator | one word password at a time (as merlokk.com/password-generator), typed over the BLE keyboard |
 | Encrypted stores | `vault.bin` (records) and `fido.bin` (FIDO2), AES-256-GCM, each with a counter and a modification time; settings in plain `config.json` |
 | Sync | over the internet; service not chosen yet (may be our own). The copy changed last wins (see below) |
-| Settings | frontlight, Wi-Fi (and the web site), Bluetooth, Devices, security, date & time, about |
+| Settings | frontlight, Wi-Fi (and the web site), Bluetooth, Server, security, USB, display, power, date & time, about |
 
 ## Screen
 
@@ -53,8 +53,9 @@ Portrait, 480x800. The panel scans landscape (hardware.md): `ui_logic.h` turns t
   up or Home closes it; the "?" in its title: Help (`settings::kHelp`, the
   buttons and swipes: Power, the list, the generator, FIDO2, dialogs). As on a phone: the frontlight on top (a switch,
   Level and Warmth sliders: lit at once, saved when let go), then a row per
-  page with its summary and ">": Wi-Fi, Bluetooth, Devices,
-  Security, Server, Date & time, About. A page lists "label  value" lines (looked at every
+  page with its summary and ">": Wi-Fi, Bluetooth, Server, Security, USB,
+  Display, Power, then on a second page (Left / Right or the bar ‹ 1 / 2 ›)
+  Date & time, About. A page lists "label  value" lines (looked at every
   2 s) and may have one button: Power off, Lock now, Sync the time now,
   Restart, Reset FIDO2, Register; its
   arrow goes back to Settings. Wi-Fi is a window of its own: a switch, the
@@ -69,26 +70,26 @@ Portrait, 480x800. The panel scans landscape (hardware.md): `ui_logic.h` turns t
   boot), the state, the name (a tap: change it on the keyboard, or the
   board's; applied at once, `ble.name`), the paired hosts (a tap: Use only this host /
   Let any paired host in, Forget), "Pair a new host": a 60 s window, what to
-  do on the host, the passkey in big digits. Devices > Touchscreen: five crosses one by
+  do on the host, the passkey in big digits. Display > Touchscreen: five crosses one by
   one, a straight line per axis through the raw taps (scale and offset,
   `display.touch` in config.json), Save / Again / Use the default; a fit far
-  off (a tap beside a cross) is refused. Devices: the battery, then
+  off (a tap beside a cross) is refused. A setting's row: a tap lists the
+  choices with a check at the one in use, a tap keeps one (config.json), its
+  arrow goes back to its page. USB: USB port (Serial/JTAG (debug) / Serial
+  port / Serial port + FIDO2, saved; SD card reader, for a while). Display:
   Light off after and On USB, light off after (never .. 30 min; on again at
-  the next touch or button), Power off after and On USB, off after (never ..
-  1 hour; USB power: a host, or the charger charging, as a charger with a
-  full cell is not seen), PIN after sleep (always .. a week),
-  Wallpaper (grey / black & white), Power in sleep (kept / off:
-  `power.holdRail`, off loses the kept PIN): a tap lists the choices with a check at
-  the one in use, a tap keeps one (config.json); USB port (Serial/JTAG
-  (debug) / Serial port / Serial port + FIDO2, saved; SD card reader, for a
-  while); Fast refreshes (always full / 5 .. 100) and Full refresh from
-  (never / 1 .. 50 % changed); Touchscreen (its calibration);
-  what the Power button does;
-  Power off. Date & time: the clock big with the date and the offset; Time
+  the next touch or button), Wallpaper (grey / black & white), Fast
+  refreshes (always full / 5 .. 100) and Full refresh from (never / 1 .. 50
+  % changed), Touchscreen (its calibration). Power: the battery, Power off
+  after and On USB, off after (never .. 1 hour; USB power: a host, or the
+  charger charging, as a charger with a full cell is not seen), Power in
+  sleep (kept / off: `power.holdRail`, off loses the kept PIN), what the
+  Power button does, Power off. Date & time: the clock big with the date and the offset; Time
   zone (a region, then its cities A to Z, 9 a page with < 1 / 3 >), Sync (never ..
   every week), the server and the last sync, Set the time by hand (year ..
   minute with - / +, local time, Save sets the board's clock too), Sync the
-  time now. Security: the vault and FIDO2 (records, keys, its PIN), Change the
+  time now. Security: the stores (Passwords: open, records, version;
+  Passkeys: keys, version, its PIN, a tap: FIDO2 / U2F), Change the
   PIN (on a pad of its own: the current PIN, a new one twice; vault.bin and
   fido.bin re-keyed), 10 wrong PINs: lock (1 min .. a day), PIN complexity
   (the vault at once, FIDO2 from the next start), Wipe PIN (set twice /
@@ -134,7 +135,7 @@ Portrait, 480x800. The panel scans landscape (hardware.md): `ui_logic.h` turns t
 
 E-ink: 1-bit LVGL, redraw at most every 200 ms; fast refreshes for list and
 status changes, a full one after N fast or for a big change against ghosting
-(Devices: Fast refreshes, Full refresh from; `ui::RefreshPlan`). Dialogs, the
+(Display: Fast refreshes, Full refresh from; `ui::RefreshPlan`). Dialogs, the
 PIN pad and the FIDO2 prompt appear in a full one, their dots and the held
 Yes go fast; hiding a password is full (no ghost).
 

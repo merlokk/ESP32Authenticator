@@ -28,7 +28,7 @@ read or used until it is typed.
 - 10 wrong PINs in a row lock the pad for a while (Settings > Security >
   *10 wrong PINs: lock*). A restart does not reset the count.
 - After a power-off by the idle timer or Power held, no PIN is needed within
-  *PIN after sleep* (Settings > Devices; by default *Always*: the PIN after
+  *PIN after sleep* (Settings > Security; by default *Always*: the PIN after
   every power-off). Power x3 always asks for it.
 - **Seed phrase**: 12 words made by the device with its first store and
   kept in its own flash, never on the card. The key needs the PIN and these
@@ -117,10 +117,11 @@ prompt and dialogs.
 <img src="img/help.png" width="240" align="right">
 
 - **Frontlight**: the switch, Level and Warmth.
-- A row per page with its summary: Wi-Fi (and the web site), Bluetooth,
-  Devices (power, display, USB, the touchscreen's calibration), Security,
-  Server, Date & time, About (versions, firmware from the SD card's
-  `firmware.bin`, Restart).
+- A row per page with its summary, in two pages (Left / Right or the bar at
+  the bottom): Wi-Fi (and the web site), Bluetooth, Server, Security (the
+  passwords' and the passkeys' stores, the PIN), USB, Display (the
+  touchscreen's calibration), Power; then Date & time, About (versions,
+  firmware from the SD card's `firmware.bin`, Restart).
 
 <br clear="right">
 
@@ -334,18 +335,20 @@ sign in, U2F), the site and the account(s).
   folder; with none there, "ESP32 Authenticator", the version, "Off.
   Power turns it on." and an arrow to the Power button.
 - **Charging**: USB-C; the status bar shows the bolt.
-- Settings > **Devices**: the battery; *Light off after* and *Power
-  off after* (and their values on USB power); *PIN after sleep*;
-  *Wallpaper* (grey or black & white); *Power in sleep* (*off* saves the
-  battery but forgets the PIN); *USB port*: *Serial/JTAG (debug)*, *Serial
+- Settings > **Power**: the battery; *Power off after* (and on USB power);
+  *Power in sleep* (*off* saves the battery but forgets the PIN); *Power
+  off*.
+- Settings > **Display**: *Light off after* (and on USB power);
+  *Wallpaper* (grey or black & white); *Fast refreshes* (how many quick
+  redraws before a full one with a flash that clears the ghosts; *Always
+  full*) and *Full refresh from* (a change this big is redrawn fully anyway;
+  *Never*), also on the site (Settings > Screen); *Touchscreen*
+  (calibration: tap five crosses).
+- Settings > **USB**: *USB port*: *Serial/JTAG (debug)*, *Serial
   port*, or *Serial port + FIDO2* (the key over the USB cable too), at once
   and kept; or *SD card reader* for a while: the card is a drive on the
   computer until you eject it there (or unplug the cable, or *Finish* on
-  the screen), then the port is as before; the vault locks, the PIN after;
-  *Fast refreshes* (how many quick redraws before a full one with a flash
-  that clears the ghosts; *Always full*) and *Full refresh from* (a change
-  this big is redrawn fully anyway; *Never*), also on the site (Settings >
-  Screen); *Touchscreen* (calibration: tap five crosses); *Power off*.
+  the screen), then the port is as before; the vault locks, the PIN after.
 - **Frontlight**: Settings, at the top (switch, Level, Warmth). It goes off
   after *Light off after* and comes on again at a touch or a button.
 - **Reset** (the small button on the top edge, on the right): restarts the

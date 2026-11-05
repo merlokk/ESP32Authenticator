@@ -1120,10 +1120,11 @@ void ShowSettingsMain() {
     lv_obj_t *mark = Label(ring, &lv_font_montserrat_28);
     lv_label_set_text(mark, "?");
     lv_obj_center(mark);
-    int32_t y = kTitleHeight + AddLight(kTitleHeight) + 12;
+    const uint8_t page = nav_state.settings_main();
+    int32_t y = kTitleHeight + (page == 0 ? AddLight(kTitleHeight) : 0) + 12;
     char summary[48];
     char unused[2];
-    for (uint8_t i = 0; i < settings::kRowCount; ++i, y += kMenuRow) {
+    for (uint8_t i = settings::RowsBegin(page); i < settings::RowsEnd(page); ++i, y += kMenuRow) {
         lv_obj_t *row = Panel(content, y, kMenuRow);
         lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
         lv_obj_set_style_border_width(row, 1, 0);
@@ -2360,7 +2361,7 @@ bool PollWifiMore() {
     return nav_state.Back() || changed;
 }
 
-// --- Settings: Devices -------------------------------------------------------------
+// --- Settings: USB, Display, Power -------------------------------------------------------------
 
 const DisplayHooks *display_hooks = nullptr;
 display_view::View display_shown;
@@ -2382,52 +2383,61 @@ void OnOption(lv_event_t *event) {
 }
 
 
-// The battery, a row per setting, the touchscreen's, what Power does, "Power off".
-void ShowDisplay() {
-    TitleBar("Devices");
+void InfoRow(int32_t y, const char *name, const char *value);
+
+// The rows of `page`'s settings (display_view::PageOf) from y; the y under them.
+int32_t SettingRows(settings::Page page, int32_t y) {
+    char text[48];
+    for (uint8_t i = 0; i < display_view::kSettingCount; ++i) {
+        const display_view::Setting s = display_view::kSettings[i];
+        if (display_view::PageOf(s) != page) {
+            continue;
+        }
+        display_view::Label(s, display_shown.value[i], text, sizeof text);
+        ChoiceRow(y, display_view::Title(s), text, false, OnSettingRow, i);
+        y += kNetRow;
+    }
+    return y;
+}
+
+// USB, Display (and the touchscreen's row) or Power (the battery first, what
+// the Power button does, "Power off").
+void ShowDisplay(settings::Page page) {
+    TitleBar(settings::Title(page));
     display_hooks->view(&display_shown);
     const display_view::View &v = display_shown;
     int32_t y = kTitleHeight;
-    lv_obj_t *bat = Panel(content, y, 56);
-    lv_obj_set_style_border_width(bat, 2, 0);
-    lv_obj_t *l = Label(bat, &lv_font_montserrat_24);
-    lv_label_set_text(l, "Battery");
-    lv_obj_set_pos(l, 12, 12);
     char text[48];
-    if (v.battery >= 0) {
-        snprintf(text, sizeof text, "%d %%%s", v.battery, v.charging ? ", charging" : "");
-    } else {
-        snprintf(text, sizeof text, "no gauge");
+    if (page == settings::Page::kPower) {
+        if (v.battery >= 0) {
+            snprintf(text, sizeof text, "%d %%%s", v.battery, v.charging ? ", charging" : "");
+        } else {
+            snprintf(text, sizeof text, "no gauge");
+        }
+        InfoRow(y, "Battery", text);
+        y += kNetRow + 16;
     }
-    lv_obj_t *b = Label(bat, &lv_font_montserrat_24);
-    lv_label_set_text(b, text);
-    lv_obj_align(b, LV_ALIGN_RIGHT_MID, -12, 0);
-    y += 56 + 16;
-    constexpr int32_t kRow = 40;  // eleven rows, the help above "Power off"
-    for (uint8_t i = 0; i < display_view::kSettingCount; ++i, y += kRow) {
-        const display_view::Setting s = display_view::kSettings[i];
-        display_view::Label(s, v.value[i], text, sizeof text);
-        lv_obj_t *row = ChoiceRow(y, display_view::Title(s), text, false, OnSettingRow, i);
-        lv_obj_set_height(row, kRow);
+    y = SettingRows(page, y);
+    if (page == settings::Page::kDisplay) {
+        text[0] = '\0';
+        if (settings_hooks != nullptr) {
+            settings_hooks->describe(settings::Page::kTouch, true, text, sizeof text);
+        }
+        ChoiceRow(y, settings::Title(settings::Page::kTouch), text, false, OnSettingRow,
+                  display_view::kSettingCount);
     }
-    text[0] = '\0';
-    if (settings_hooks != nullptr) {
-        settings_hooks->describe(settings::Page::kTouch, true, text, sizeof text);
+    if (page == settings::Page::kPower) {
+        lv_obj_t *help = Label(content, &lv_font_montserrat_20);
+        lv_label_set_long_mode(help, LV_LABEL_LONG_MODE_WRAP);
+        lv_obj_set_width(help, kRowWidth - 24);
+        lv_label_set_text(help,
+                          "The Power button: twice, the frontlight; three times, off and locked "
+                          "(the PIN at the wake); held, off.");
+        lv_obj_set_pos(help, 12, y + 12);
+        lv_obj_t *off = AskButton(content, kRowWidth - 48, "Power off");
+        lv_obj_align(off, LV_ALIGN_BOTTOM_MID, 0, -16);
+        lv_obj_add_event_cb(off, OnAction, LV_EVENT_CLICKED, nullptr);
     }
-    lv_obj_t *touch = ChoiceRow(y, settings::Title(settings::Page::kTouch), text, false,
-                                OnSettingRow, display_view::kSettingCount);
-    lv_obj_set_height(touch, kRow);
-    y += kRow;
-    lv_obj_t *help = Label(content, &lv_font_montserrat_20);
-    lv_label_set_long_mode(help, LV_LABEL_LONG_MODE_WRAP);
-    lv_obj_set_width(help, kRowWidth - 24);
-    lv_label_set_text(help,
-                      "The Power button: twice, the frontlight; three times, off and locked "
-                      "(the PIN at the wake); held, off.");
-    lv_obj_set_pos(help, 12, y + 12);
-    lv_obj_t *off = AskButton(content, kRowWidth - 48, "Power off");
-    lv_obj_align(off, LV_ALIGN_BOTTOM_MID, 0, -16);
-    lv_obj_add_event_cb(off, OnAction, LV_EVENT_CLICKED, nullptr);
 }
 
 // One setting's choices, a check at the one in use.
@@ -2455,7 +2465,8 @@ bool PollDisplay() {
     if (setting_tapped >= 0) {
         if (setting_tapped < display_view::kSettingCount) {
             choice_setting = display_view::kSettings[setting_tapped];
-            changed |= nav_state.OpenSettings(static_cast<uint8_t>(settings::Page::kDisplayChoice));
+            changed |= nav_state.OpenSettings(
+                static_cast<uint8_t>(display_view::ChoicePage(choice_setting)));
         } else if (setting_tapped == display_view::kSettingCount) {
             changed |= nav_state.OpenSettings(static_cast<uint8_t>(settings::Page::kTouch));
         }
@@ -2832,24 +2843,28 @@ void OnFlowKey(lv_event_t *event) {
     flow_key = true;
 }
 
-// The vault and FIDO2, Change the PIN, the lock, complexity, the wipe PIN, Lock now.
+// The stores (the passwords, the passkeys: FIDO2's page), Change the PIN, the
+// lock, PIN after sleep, complexity, the wipe PIN, Lock now.
 void ShowSecurity() {
     TitleBar("Security");
     security_hooks->view(&security_shown);
+    if (display_hooks != nullptr) {
+        display_hooks->view(&display_shown);  // PIN after sleep
+    }
     const security_view::View &v = security_shown;
     char text[64];
     int32_t y = kTitleHeight;
-    snprintf(text, sizeof text, "%s, %u records", v.open ? "open" : "locked",
-             static_cast<unsigned>(v.records));
-    InfoRow(y, "Vault", text);
+    snprintf(text, sizeof text, "%s, %u records, v%u", v.open ? "open" : "locked",
+             static_cast<unsigned>(v.records), static_cast<unsigned>(v.vault_version));
+    InfoRow(y, "Passwords", text);
     y += kNetRow;
     if (v.fido_known) {
-        snprintf(text, sizeof text, "%u of %u keys, PIN %s", static_cast<unsigned>(v.fido_keys),
-                 static_cast<unsigned>(v.fido_max), v.fido_pin ? "set" : "not set");
+        snprintf(text, sizeof text, "%u keys, v%u, PIN %s", static_cast<unsigned>(v.fido_keys),
+                 static_cast<unsigned>(v.fido_version), v.fido_pin ? "set" : "not set");
     } else {
         snprintf(text, sizeof text, "busy");
     }
-    ChoiceRow(y, "FIDO2", text, false, OnSecurityRow, 3);
+    ChoiceRow(y, "Passkeys", text, false, OnSecurityRow, 3);
     y += kNetRow + 16;
     ChoiceRow(y, "Change the PIN", "", false, OnSecurityRow, 0);
     y += kNetRow;
@@ -2863,6 +2878,9 @@ void ShowSecurity() {
     snprintf(name, sizeof name, "%u wrong PINs: lock", static_cast<unsigned>(v.max_wrong));
     ChoiceRow(y, name, text, false, OnSecurityRow, 1);
     y += kNetRow;
+    if (display_hooks != nullptr) {
+        y = SettingRows(settings::Page::kSecurity, y);
+    }
     lv_obj_t *row = Panel(content, y, kNetRow);
     lv_obj_set_style_border_width(row, 1, 0);
     lv_obj_t *l = Label(row, &lv_font_montserrat_24);
@@ -3928,11 +3946,13 @@ void ShowSettings() {
             default: break;
         }
     }
-    if (display_hooks != nullptr && page == settings::Page::kDisplay) {
-        ShowDisplay();
+    if (display_hooks != nullptr &&
+        (page == settings::Page::kDisplay || page == settings::Page::kUsb ||
+         page == settings::Page::kPower)) {
+        ShowDisplay(page);
         return;
     }
-    if (display_hooks != nullptr && page == settings::Page::kDisplayChoice) {
+    if (display_hooks != nullptr && settings::IsChoice(page)) {
         ShowDisplayChoice();
         return;
     }
@@ -4215,10 +4235,10 @@ void ShowGenBar() {
     lv_obj_remove_flag(tabs, LV_OBJ_FLAG_HIDDEN);
 }
 
-// The FIDO2 list's pages: back, "1 / 2" (the current one, inverted), forward.
-void ShowFidoBar() {
-    snprintf(tab_text[1], sizeof tab_text[1], "%u / %u", nav_state.fido_page() + 1u,
-             static_cast<unsigned>(nav_state.fido_pages()));
+// The FIDO2 list's or the main Settings page's pages: back, "1 / 2" (the
+// current one, inverted), forward.
+void ShowPageBar(uint8_t page, uint8_t pages) {
+    snprintf(tab_text[1], sizeof tab_text[1], "%u / %u", page + 1u, static_cast<unsigned>(pages));
     tab_map[0] = LV_SYMBOL_LEFT;
     tab_map[1] = tab_text[1];
     tab_map[2] = LV_SYMBOL_RIGHT;
@@ -4233,7 +4253,11 @@ void ShowFidoBar() {
 void ShowTabs() {
     const uint8_t n = nav_state.tabs();
     if (nav_state.mode() == nav::Mode::kFido && nav_state.fido_pages() > 1) {
-        ShowFidoBar();
+        ShowPageBar(nav_state.fido_page(), nav_state.fido_pages());
+        return;
+    }
+    if (nav_state.SettingsPaged()) {
+        ShowPageBar(nav_state.settings_main(), settings::kMainPages);
         return;
     }
     if (nav_state.mode() == nav::Mode::kGen) {
@@ -4324,8 +4348,9 @@ void Show() {
         ClosePairing();
     }
     lv_obj_clean(content);
-    lv_obj_set_height(content, (nav_state.mode() == nav::Mode::kSettings ? kScreenBottom
-                                                                           : kContentBottom) -
+    lv_obj_set_height(content, (nav_state.mode() == nav::Mode::kSettings && !nav_state.SettingsPaged()
+                                    ? kScreenBottom
+                                    : kContentBottom) -
                                    kContentTop);
     switch (nav_state.mode()) {
         case nav::Mode::kList:
@@ -4976,7 +5001,7 @@ void Poll(lv_timer_t *) {
         !FingerDown() && !dialog::IsOpen() && settings_page != settings::Page::kWifiPassword &&
         settings_page != settings::Page::kWifiScan && settings_page != settings::Page::kBlePair &&
         settings_page != settings::Page::kTouch &&
-        settings_page != settings::Page::kDisplayChoice &&
+        !settings::IsChoice(settings_page) &&
         settings_page != settings::Page::kTimeSync && settings_page != settings::Page::kTimeRegion &&
         settings_page != settings::Page::kTimeZone && settings_page != settings::Page::kTimeSet &&
         settings_page != settings::Page::kSecurityLock &&
@@ -5008,7 +5033,10 @@ void Poll(lv_timer_t *) {
         } else if (settings_page == settings::Page::kTime && time_hooks != nullptr) {
             time_hooks->view(&time_now);
             changed |= !time_view::Equal(time_now, time_shown);
-        } else if (settings_page == settings::Page::kDisplay && display_hooks != nullptr) {
+        } else if ((settings_page == settings::Page::kDisplay ||
+                    settings_page == settings::Page::kUsb ||
+                    settings_page == settings::Page::kPower) &&
+                   display_hooks != nullptr) {
             display_hooks->view(&display_now);
             changed |= !display_view::Equal(display_now, display_shown);
         } else {

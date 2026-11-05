@@ -51,7 +51,7 @@ console (`hwinfo`, `efuse`, `nvs ls`):
 
 So the lock is only the USB ROM download; everything else is open:
 
-- The console: Settings > Devices > USB port = serial (saved in
+- The console: Settings > USB > USB port = serial (saved in
   `config.json`), then the CDC port. `jtag` mode shows nothing on this unit.
 - Recovery without USB: the ROM's UART download (UART0: GPIO43 TX / GPIO44
   RX on a USB-UART adapter, the case open; GPIO0 is the Left button: held at
@@ -169,7 +169,7 @@ it. No card: no stores, no PIN pad.
   card never open again without its 12 words.
 - Stuck on the PIN pad anyway (the store cannot be made, the card refused):
   Power held (off), the card out, Power: no stores, no PIN pad; Settings >
-  Devices > USB port = serial, then the console (`hwinfo`, `sd`, `spiffs`).
+  USB > USB port = serial, then the console (`hwinfo`, `sd`, `spiffs`).
   The card in again and a restart. Without the card at boot About > Firmware
   from SD has nothing to read (the card mounts at boot only).
 
@@ -179,7 +179,7 @@ it. No card: no stores, no PIN pad.
   boot, flash encryption, `DIS_USB_*`.
 - Console: with only the download mode off, the Serial/JTAG console works.
   With the Serial/JTAG off but OTG on (what the unit above looks like):
-  Settings > Devices > USB port = serial (CDC-ACM). With `DIS_USB_OTG` the
+  Settings > USB > USB port = serial (CDC-ACM). With `DIS_USB_OTG` the
   TinyUSB modes are refused
   (`ESP_ERR_NOT_SUPPORTED`, the port stays Serial/JTAG) instead of hanging in
   TinyUSB's core reset.
