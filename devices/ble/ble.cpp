@@ -789,7 +789,16 @@ esp_err_t Unpair(const char *which) {
         has_target = false;
         SaveTarget();
     }
-    const int rc = ble_gap_unpair(&addr);
+    // NimBLE refuses to unpair while advertising (BLE_HS_EBUSY: the resolving
+    // list is in use), and a dropped link restarts it from the host task.
+    int rc = BLE_HS_EBUSY;
+    for (int i = 0; i < 5 && rc == BLE_HS_EBUSY; ++i) {
+        if (i > 0) {
+            vTaskDelay(pdMS_TO_TICKS(50));
+        }
+        ble_gap_adv_stop();
+        rc = ble_gap_unpair(&addr);
+    }
     RestartAdvertising();  // the accept list holds the bonds
     return rc == 0 ? ESP_OK : ESP_FAIL;
 }

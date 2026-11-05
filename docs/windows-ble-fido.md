@@ -98,6 +98,11 @@ Alternative (used first, commit 60ed7c3, removed): patch NimBLE
 `ble_att_svr_fill_type_value()` to report 0xFFFF for the last group in Find By
 Type Value too (`fill_type_value_entry(txom, first, 0xFFFF, ...)` instead of `prev`).
 
+Upstream fix: apache/mynewt-nimble#2398 (0xFFFF for primary/secondary services
+only). Verified 2026-11-05 on the X4 Pro without the tail service (FIDO last,
+fresh bond, Windows 11 WebAuthn make + get). Drop the tail service once ESP-IDF's
+NimBLE has it.
+
 ## How it was found
 
 1. Repro without Chrome: python-fido2 `WindowsClient.make_credential()` with
