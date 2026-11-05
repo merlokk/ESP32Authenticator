@@ -13,6 +13,26 @@ site, FIDO2 over BLE. Host tests (no board) are in [build.md](build.md#tests).
   PIN pad's digits (`ui click`).
 - Verify after every flash: console via `utils/`, HTTP via `curl`.
 
+## Waiting for the PIN
+
+A flash (or any reboot) locks the vault: the screens take no buttons or
+swipes under the PIN pad, and FIDO2 does not answer. Ask the owner to type
+the PIN, then poll `pin` until it says `vault open` (an agent: in the
+background, so the wait does not block):
+
+```bash
+for i in $(seq 1 120); do   # up to 10 min
+  python utils/console.py -p COM7 pin | grep -q "vault *open" && break
+  sleep 5
+done
+```
+
+- `pin` only reads the state: it is safe to poll.
+- Several flashes in a row: test what needs the open vault before the next
+  one, each costs a PIN.
+- Rebooting test runs: `test.pin` (below), never on a device with real
+  secrets.
+
 ## Console
 
 `utils/console.py` runs any command ([build.md](build.md#cli) has the list;
