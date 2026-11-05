@@ -110,7 +110,11 @@ number generator).
 <img src="img/settings.png" width="240" align="right">
 
 A swipe down from the top quarter of the screen. The back arrow, a swipe up
-or Home closes it.
+or Home closes it. The **?** in its title opens Help: what the Power button,
+the other buttons and the swipes do on the list, the generator, FIDO2's
+prompt and dialogs.
+
+<img src="img/help.png" width="240" align="right">
 
 - **Frontlight**: the switch, Level and Warmth.
 - A row per page with its summary: Wi-Fi (and the web site), Bluetooth,

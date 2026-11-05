@@ -717,6 +717,18 @@ void test_settings_pages(void) {
     TEST_ASSERT_TRUE(st::PageAction(st::Page::kFido) == st::Action::kFidoReset);
     TEST_ASSERT_TRUE(st::Parent(st::Page::kFido) == st::Page::kSecurity);
     TEST_ASSERT_EQUAL_STRING("Lock now", st::ActionText(st::Action::kLockNow));
+    // Help: back to Settings, no button; starts with a heading, each one has lines.
+    TEST_ASSERT_TRUE(st::Parent(st::Page::kHelp) == st::Page::kMain);
+    TEST_ASSERT_EQUAL_STRING("Help", st::Title(st::Page::kHelp));
+    TEST_ASSERT_TRUE(st::PageAction(st::Page::kHelp) == st::Action::kNone);
+    TEST_ASSERT_NULL(st::kHelp[0].key);
+    TEST_ASSERT_NOT_NULL(st::kHelp[st::kHelpCount - 1].key);
+    for (uint8_t i = 0; i < st::kHelpCount; ++i) {
+        TEST_ASSERT_NOT_NULL(st::kHelp[i].what);
+        if (i > 0) {
+            TEST_ASSERT_FALSE(st::kHelp[i].key == nullptr && st::kHelp[i - 1].key == nullptr);
+        }
+    }
 
     char label[8];
     char value[8];

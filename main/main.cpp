@@ -1076,7 +1076,8 @@ void SettingsDescribe(ui::settings::Page page, bool summary, char *out, size_t s
         case Page::kServerEmail:
         case Page::kServerConfig:
         case Page::kServerSyncPin: break;
-        case Page::kServerSyncPick: break;
+        case Page::kServerSyncPick:
+        case Page::kHelp: break;
         case Page::kServerSync:
             if (!summary) {
                 DescribeSync(out, size);

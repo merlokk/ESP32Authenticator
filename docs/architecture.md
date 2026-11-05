@@ -18,7 +18,7 @@ Target and status. Screen design and the open questions: [x4-design.md](x4-desig
 | Sync with the authentication server (`vault.bin`, `fido.bin`), conflicts resolved by hand | done (Settings > Server > Sync, console `server sync`) |
 | Authentication server (`auth.merlokk.com`): registration, sign-in with the device's TOTP | device side done (Settings > Server, console `server`); the server is being written |
 | X4 Pro screen: status bar, credential list, pages, settings | status bar, the password list (pages, typing, TOTP), swipes, PIN pad, the U2F / FIDO2 list, Settings done |
-| Settings: frontlight, Wi-Fi | on the screen: frontlight, Wi-Fi (and the web site), Bluetooth, Devices (power, display, USB, touch calibration), security, date & time, about; also the console and the site |
+| Settings: frontlight, Wi-Fi | on the screen: frontlight, Wi-Fi (and the web site), Bluetooth, Devices (power, display, USB, touch calibration), security, date & time, about, Help (the "?" in the title: what the buttons do); also the console and the site |
 | Time: SNTP, zones, clock | done |
 | Battery: voltage, level, charging | done (CW2017 + charger STAT, console `battery`, BLE Battery Level, the status bar) |
 | Wi-Fi, configuration site, console | done |

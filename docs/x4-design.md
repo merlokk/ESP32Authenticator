@@ -50,7 +50,8 @@ Portrait, 480x800. The panel scans landscape (hardware.md): `ui_logic.h` turns t
 - **Pages**: a tab per page at the bottom, 4 at most (the row scrolls);
   Left / Right flip them, Home: page 1.
 - **Settings**: a swipe down from the top quarter; its back arrow, a swipe
-  up or Home closes it. As on a phone: the frontlight on top (a switch,
+  up or Home closes it; the "?" in its title: Help (`settings::kHelp`, the
+  buttons and swipes: Power, the list, the generator, FIDO2, dialogs). As on a phone: the frontlight on top (a switch,
   Level and Warmth sliders: lit at once, saved when let go), then a row per
   page with its summary and ">": Wi-Fi, Bluetooth, Devices,
   Security, Server, Date & time, About. A page lists "label  value" lines (looked at every

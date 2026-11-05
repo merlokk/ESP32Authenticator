@@ -32,7 +32,7 @@ Firmware: C/C++ on **ESP-IDF**.
   charger STAT on a leased I2C bus (`battery`, BLE Battery Level); microSD
   (SDMMC, FAT at `/sdcard`, `sd` read-only but wallpapers), the store files in
   `/sdcard/.authenticator` on the X4 Pro (no card: no stores); LVGL 9 on the e-ink panel (480x800 portrait, status bar, the password list in pages: a tap types
-  the user / password / TOTP or shows the password; Settings (frontlight; Wi-Fi networks and
+  the user / password / TOTP or shows the password; Settings (a "?" in the title: Help, the buttons; frontlight; Wi-Fi networks and
   the web site with its QR code and login; Bluetooth hosts and pairing;
   Devices: power, display, USB port, touch calibration; security: PIN
   change, wipe PIN, FIDO2 state and reset; date & time; About with

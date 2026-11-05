@@ -48,6 +48,7 @@ enum class Page : uint8_t {
     kServerSyncPin, // Server > Sync: the PIN of the server's copy, on the keyboard
     kServerSyncPick,  // Server > Sync: which of several stores on the server is taken
     kServerFirmware,  // Server > Firmware: the server's releases, newest first
+    kHelp,            // the "?" in Settings' title: what the buttons do
 };
 
 // Where a page's back arrow goes.
@@ -117,6 +118,7 @@ constexpr const char *Title(Page p) {
         case Page::kServerSyncPin: return "The copy's PIN";
         case Page::kServerSyncPick: return "Which copy?";
         case Page::kServerFirmware: return "Firmware";
+        case Page::kHelp: return "Help";
     }
     return "";
 }
@@ -322,6 +324,36 @@ constexpr const char *FirmwareTag(const FirmwareRow &r) {
     return r.running ? "running" : r.newer ? (r.active ? "new, offered" : "new")
                                        : r.active ? "offered" : "";
 }
+
+// Help: what the buttons and swipes do; a line without a key is a heading.
+struct HelpLine {
+    const char *key;
+    const char *what;
+};
+inline constexpr HelpLine kHelp[] = {
+    {nullptr, "Power button"},
+    {"x2", "the frontlight on / off"},
+    {"Held", "off"},
+    {"x3", "off, the PIN after the wake"},
+    {nullptr, "The list"},
+    {"Left / Right", "the page before / after"},
+    {"Home", "page 1; closes a screen"},
+    {"Swipe down", "from the top: Settings"},
+    {"Swipe up", "from the bottom: keys"},
+    {"Swipe right", "the password generator"},
+    {nullptr, "Password generator"},
+    {"Left", "a new password"},
+    {"Right, Home x1", "type it"},
+    {"Home x2", "back"},
+    {nullptr, "FIDO2 asks"},
+    {"Left, Home x1", "allow"},
+    {"Right, Home x2", "reject"},
+    {"Reset", "hold Left or Home 5 s"},
+    {nullptr, "Dialogs"},
+    {"Right", "No, Cancel"},
+    {"Yes", "held 4 s where it fills"},
+};
+inline constexpr uint8_t kHelpCount = sizeof kHelp / sizeof kHelp[0];
 
 // The frontlight's sliders: brightness 1..100 (0 is 1), warmth 0..100.
 constexpr uint8_t Brightness(int32_t slider) {

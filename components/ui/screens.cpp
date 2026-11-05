@@ -580,7 +580,7 @@ void OnBack(lv_event_t *) {
 // Settings / FIDO2: a back arrow and the screen's name over the page.
 constexpr int32_t kTitleHeight = 56;
 
-void TitleBar(const char *title, const char *right = nullptr) {
+lv_obj_t *TitleBar(const char *title, const char *right = nullptr) {
     lv_obj_t *head = lv_obj_create(content);
     lv_obj_remove_style_all(head);
     lv_obj_remove_flag(head, LV_OBJ_FLAG_SCROLLABLE);
@@ -605,6 +605,7 @@ void TitleBar(const char *title, const char *right = nullptr) {
         lv_label_set_text(r, right);
         lv_obj_align(r, LV_ALIGN_RIGHT_MID, -12, 0);
     }
+    return head;
 }
 
 // --- the U2F / FIDO2 keys ----------------------------------------------------------
@@ -1096,9 +1097,29 @@ void OnAction(lv_event_t *) {
     }
 }
 
-// The frontlight, then a row per page: its name, its summary, ">".
+// The frontlight, then a row per page: its name, its summary, ">"; a "?" in
+// the title opens Help.
 void ShowSettingsMain() {
-    TitleBar("Settings");
+    lv_obj_t *head = TitleBar("Settings");
+    // The tap area: the right quarter, the bar's height; a round "?" in it.
+    lv_obj_t *help = lv_obj_create(head);
+    lv_obj_remove_style_all(help);
+    lv_obj_add_flag(help, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_size(help, kQuarter, kTitleHeight);
+    lv_obj_align(help, LV_ALIGN_RIGHT_MID, 0, 0);
+    lv_obj_add_event_cb(help, OnSettingsRow, LV_EVENT_CLICKED,
+                        reinterpret_cast<void *>(static_cast<uintptr_t>(settings::Page::kHelp)));
+    lv_obj_t *ring = lv_obj_create(help);
+    lv_obj_remove_style_all(ring);
+    lv_obj_remove_flag(ring, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_size(ring, 40, 40);
+    lv_obj_set_style_radius(ring, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_border_width(ring, 2, 0);
+    lv_obj_set_style_border_color(ring, lv_color_black(), 0);
+    lv_obj_align(ring, LV_ALIGN_RIGHT_MID, -12, 0);
+    lv_obj_t *mark = Label(ring, &lv_font_montserrat_28);
+    lv_label_set_text(mark, "?");
+    lv_obj_center(mark);
     int32_t y = kTitleHeight + AddLight(kTitleHeight) + 12;
     char summary[48];
     char unused[2];
@@ -1123,6 +1144,31 @@ void ShowSettingsMain() {
         lv_obj_set_size(s, 190, 26);
         lv_label_set_text(s, summary);
         lv_obj_align(s, LV_ALIGN_RIGHT_MID, -44, 0);
+    }
+}
+
+// Help (settings::kHelp): headings, then "key  what" lines.
+void ShowHelp() {
+    TitleBar(settings::Title(settings::Page::kHelp));
+    constexpr int32_t kKeyWidth = 170;
+    int32_t y = kTitleHeight + 6;
+    for (const settings::HelpLine &line : settings::kHelp) {
+        if (line.key == nullptr) {
+            lv_obj_t *h = Label(content, &lv_font_montserrat_24);
+            lv_label_set_text(h, line.what);
+            lv_obj_set_pos(h, 12, y + 6);
+            y += 36;
+            continue;
+        }
+        lv_obj_t *k = Label(content, &lv_font_montserrat_20);
+        lv_label_set_text(k, line.key);
+        lv_obj_set_pos(k, 24, y);
+        lv_obj_t *w = Label(content, &lv_font_montserrat_20);
+        lv_label_set_long_mode(w, LV_LABEL_LONG_MODE_DOTS);
+        lv_obj_set_size(w, kRowWidth - 24 - kKeyWidth - 12, 26);
+        lv_label_set_text(w, line.what);
+        lv_obj_set_pos(w, 24 + kKeyWidth, y);
+        y += 28;
     }
 }
 
@@ -3847,6 +3893,10 @@ void ShowSettings() {
     if (page != settings::Page::kWebLogin) {
         login_on_password = page == settings::Page::kWebLogin && login_on_password;
     }
+    if (page == settings::Page::kHelp) {
+        ShowHelp();
+        return;
+    }
     if (page == settings::Page::kFido && settings_hooks != nullptr) {
         SettingsText(page, settings_shown, sizeof settings_shown);
         ShowFidoSettings();
@@ -4940,7 +4990,7 @@ void Poll(lv_timer_t *) {
         settings_page != settings::Page::kServerEmail &&
         settings_page != settings::Page::kServerConfig &&
         settings_page != settings::Page::kServerSyncPin &&
-        settings_page != settings::Page::kServerSyncPick &&
+        settings_page != settings::Page::kServerSyncPick && settings_page != settings::Page::kHelp &&
         lv_tick_elaps(settings_looked_at) >= kSettingsMs) {
         settings_looked_at = lv_tick_get();
         if (settings_page == settings::Page::kWifi && wifi_hooks != nullptr) {
