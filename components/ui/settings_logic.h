@@ -350,7 +350,7 @@ inline constexpr HelpLine kHelp[] = {
     {"Right, Home x2", "reject"},
     {"Reset", "hold Left or Home 5 s"},
     {nullptr, "Dialogs"},
-    {"Right", "No, Cancel"},
+    {"Right, Home x2", "No, Cancel"},
     {"Yes", "held 4 s where it fills"},
 };
 inline constexpr uint8_t kHelpCount = sizeof kHelp / sizeof kHelp[0];

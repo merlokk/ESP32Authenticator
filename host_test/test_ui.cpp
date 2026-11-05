@@ -387,6 +387,12 @@ void test_nav_swipes(void) {
     using ui::nav::Mode;
     ui::nav::Nav n;
     n.SetPages(3);
+    // Under a dialog: Right or Home x2 cancels, nothing else does.
+    TEST_ASSERT_TRUE(ui::nav::DialogCancel(ui::nav::Input::kRight));
+    TEST_ASSERT_TRUE(ui::nav::DialogCancel(ui::nav::Input::kHomeNo));
+    TEST_ASSERT_FALSE(ui::nav::DialogCancel(ui::nav::Input::kHome));
+    TEST_ASSERT_FALSE(ui::nav::DialogCancel(ui::nav::Input::kHomeYes));
+    TEST_ASSERT_FALSE(ui::nav::DialogCancel(ui::nav::Input::kLeft));
     TEST_ASSERT_FALSE(n.Swipe(Gesture::kDown));  // not from the top
     TEST_ASSERT_TRUE(n.Swipe(Gesture::kDownFromTop));
     TEST_ASSERT_TRUE(n.mode() == Mode::kSettings);

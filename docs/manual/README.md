@@ -298,7 +298,7 @@ Security > FIDO2 > *Show the keys*).
 - Left / Right or the bar at the bottom flip pages; the number at the top is
   how many keys there are.
 - **Delete**: swipe a key to the left, tap the trash can, then hold
-  **Yes** for 4 s (*No* or Right cancels).
+  **Yes** for 4 s (*No*, Right or Home x2 cancels).
 
 <br clear="right">
 

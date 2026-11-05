@@ -4732,9 +4732,9 @@ void Poll(lv_timer_t *) {
         if (!HomeShown()) {  // under the PIN pad the buttons do nothing here
             continue;
         }
-        if (dialog::IsOpen() && input != nav::Input::kHome) {
-            if (input == nav::Input::kRight) {
-                dialog::Cancel();  // Right: No (as FIDO2's prompt), or Cancel
+        if (dialog::IsOpen()) {
+            if (nav::DialogCancel(input)) {
+                dialog::Cancel();
             }
             continue;
         }

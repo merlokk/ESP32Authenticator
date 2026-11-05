@@ -125,8 +125,9 @@ Portrait, 480x800. The panel scans landscape (hardware.md): `ui_logic.h` turns t
   it); the can asks "Delete this key?": No (or Right) at once, Yes held 4 s
   (it fills from the left; let go early: empty again).
 - **Dialogs** (`dialog.h`), one at a time over the page: a choice (a title,
-  a button per answer; Right: its last, Cancel) or a question with a held Yes
-  (No at once, Yes held 4 s, filling from the left; Right: No).
+  a button per answer; Right or Home x2: its last, Cancel) or a question with a held Yes
+  (No at once, Yes held 4 s, filling from the left; Right or Home x2: No). Other
+  buttons do nothing under one (`nav::DialogCancel`).
 - **Lock screen**: PIN pad (touch), shown while the vault is locked (at boot,
   `pin lock`); done (`pin_pad.cpp`).
   See PIN below.

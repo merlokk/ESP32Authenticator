@@ -33,6 +33,10 @@ enum class Input : uint8_t {
     kHomeNo,   // clicked twice: buttons::Answer::kNo
 };
 
+// Under a dialog (dialog.h) a button only answers: Right or Home x2 is No /
+// Cancel (as on FIDO2's prompt); the rest, Home pressed too, do nothing.
+constexpr bool DialogCancel(Input in) { return in == Input::kRight || in == Input::kHomeNo; }
+
 // A finger's path on the screen, from where it went down to where it lifted.
 enum class Gesture : uint8_t {
     kNone,          // moved, but no swipe (a tap that slid)
