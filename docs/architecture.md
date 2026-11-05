@@ -156,13 +156,14 @@ Pattern from approver-esp32. Suites (`host_test/test_*.cpp`): `config`,
 `wifi_policy`, `reachability`, `web_auth`, `web_paths` (paths + server
 policy), `web_settings`, `web_admin`, `clock`, `rtc` (BM8563 BCD, counters
 <-> UTC, VL, write plan), `sd`, `frontlight`, `touch`, `epd`, `ui` (screen
-turn, status, lists, settings views, dialogs, PIN pad), `wallpaper`,
+turn, status, lists, navigation, settings views, dialogs, PIN pad), `wallpaper`,
 `boards`, `timesync`, `timezone`, `led`, `buttons` (debounce, short/long,
 single/double press, key events), `battery` (CW2017 VCELL, profile check,
 init decision), `pin_policy`, `totp` (truncation against the RFC 4226 HMAC
 values; the HMAC itself is checked on the board by `totp test`),
 `storefile`, `vault` (records, seed phrase, PIN guard; the real `vault.cpp`
-with fakes), `ota` (image check), `usb`; pure headers, plus the few sources
+with fakes), `ota` (image check), `usb`, `passgen` (the word lists, uniform
+draws, a password's parts, its bits); pure headers, plus the few sources
 that run with fakes.
 
 ```powershell
@@ -360,7 +361,11 @@ keys (`fido_ctap_list`, by site A to Z, 6 a page: site, user, made / alg /
 kind; its pages flipped by Left / Right or the bar under it (‹, "1 / 2", ›, in the tabs' place); the count in its title; looked at
 each 2 s, not while a request waits; a swipe left on a key: its trash can,
 then "Delete this key?", No at once, Yes held 4 s, `fido_ctap_delete` in the
-typing task: `fido_list_logic.h` `Remove`), both with a back
+typing task: `fido_list_logic.h` `Remove`), a swipe right the password generator
+(`components/passgen`: `passgen.h` pure; one password, its bits, the
+choices from `ui::GenHooks` = config.json `generator`, saved in the typing
+task; the bar New / Type, Left / Right the same; typed by the typing task
+from a copy, wiped with the screen), all with a back
 arrow and the name over them; the arrow (the list at
 its page), the opposite swipe or Home closes them (`nav::Classify`; a slid tap
 is no tap). FIDO2 presence: Left or Home allows, Right refuses

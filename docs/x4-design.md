@@ -11,6 +11,7 @@ touch, Left / Right / Power buttons, frontlight, microSD). Status per function:
 | FIDO2 key | CTAP 2.3 and U2F over BLE and USB; user presence: Left or Home (Right refuses) |
 | PIN lock | the screen is locked by a PIN; the PIN and the seed phrase derive the storage key (option B in [storage-encryption.md](storage-encryption.md)), so nothing opens without it |
 | Password manager | records: site (name), login, password, TOTP secret; typed into the host over the BLE keyboard |
+| Password generator | one word password at a time (as merlokk.com/password-generator), typed over the BLE keyboard |
 | Encrypted stores | `vault.bin` (records) and `fido.bin` (FIDO2), AES-256-GCM, each with a counter and a modification time; settings in plain `config.json` |
 | Sync | over the internet; service not chosen yet (may be our own). The copy changed last wins (see below) |
 | Settings | frontlight, Wi-Fi (and the web site), Bluetooth, Devices, security, date & time, about |
