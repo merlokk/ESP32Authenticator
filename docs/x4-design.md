@@ -108,12 +108,12 @@ Portrait, 480x800. The panel scans landscape (hardware.md): `ui_logic.h` turns t
   (web.write), Login (set on the keyboard, the user then the password; or
   off).
 - **Password generator** (`passgen.h`, as merlokk.com/password-generator):
-  a swipe right on the list; its back arrow, a swipe left or Home closes it.
+  a swipe right on the list; its back arrow, a swipe left or Home x2 closes it.
   The title, one password in a box (32 / 28 / 24 px as it grows), "Strong:
   64.6 bits, 28 characters", then the choices (config.json `generator`):
   Words − n +, List (EFF / BIP-39 / SLIP-39), Separator (- . _ space none),
   switches for 3-letter starts, capitals, a digit, a symbol; a change draws
-  a new one. The bar: New (Left), Type (Right: typed over BLE). Wiped (and
+  a new one. The bar: New (Left), Type (Right or Home x1: typed over BLE). Wiped (and
   a full refresh) when the screen goes.
 - **U2F / FIDO2 list**: a swipe up from the bottom quarter; the keys by site
   (A to Z), 6 a page: site, user, "made <date>, <alg>, resident /

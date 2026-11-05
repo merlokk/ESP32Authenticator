@@ -6,8 +6,8 @@
 // from the top quarter opens Settings, a swipe up from the bottom quarter the
 // FIDO2 list (in pages of its own, Left / Right flip them too), a swipe
 // right (left to right) the password generator (its Left / Right are its
-// own: a new password, typed); the opposite swipe, their back arrow or Home
-// closes them (Settings' pages: the arrow
+// own: a new password, typed; Home: a click types, a double click goes back);
+// the opposite swipe, their back arrow or Home closes them (Settings' pages: the arrow
 // goes back to Settings). Home: the list's first page. Pure (host-tested); the PIN pad stands over all of it while
 // the vault is locked.
 
@@ -28,7 +28,9 @@ enum class Mode : uint8_t {
 enum class Input : uint8_t {
     kLeft,
     kRight,
-    kHome,
+    kHome,        // pressed (at once)
+    kHomeClick,   // a single click (400 ms after the release)
+    kHomeDouble,  // a double click
 };
 
 // A finger's path on the screen, from where it went down to where it lifted.
@@ -139,8 +141,19 @@ class Nav {
         return true;
     }
 
-    // A button. True when anything shown changed.
+    // A button. True when anything shown changed. On the generator only a
+    // double click of Home goes back (Left, Right and a click are its own).
     constexpr bool Apply(Input in) {
+        if (mode_ == Mode::kGen) {
+            if (in != Input::kHomeDouble) {
+                return false;
+            }
+            mode_ = Mode::kList;
+            return true;
+        }
+        if (in == Input::kHomeClick || in == Input::kHomeDouble) {
+            return false;  // Home acts when pressed
+        }
         if (in == Input::kHome) {
             const bool changed = mode_ != Mode::kList || page_ != 0;
             mode_ = Mode::kList;
@@ -149,9 +162,6 @@ class Nav {
             settings_page_ = 0;
             Follow();
             return changed;
-        }
-        if (mode_ == Mode::kGen) {
-            return false;  // the generator's own (screens.cpp)
         }
         if (mode_ == Mode::kFido) {
             if (fido_pages_ < 2) {

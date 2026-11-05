@@ -4688,9 +4688,9 @@ void Poll(lv_timer_t *) {
             }
             continue;
         }
-        if (nav_state.mode() == nav::Mode::kGen && input != nav::Input::kHome) {
-            (input == nav::Input::kLeft ? gen_new : gen_type) = true;
-            continue;
+        if (nav_state.mode() == nav::Mode::kGen) {
+            gen_new |= input == nav::Input::kLeft;
+            gen_type |= input == nav::Input::kRight || input == nav::Input::kHomeClick;
         }
         changed |= nav_state.Apply(input);
     }

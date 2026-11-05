@@ -364,7 +364,9 @@ then "Delete this key?", No at once, Yes held 4 s, `fido_ctap_delete` in the
 typing task: `fido_list_logic.h` `Remove`), a swipe right the password generator
 (`components/passgen`: `passgen.h` pure; one password, its bits, the
 choices from `ui::GenHooks` = config.json `generator`, saved in the typing
-task; the bar New / Type, Left / Right the same; typed by the typing task
+task; the bar New / Type, Left / Right the same, Home: a click types, a
+double click goes back (`Input::kHomeClick` / `kHomeDouble` from the
+keypad's click events, 400 ms after the release; Home pressed does nothing there); typed by the typing task
 from a copy, wiped with the screen), all with a back
 arrow and the name over them; the arrow (the list at
 its page), the opposite swipe or Home closes them (`nav::Classify`; a slid tap

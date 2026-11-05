@@ -311,7 +311,7 @@ void StatusSource(ui::status::Status *s) {
 }
 
 // Button bindings, from the keypad task; any key is activity. Left / Right /
-// Home pressed: the screens (ui::Navigate), unless FIDO2 waits for them. Power x2: the
+// Home pressed, Home x1 / x2: the screens (ui::Navigate), unless FIDO2 waits for them. Power x2: the
 // frontlight on / off; Power held: off (wallpaper, deep sleep); Power x3: off
 // locked (the PIN after the wake, whatever power.keepPinHours says).
 void OnKey(const buttons::KeyEvent &e) {
@@ -323,6 +323,11 @@ void OnKey(const buttons::KeyEvent &e) {
             case boards::ButtonId::kHome: ui::Navigate(ui::nav::Input::kHome); break;
             default: break;
         }
+    }
+    // Home's clicks too (the generator: a click types, a double click goes back).
+    if (e.kind == buttons::Kind::kClick && !fido_waiting &&
+        e.key == static_cast<uint8_t>(boards::ButtonId::kHome) && e.count <= 2) {
+        ui::Navigate(e.count == 2 ? ui::nav::Input::kHomeDouble : ui::nav::Input::kHomeClick);
     }
     if (e.key != static_cast<uint8_t>(boards::ButtonId::kPower)) {
         return;

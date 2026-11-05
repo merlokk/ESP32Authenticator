@@ -178,14 +178,15 @@ int CmdUi(int argc, char **argv) {
         return 0;
     }
     if (argc == 3 && strcmp(argv[1], "key") == 0) {
-        const char *keys[] = {"left", "right", "home"};  // nav::Input's order
-        for (int i = 0; i < 3; ++i) {
+        // nav::Input's order: home pressed, then its click and double click.
+        const char *keys[] = {"left", "right", "home", "home1", "home2"};
+        for (int i = 0; i < 5; ++i) {
             if (strcmp(argv[2], keys[i]) == 0) {
                 ui::Navigate(static_cast<ui::nav::Input>(i));
                 return 0;
             }
         }
-        printf("usage: ui key left|right|home\n");
+        printf("usage: ui key left|right|home|home1|home2\n");
         return 1;
     }
     if (argc == 3 && strcmp(argv[1], "show") == 0) {
@@ -721,7 +722,7 @@ const esp_console_cmd_t kCommands[] = {
                 "U2F / FIDO2 list, on the screen only | show list|settings|fido|gen: that screen | "
                 "click <x> <y> [hold ms] / swipe <x0> <y0> <x1> <y1>: a made-up finger (portrait "
                 "px) | "
-                "key left|right|home: as the button | "
+                "key left|right|home|home1|home2: as the button (home1 / home2: Home's click / double click) | "
                 "screenshot: the screen as base64 (utils/screenshot.py makes a PNG)",
         .hint = "[wallpaper [grey|bw|card] [<n>] | show <screen> | key <key> | click <x> <y> [ms] | "
                 "swipe <x0> <y0> <x1> <y1> | "

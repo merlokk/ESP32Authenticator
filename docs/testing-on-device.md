@@ -71,7 +71,7 @@ Portrait coordinates: 480x800, (0, 0) top left; the status bar is the top
 | Command | Does |
 |---|---|
 | `ui show list\|settings\|fido\|gen` | opens that screen, as its swipe would |
-| `ui key left\|right\|home` | as the button (pages; Home: the list, page 1) |
+| `ui key left\|right\|home\|home1\|home2` | as the button (pages; Home: the list, page 1); `home1` / `home2`: Home's click / double click (the generator: type / back) |
 | `ui click <x> <y> [ms]` | a made-up tap (down, ~60 ms or `ms` held, up) |
 | `ui swipe <x0> <y0> <x1> <y1>` | a made-up finger moved in ~200 ms; classified as a real one (`nav::Classify`: a tap slides 24 px at most, a swipe goes 100 px, mostly along one axis; from the top quarter, y < 200, it opens Settings, from the bottom one, y >= 600, the FIDO2 list; sideways on a FIDO2 row, its trash can) |
 | `ui screenshot` | LVGL's 1-bit screen as base64 with length and CRC32 |
