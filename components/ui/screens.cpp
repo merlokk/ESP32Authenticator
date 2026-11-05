@@ -3401,68 +3401,63 @@ void OnStatusChoice(lv_event_t *event) {
     }
 }
 
-// A row of the interval's choices, the one in use filled; a tap gives
-// `base` + its index.
-void ChoiceButtons(int32_t y, int in_use, int base) {
-    constexpr int32_t kGap = 8;
-    const int32_t w =
-        (kRowWidth - 24 - (settings::kStatusChoiceCount - 1) * kGap) / settings::kStatusChoiceCount;
-    for (uint8_t i = 0; i < settings::kStatusChoiceCount; ++i) {
-        const bool on = i == in_use;
-        lv_obj_t *b = lv_obj_create(content);
-        lv_obj_remove_style_all(b);
-        lv_obj_add_flag(b, LV_OBJ_FLAG_CLICKABLE);
-        lv_obj_set_size(b, w, 56);
-        lv_obj_set_pos(b, 12 + i * (w + kGap), y);
-        lv_obj_set_style_radius(b, 8, 0);
-        lv_obj_set_style_border_width(b, 2, 0);
-        lv_obj_set_style_border_color(b, lv_color_black(), 0);
-        lv_obj_set_style_bg_opa(b, LV_OPA_COVER, 0);
-        lv_obj_set_style_bg_color(b, on ? lv_color_black() : lv_color_white(), 0);
-        lv_obj_t *l = Label(b, &lv_font_montserrat_20);
-        lv_label_set_text(l, settings::kStatusChoices[i].short_label);
-        lv_obj_set_style_text_color(l, on ? lv_color_white() : lv_color_black(), 0);
-        lv_obj_center(l);
-        lv_obj_add_event_cb(b, OnStatusChoice, LV_EVENT_CLICKED,
-                            reinterpret_cast<void *>(static_cast<intptr_t>(base + i)));
+uint8_t sync_minutes_shown = 0;
+bool config_on_sync = false;  // the choice page's interval: the sync's, else the status's
+int config_row_tapped = -1;   // Configure: 0 the status, 1 the sync
+
+void OnConfigRow(lv_event_t *event) {
+    if (LastWasTap()) {
+        config_row_tapped = static_cast<int>(reinterpret_cast<intptr_t>(lv_event_get_user_data(event)));
     }
 }
 
-uint8_t sync_minutes_shown = 0;
+// The interval's text on its row: "Every 10 min", or "N min" set elsewhere.
+const char *IntervalText(uint8_t minutes, char *out, size_t size) {
+    const int i = settings::StatusChoiceIndex(minutes);
+    if (i >= 0) {
+        return settings::kStatusChoices[i].label;
+    }
+    snprintf(out, size, "%u min", static_cast<unsigned>(minutes));
+    return out;
+}
 
-// Configure: how often the status and the sync go, and the status now.
+// Configure: a row per interval (a tap: its choices), what each is, the status now.
 void ShowServerConfig() {
     TitleBar("Configure");
+    char text[16];
     int32_t y = kTitleHeight;
-    lv_obj_t *head = Label(content, &lv_font_montserrat_24);
-    lv_label_set_text(head, "Status report");
-    lv_obj_set_pos(head, 12, y + 12);
-    y += 48;
-    ChoiceButtons(y, settings::StatusChoiceIndex(status_minutes_shown), 0);
-    y += 64;
+    ChoiceRow(y, "Status report", IntervalText(status_minutes_shown, text, sizeof text), false,
+              OnConfigRow, 0);
+    y += kNetRow;
+    ChoiceRow(y, "Sync", IntervalText(sync_minutes_shown, text, sizeof text), false, OnConfigRow,
+              1);
+    y += kNetRow;
     lv_obj_t *note = Label(content, &lv_font_montserrat_20);
     lv_label_set_long_mode(note, LV_LABEL_LONG_MODE_WRAP);
     lv_obj_set_width(note, kRowWidth - 24);
-    lv_label_set_text(note, "The device tells the server its state (firmware, battery, "
-                            "radios): at the start or when Wi-Fi connects, then this often.");
-    lv_obj_set_pos(note, 12, y + 4);
-    y += 112;
-    head = Label(content, &lv_font_montserrat_24);
-    lv_label_set_text(head, "Sync");
-    lv_obj_set_pos(head, 12, y + 12);
-    y += 48;
-    ChoiceButtons(y, settings::StatusChoiceIndex(sync_minutes_shown), settings::kSyncChoiceBase);
-    y += 64;
-    note = Label(content, &lv_font_montserrat_20);
-    lv_label_set_long_mode(note, LV_LABEL_LONG_MODE_WRAP);
-    lv_obj_set_width(note, kRowWidth - 24);
-    lv_label_set_text(note, "The passwords and passkeys with the server's copy: at the start, "
-                            "after each change, then this often. Never: only Sync now.");
-    lv_obj_set_pos(note, 12, y + 4);
+    lv_label_set_text(note, "Status report: the device tells the server its state (firmware, "
+                            "battery, radios) at the start or when Wi-Fi connects, then this "
+                            "often. Sync: the passwords and passkeys with the server's copy at "
+                            "the start, after each change, then this often; never: only Sync "
+                            "now.");
+    lv_obj_set_pos(note, 12, y + 12);
     lv_obj_t *b = AskButton(content, kRowWidth - 48,
                             settings::ActionText(settings::Action::kServerStatus));
     lv_obj_align(b, LV_ALIGN_BOTTOM_MID, 0, -16);
     lv_obj_add_event_cb(b, OnAction, LV_EVENT_CLICKED, nullptr);
+}
+
+// One interval's choices, a check at the one in use; a tap keeps one.
+void ShowServerConfigChoice() {
+    TitleBar(config_on_sync ? "Sync" : "Status report");
+    const int in_use =
+        settings::StatusChoiceIndex(config_on_sync ? sync_minutes_shown : status_minutes_shown);
+    const int base = config_on_sync ? settings::kSyncChoiceBase : 0;
+    int32_t y = kTitleHeight;
+    for (uint8_t i = 0; i < settings::kStatusChoiceCount; ++i, y += kNetRow) {
+        ChoiceRow(y, settings::kStatusChoices[i].label, nullptr, i == in_use, OnStatusChoice,
+                  base + i);
+    }
 }
 
 // Firmware: the device's lines (running, checked), then a row per release,
@@ -3650,13 +3645,21 @@ bool PollServer() {
         const bool sync = tap >= settings::kSyncChoiceBase;
         const int i = sync ? tap - settings::kSyncChoiceBase : tap;
         uint8_t &shown = sync ? sync_minutes_shown : status_minutes_shown;
-        if (page == settings::Page::kServerConfig && i < settings::kStatusChoiceCount &&
-            settings::kStatusChoices[i].minutes != shown) {
-            Job job = MakeJob(sync ? JobKind::kServerSyncEvery : JobKind::kServerStatusEvery);
-            job.id = settings::kStatusChoices[i].minutes;
-            SendJob(job);
-            shown = settings::kStatusChoices[i].minutes;
-            changed = true;  // drawn again with the new choice
+        if (page == settings::Page::kServerConfigChoice && i < settings::kStatusChoiceCount) {
+            if (settings::kStatusChoices[i].minutes != shown) {
+                Job job = MakeJob(sync ? JobKind::kServerSyncEvery : JobKind::kServerStatusEvery);
+                job.id = settings::kStatusChoices[i].minutes;
+                SendJob(job);
+                shown = settings::kStatusChoices[i].minutes;
+            }
+            changed |= nav_state.Back();  // Configure, with the new choice
+        }
+    }
+    if (config_row_tapped >= 0) {
+        config_on_sync = config_row_tapped == 1;
+        config_row_tapped = -1;
+        if (page == settings::Page::kServerConfig) {
+            changed |= nav_state.OpenSettings(static_cast<uint8_t>(settings::Page::kServerConfigChoice));
         }
     }
     if (store_sync_tapped >= 0) {
@@ -4005,6 +4008,10 @@ void ShowSettings() {
     }
     if (server_hooks != nullptr && page == settings::Page::kServerConfig) {
         ShowServerConfig();
+        return;
+    }
+    if (server_hooks != nullptr && page == settings::Page::kServerConfigChoice) {
+        ShowServerConfigChoice();
         return;
     }
     if (server_hooks != nullptr && page == settings::Page::kServerSyncPin) {
@@ -5014,6 +5021,7 @@ void Poll(lv_timer_t *) {
         settings_page != settings::Page::kWifiHidden &&
         settings_page != settings::Page::kServerEmail &&
         settings_page != settings::Page::kServerConfig &&
+        settings_page != settings::Page::kServerConfigChoice &&
         settings_page != settings::Page::kServerSyncPin &&
         settings_page != settings::Page::kServerSyncPick && settings_page != settings::Page::kHelp &&
         lv_tick_elaps(settings_looked_at) >= kSettingsMs) {

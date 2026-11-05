@@ -800,7 +800,8 @@ account on the authentication server (`config.json` `server.host`).
   Wi-Fi first connects), then every `server.statusMinutes` (0 never, 1, 10,
   30, 60; default 10), a failed one again in a minute. The answer's `time`
   sets Clock. Settings > Server > Configure:
-  the interval (saved) and "Send the status now"; console `server report`.
+  a row per interval (a tap: its choices on a page of their own, saved) and
+  "Send the status now"; console `server report`.
 - Sync (`sync_logic.h`, device-protocol.md: Stores): `vault.bin` and
   `fido.bin` by their headers (store id, version, nonce). NVS `srvsync`
   keeps the write both sides had at the last sync, so a change on either

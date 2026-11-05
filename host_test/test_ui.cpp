@@ -697,6 +697,7 @@ void test_settings_pages(void) {
     TEST_ASSERT_TRUE(st::Parent(st::Page::kServer) == st::Page::kMain);
     TEST_ASSERT_TRUE(st::PageAction(st::Page::kServerEmail) == st::Action::kNone);
     TEST_ASSERT_TRUE(st::Parent(st::Page::kServerConfig) == st::Page::kServer);
+    TEST_ASSERT_TRUE(st::Parent(st::Page::kServerConfigChoice) == st::Page::kServerConfig);
     TEST_ASSERT_EQUAL_STRING("Configure", st::Title(st::Page::kServerConfig));
     TEST_ASSERT_TRUE(st::PageAction(st::Page::kServerConfig) == st::Action::kServerStatus);
     TEST_ASSERT_TRUE(st::Parent(st::Page::kServerSync) == st::Page::kServer);

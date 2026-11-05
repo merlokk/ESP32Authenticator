@@ -194,6 +194,9 @@ the PIN nor the phrase.
 
 ### Configure
 
+A row per interval with its value; a tap lists the choices (*Never*, every
+minute, 10 or 30 minutes, every hour), a tap on one keeps it.
+
 - **Status report**: how often the device tells the server its firmware,
   battery and radios.
 - **Sync**: how often the copies are compared besides the automatic times

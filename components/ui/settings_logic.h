@@ -54,6 +54,7 @@ enum class Page : uint8_t {
     kUsbChoice,       // USB: the mode's choices
     kPowerChoice,     // Power: one setting's choices
     kSecurityChoice,  // Security: one setting's choices (PIN after sleep)
+    kServerConfigChoice,  // Server > Configure: the status's or the sync's interval
 };
 
 // Where a page's back arrow goes.
@@ -70,6 +71,7 @@ constexpr Page Parent(Page p) {
            : p == Page::kUsbChoice                         ? Page::kUsb
            : p == Page::kPowerChoice                       ? Page::kPower
            : p == Page::kSecurityChoice                    ? Page::kSecurity
+           : p == Page::kServerConfigChoice                ? Page::kServerConfig
            : p == Page::kTimeSync || p == Page::kTimeRegion || p == Page::kTimeSet ? Page::kTime
            : p == Page::kTimeZone ? Page::kTimeRegion
            : p == Page::kSecurityLock || p == Page::kSecurityPin ? Page::kSecurity
@@ -145,6 +147,7 @@ constexpr const char *Title(Page p) {
         case Page::kUsbChoice: return "USB";
         case Page::kPowerChoice: return "Power";
         case Page::kSecurityChoice: return "Security";
+        case Page::kServerConfigChoice: return "Configure";
     }
     return "";
 }
@@ -270,14 +273,13 @@ constexpr bool EmailOk(const char *email) {
 struct StatusChoice {
     uint8_t minutes;
     const char *label;
-    const char *short_label;  // a button in a row of them
 };
-inline constexpr StatusChoice kStatusChoices[] = {{0, "Never", "never"},
-                                                  {1, "Every minute", "1 min"},
-                                                  {10, "Every 10 min", "10 min"},
-                                                  {30, "Every 30 min", "30 min"},
-                                                  {60, "Every hour", "1 hour"}};
-// Configure's taps: a status choice is its row, a sync choice this plus it.
+inline constexpr StatusChoice kStatusChoices[] = {{0, "Never"},
+                                                  {1, "Every minute"},
+                                                  {10, "Every 10 min"},
+                                                  {30, "Every 30 min"},
+                                                  {60, "Every hour"}};
+// The choice page's taps: a status choice is its row, a sync choice this plus it.
 inline constexpr int kSyncChoiceBase = 10;
 inline constexpr uint8_t kStatusChoiceCount = sizeof kStatusChoices / sizeof kStatusChoices[0];
 

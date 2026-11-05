@@ -1086,6 +1086,7 @@ void SettingsDescribe(ui::settings::Page page, bool summary, char *out, size_t s
         case Page::kWifiHidden:
         case Page::kServerEmail:
         case Page::kServerConfig:
+        case Page::kServerConfigChoice:
         case Page::kServerSyncPin: break;
         case Page::kServerSyncPick:
         case Page::kHelp: break;
