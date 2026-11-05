@@ -60,6 +60,7 @@ add_executable(host_test
     test_ota.cpp
     test_usb.cpp
     test_rng.cpp
+    test_passgen.cpp
     test_server.cpp
     test_sync.cpp
     test_firmware.cpp
@@ -89,6 +90,9 @@ add_executable(host_test
     ../components/vault/seed_words.cpp
     ../components/vault/vault.cpp
     ../components/ota/image_check.cpp
+    ../components/passgen/passgen_words.cpp
+    ../components/passgen/words_eff.cpp
+    ../components/passgen/words_slip39.cpp
 
     "${CJSON_DIR}/cJSON.c"
     "${UNITY_DIR}/unity.c"
@@ -122,6 +126,7 @@ target_include_directories(host_test PRIVATE
     ../components/storefile
     ../components/vault
     ../components/ota
+    ../components/passgen
     ../components/cli
     "${CJSON_DIR}"
     "${UNITY_DIR}"

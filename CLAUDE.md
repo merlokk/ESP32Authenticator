@@ -37,7 +37,10 @@ Firmware: C/C++ on **ESP-IDF**.
   Devices: power, display, USB port, touch calibration; security: PIN
   change, wipe PIN, FIDO2 state and reset; date & time; About with
   Restart; dialogs in `dialog.h`) and the
-  U2F / FIDO2 keys by swipes, deleted from their row; FIDO2 presence Left or Home yes / Right no; PIN pad while
+  U2F / FIDO2 keys by swipes, deleted from their row; a swipe right: the
+  password generator (as merlokk.com/password-generator, `passgen`, word lists
+  in the firmware, `generator` in config.json; Type / Right types it, New /
+  Left another); FIDO2 presence Left or Home yes / Right no; PIN pad while
 the vault is locked, GT911 touch as the pointer, `ui`); power-off
   (Power held / x3 locked / idle `power.idleMinutes` / `off`): a random PNG from
   `/sdcard/wallpapers` (dithered to 4 grey levels on

@@ -8,6 +8,7 @@
 
 #include "esp_err.h"
 #include "nav_logic.h"
+#include "passgen.h"
 #include "settings_logic.h"
 #include "status_logic.h"
 #include "wifi_view_logic.h"
@@ -134,6 +135,15 @@ struct DisplayHooks {
     const char *(*set)(display_view::Setting setting, uint16_t value);
 };
 void SetDisplayHooks(const DisplayHooks *hooks);
+
+// The password generator's choices (config.json `generator`), by the device.
+struct GenHooks {
+    // The saved ones. ui task, when the generator first opens.
+    void (*get)(passgen::Options *out);
+    // Kept (config.json); nullptr, or what went wrong. The ui's own task.
+    const char *(*save)(const passgen::Options &options);
+};
+void SetGenHooks(const GenHooks *hooks);
 
 // The Date & time window (time_view_logic.h), filled by the device.
 struct TimeHooks {

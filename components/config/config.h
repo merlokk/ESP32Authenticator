@@ -19,6 +19,7 @@
 #include <cstdint>
 
 #include "esp_err.h"
+#include "passgen.h"
 
 namespace config {
 
@@ -232,6 +233,7 @@ struct Data {
     Pin pin;
     Usb usb;
     Server server;
+    passgen::Options generator;  // the password generator's choices (passgen.h)
     Test test;
 };
 

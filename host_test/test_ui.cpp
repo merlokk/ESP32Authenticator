@@ -416,6 +416,23 @@ void test_nav_swipes(void) {
     n.Swipe(Gesture::kUpFromBottom);
     TEST_ASSERT_TRUE(n.Apply(ui::nav::Input::kHome));
     TEST_ASSERT_TRUE(n.mode() == Mode::kList);
+    // A swipe right: the generator; its buttons are its own, a swipe left closes it.
+    TEST_ASSERT_FALSE(n.Swipe(Gesture::kLeft));
+    TEST_ASSERT_TRUE(n.Swipe(Gesture::kRight));
+    TEST_ASSERT_TRUE(n.mode() == Mode::kGen);
+    TEST_ASSERT_FALSE(n.Apply(ui::nav::Input::kLeft));
+    TEST_ASSERT_FALSE(n.Apply(ui::nav::Input::kRight));
+    TEST_ASSERT_FALSE(n.Tab(0));
+    TEST_ASSERT_FALSE(n.Swipe(Gesture::kRight));
+    TEST_ASSERT_FALSE(n.Swipe(Gesture::kDownFromTop));
+    TEST_ASSERT_TRUE(n.Swipe(Gesture::kLeft));
+    TEST_ASSERT_TRUE(n.mode() == Mode::kList);
+    n.Swipe(Gesture::kRight);
+    TEST_ASSERT_TRUE(n.Back());
+    TEST_ASSERT_TRUE(n.mode() == Mode::kList);
+    n.Swipe(Gesture::kRight);
+    TEST_ASSERT_TRUE(n.Apply(ui::nav::Input::kHome));
+    TEST_ASSERT_TRUE(n.mode() == Mode::kList);
 }
 
 void test_nav_fido_pages(void) {

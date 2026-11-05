@@ -4,8 +4,10 @@
 // the bottom (at most kTabs shown; with more pages the row scrolls so the
 // current one is in it). Left / Right flip the pages (round). A swipe down
 // from the top quarter opens Settings, a swipe up from the bottom quarter the
-// FIDO2 list (in pages of its own, Left / Right flip them too); the opposite
-// swipe, their back arrow or Home closes them (Settings' pages: the arrow
+// FIDO2 list (in pages of its own, Left / Right flip them too), a swipe
+// right (left to right) the password generator (its Left / Right are its
+// own: a new password, typed); the opposite swipe, their back arrow or Home
+// closes them (Settings' pages: the arrow
 // goes back to Settings). Home: the list's first page. Pure (host-tested); the PIN pad stands over all of it while
 // the vault is locked.
 
@@ -20,6 +22,7 @@ enum class Mode : uint8_t {
     kList,      // the password records
     kSettings,  // pulled down from the top
     kFido,      // pulled up from the bottom
+    kGen,       // the password generator, pulled in from the left
 };
 
 enum class Input : uint8_t {
@@ -147,6 +150,9 @@ class Nav {
             Follow();
             return changed;
         }
+        if (mode_ == Mode::kGen) {
+            return false;  // the generator's own (screens.cpp)
+        }
         if (mode_ == Mode::kFido) {
             if (fido_pages_ < 2) {
                 return false;
@@ -190,7 +196,11 @@ class Nav {
             case Mode::kList:
                 next = g == Gesture::kDownFromTop    ? Mode::kSettings
                        : g == Gesture::kUpFromBottom ? Mode::kFido
+                       : g == Gesture::kRight        ? Mode::kGen
                                                      : mode_;
+                break;
+            case Mode::kGen:
+                next = g == Gesture::kLeft ? Mode::kList : mode_;
                 break;
             case Mode::kSettings:
                 next = g == Gesture::kUp || g == Gesture::kUpFromBottom ? Mode::kList : mode_;

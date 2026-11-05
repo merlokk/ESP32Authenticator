@@ -13,6 +13,7 @@
 
 #include "esp_attr.h"
 #include "esp_heap_caps.h"
+#include "esp_random.h"
 #include "fido_ctap.h"
 #include "fido_list_logic.h"
 #include "freertos/FreeRTOS.h"
@@ -21,6 +22,7 @@
 #include "list_logic.h"
 #include "lvgl.h"
 #include "nav_logic.h"
+#include "passgen_words.h"
 #include "status_logic.h"
 #include "codes.h"
 #include "dialog.h"
@@ -124,6 +126,8 @@ enum class JobKind : uint8_t {
     kType,       // record `id`'s `zone`
     kDeleteKey,  // the FIDO2 key `key`
     kSaveLight,  // the frontlight's level into config.json
+    kTypeGen,    // the generator's password
+    kSaveGen,    // the generator's choices `gen` into config.json
     kAct,        // a Settings page's `action`
     kWifiScan,
     kWifiActive,  // Wi-Fi on (`flag`) or off
@@ -170,6 +174,7 @@ struct Job {
     time_view::Manual manual;
     uint8_t which;
     wifi_view::StaticIp static_ip;
+    passgen::Options gen;
 };
 
 // A job with only its kind set.
@@ -3959,6 +3964,193 @@ void ShowSettings() {
     }
 }
 
+// --- the password generator ----------------------------------------------------------
+
+// One password (passgen.h) in a box, its strength, the choices under it; the
+// bar: New (as Left) draws another, Type (as Right) types it. Only while
+// shown: wiped when the screen goes. The choices go to config.json.
+const GenHooks *gen_hooks = nullptr;
+passgen::Options gen_options;
+bool gen_loaded = false;            // gen_options read from the hooks
+char gen_text[passgen::kTextSize];  // under Lock (the typing task copies it)
+lv_obj_t *gen_label = nullptr;      // the password on the glass, nullptr none
+bool gen_new = false;               // New / Left, Type / Right: for Poll
+bool gen_type = false;
+int gen_tapped = -1;                // a choice: kGen* + its value, for Poll
+constexpr int kGenWords = 0;        // + 0 fewer, + 1 more
+constexpr int kGenList = 10;        // + passgen::List
+constexpr int kGenSeparator = 20;   // + kSeparators' index
+constexpr int kGenFlag = 30;        // + 0 prefix, capitalize, digit, symbol
+constexpr int32_t kGenBox = 170;
+constexpr int32_t kGenRow = 52;
+constexpr int32_t kGenChipX = 140;  // the choices' left edge on their row
+
+uint32_t GenRandom(void *) { return esp_random(); }
+
+void GenNew() {
+    passgen::Generate(gen_options, passgen::WordsOf(gen_options.list), GenRandom, nullptr,
+                      gen_text);
+}
+
+void OnGenTap(lv_event_t *event) {
+    if (LastWasTap()) {
+        gen_tapped = static_cast<int>(reinterpret_cast<intptr_t>(lv_event_get_user_data(event)));
+    }
+}
+
+void OnGenSwitch(lv_event_t *event) {
+    gen_tapped = static_cast<int>(reinterpret_cast<intptr_t>(lv_event_get_user_data(event)));
+}
+
+// A framed button on a row, filled when `on`; a tap gives `id`.
+void GenChip(lv_obj_t *row, int32_t x, int32_t w, const char *text, bool on, int id) {
+    lv_obj_t *b = lv_obj_create(row);
+    lv_obj_remove_style_all(b);
+    lv_obj_add_flag(b, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_size(b, w, 42);
+    lv_obj_set_pos(b, x, (kGenRow - 42) / 2);
+    lv_obj_set_style_radius(b, 8, 0);
+    lv_obj_set_style_border_width(b, 2, 0);
+    lv_obj_set_style_border_color(b, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(b, LV_OPA_COVER, 0);
+    lv_obj_set_style_bg_color(b, on ? lv_color_black() : lv_color_white(), 0);
+    lv_obj_t *l = Label(b, &lv_font_montserrat_20);
+    lv_label_set_text(l, text);
+    lv_obj_set_style_text_color(l, on ? lv_color_white() : lv_color_black(), 0);
+    lv_obj_center(l);
+    lv_obj_add_event_cb(b, OnGenTap, LV_EVENT_CLICKED, reinterpret_cast<void *>(intptr_t{id}));
+}
+
+// A row with its name on the left.
+lv_obj_t *GenRow(int32_t y, const char *name) {
+    lv_obj_t *row = Panel(content, y, kGenRow);
+    lv_obj_set_style_border_width(row, 1, 0);
+    lv_obj_t *l = Label(row, &lv_font_montserrat_24);
+    lv_label_set_text(l, name);
+    lv_obj_set_pos(l, 12, (kGenRow - 30) / 2);
+    return row;
+}
+
+// Chips across the row's right part, the one at `on` filled.
+void GenChips(lv_obj_t *row, const char *const *labels, uint8_t count, uint8_t on, int base) {
+    constexpr int32_t kGap = 6;
+    const int32_t w = (kRowWidth - 12 - kGenChipX - (count - 1) * kGap) / count;
+    for (uint8_t i = 0; i < count; ++i) {
+        GenChip(row, kGenChipX + i * (w + kGap), w, labels[i], i == on, base + i);
+    }
+}
+
+void ShowGen() {
+    if (!gen_loaded) {
+        if (gen_hooks != nullptr) {
+            gen_hooks->get(&gen_options);
+        }
+        gen_loaded = true;
+    }
+    if (gen_text[0] == '\0') {
+        GenNew();
+    }
+    TitleBar("Password generator");
+    int32_t y = kTitleHeight + 8;
+    lv_obj_t *box = Panel(content, y, kGenBox);
+    lv_obj_set_style_border_side(box, LV_BORDER_SIDE_FULL, 0);
+    lv_obj_set_style_border_width(box, 2, 0);
+    lv_obj_set_style_radius(box, 10, 0);
+    const size_t length = strlen(gen_text);
+    gen_label = Label(box, length <= 60   ? &lv_font_montserrat_32
+                           : length <= 90 ? &lv_font_montserrat_28
+                                          : &lv_font_montserrat_24);
+    lv_label_set_long_mode(gen_label, LV_LABEL_LONG_MODE_WRAP);
+    lv_obj_set_width(gen_label, kRowWidth - 32);
+    lv_obj_set_style_text_align(gen_label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_text(gen_label, gen_text);
+    lv_obj_center(gen_label);
+    y += kGenBox + 6;
+
+    const size_t pool = passgen::PoolSize(passgen::WordsOf(gen_options.list), gen_options.prefix);
+    const uint32_t tenths = (passgen::MilliBits(gen_options, pool) + 50) / 100;
+    lv_obj_t *strength = Label(content, &lv_font_montserrat_20);
+    lv_label_set_text_fmt(strength, "%s: %u.%u bits, %u characters",
+                          passgen::StrengthLabel(tenths * 100), static_cast<unsigned>(tenths / 10),
+                          static_cast<unsigned>(tenths % 10), static_cast<unsigned>(length));
+    lv_obj_set_width(strength, kRowWidth);
+    lv_obj_set_style_text_align(strength, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_pos(strength, 0, y);
+    y += 34;
+
+    lv_obj_t *row = GenRow(y, "Words");
+    GenChip(row, kGenChipX, 80, LV_SYMBOL_MINUS, false, kGenWords);
+    lv_obj_t *count = Label(row, &lv_font_montserrat_28);
+    lv_label_set_text_fmt(count, "%u", static_cast<unsigned>(gen_options.words));
+    lv_obj_set_width(count, kRowWidth - 12 - kGenChipX - 160);
+    lv_obj_set_style_text_align(count, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_pos(count, kGenChipX + 80, (kGenRow - 34) / 2);
+    GenChip(row, kRowWidth - 12 - 80, 80, LV_SYMBOL_PLUS, false, kGenWords + 1);
+    y += kGenRow;
+
+    row = GenRow(y, "List");
+    GenChips(row, passgen::kListLabels, passgen::kListCount,
+             static_cast<uint8_t>(gen_options.list), kGenList);
+    y += kGenRow;
+
+    row = GenRow(y, "Separator");
+    const char *seps[passgen::kSeparatorCount];
+    for (uint8_t i = 0; i < passgen::kSeparatorCount; ++i) {
+        seps[i] = passgen::kSeparators[i].label;
+    }
+    GenChips(row, seps, passgen::kSeparatorCount, gen_options.separator, kGenSeparator);
+    y += kGenRow;
+
+    static const char *const kFlags[] = {"First 3 letters only", "Capitalize", "Add a digit",
+                                         "Add a symbol"};
+    const bool flags[] = {gen_options.prefix, gen_options.capitalize, gen_options.digit,
+                          gen_options.symbol};
+    for (uint8_t i = 0; i < 4; ++i, y += kGenRow) {
+        row = GenRow(y, kFlags[i]);
+        lv_obj_t *s = Switch(row, flags[i]);
+        lv_obj_align(s, LV_ALIGN_RIGHT_MID, -12, 0);
+        lv_obj_add_event_cb(s, OnGenSwitch, LV_EVENT_VALUE_CHANGED,
+                            reinterpret_cast<void *>(intptr_t{kGenFlag + i}));
+    }
+}
+
+// A choice tapped into gen_options; false: nothing changed.
+bool GenChoose(int tap) {
+    passgen::Options &o = gen_options;
+    if (tap == kGenWords || tap == kGenWords + 1) {
+        const int n = o.words + (tap == kGenWords ? -1 : 1);
+        if (n < passgen::kMinWords || n > passgen::kMaxWords) {
+            return false;
+        }
+        o.words = static_cast<uint8_t>(n);
+    } else if (tap >= kGenList && tap < kGenList + passgen::kListCount) {
+        o.list = static_cast<passgen::List>(tap - kGenList);
+    } else if (tap >= kGenSeparator && tap < kGenSeparator + passgen::kSeparatorCount) {
+        o.separator = static_cast<uint8_t>(tap - kGenSeparator);
+    } else if (tap == kGenFlag) {
+        o.prefix = !o.prefix;
+    } else if (tap == kGenFlag + 1) {
+        o.capitalize = !o.capitalize;
+    } else if (tap == kGenFlag + 2) {
+        o.digit = !o.digit;
+    } else if (tap == kGenFlag + 3) {
+        o.symbol = !o.symbol;
+    } else {
+        return false;
+    }
+    return true;
+}
+
+// The bar: New (Left), Type (Right).
+void ShowGenBar() {
+    tab_map[0] = LV_SYMBOL_REFRESH " New";
+    tab_map[1] = LV_SYMBOL_KEYBOARD " Type";
+    tab_map[2] = "";
+    lv_buttonmatrix_set_map(tabs, tab_map);
+    lv_buttonmatrix_clear_button_ctrl_all(tabs, LV_BUTTONMATRIX_CTRL_CHECKED);
+    lv_obj_remove_flag(tabs, LV_OBJ_FLAG_HIDDEN);
+}
+
 // The FIDO2 list's pages: back, "1 / 2" (the current one, inverted), forward.
 void ShowFidoBar() {
     snprintf(tab_text[1], sizeof tab_text[1], "%u / %u", nav_state.fido_page() + 1u,
@@ -3978,6 +4170,10 @@ void ShowTabs() {
     const uint8_t n = nav_state.tabs();
     if (nav_state.mode() == nav::Mode::kFido && nav_state.fido_pages() > 1) {
         ShowFidoBar();
+        return;
+    }
+    if (nav_state.mode() == nav::Mode::kGen) {
+        ShowGenBar();
         return;
     }
     if (nav_state.mode() != nav::Mode::kList || nav_state.pages() < 2) {
@@ -4039,6 +4235,14 @@ void Show() {
     }
     row_count = 0;
     fido_rows = 0;
+    if (gen_label != nullptr) {
+        SetWiped(gen_label, "");
+        gen_label = nullptr;
+        if (nav_state.mode() != nav::Mode::kGen) {
+            AskRefresh(Refresh::kFull);
+            vault::Wipe(gen_text, sizeof gen_text);
+        }
+    }
     // A redraw takes the can and any dialog away (its question unanswered).
     remove_state.Clear();
     light_switch = nullptr;  // deleted with the page
@@ -4068,6 +4272,9 @@ void Show() {
             break;
         case nav::Mode::kFido:
             ShowFido();
+            break;
+        case nav::Mode::kGen:
+            ShowGen();
             break;
     }
     ShowTabs();
@@ -4122,6 +4329,22 @@ void StartTabs(lv_obj_t *scr) {
 
 // --- typing ------------------------------------------------------------------------
 
+char type_gen[passgen::kTextSize];  // the typing task's copy of the generator's
+
+// `text` typed on the host: what to say (`done` when it went).
+const char *Typed(const char *text, const char *done) {
+    switch (typist != nullptr ? typist(text) : ESP_ERR_NOT_SUPPORTED) {
+        case ESP_OK:
+            return done;
+        case ESP_ERR_INVALID_STATE:
+            return "no keyboard host connected";
+        case ESP_ERR_INVALID_ARG:
+            return "cannot type it: a character not on a US keyboard";
+        default:
+            return "cannot type";
+    }
+}
+
 const char *TypeJob(const Job &job) {
     if (!Fetch(job.id, &type_record)) {
         return "the record is gone";
@@ -4141,20 +4364,11 @@ const char *TypeJob(const Job &job) {
     if (text[0] == '\0') {
         return job.zone == list::Zone::kTypeUser ? "no user" : "no password";
     }
-    const esp_err_t err = typist != nullptr ? typist(text) : ESP_ERR_NOT_SUPPORTED;
+    const char *said = Typed(text, job.zone == list::Zone::kTypeUser       ? "typed the user"
+                                   : job.zone == list::Zone::kTypePassword ? "typed the password"
+                                                                           : "typed the TOTP code");
     vault::Wipe(code, sizeof code);
-    switch (err) {
-        case ESP_OK:
-            return job.zone == list::Zone::kTypeUser       ? "typed the user"
-                   : job.zone == list::Zone::kTypePassword ? "typed the password"
-                                                           : "typed the TOTP code";
-        case ESP_ERR_INVALID_STATE:
-            return "no keyboard host connected";
-        case ESP_ERR_INVALID_ARG:
-            return "cannot type it: a character not on a US keyboard";
-        default:
-            return "cannot type";
-    }
+    return said;
 }
 
 // A key from the U2F / FIDO2 list (a made-up one only from the screen).
@@ -4195,6 +4409,26 @@ void TypeTask(void *) {
             if (err != ESP_OK) {
                 Lock();
                 Toast("the light level is not saved");
+                Unlock();
+            }
+            continue;
+        }
+        if (job.kind == JobKind::kTypeGen) {
+            Lock();
+            memcpy(type_gen, gen_text, sizeof type_gen);
+            Unlock();
+            const char *said = type_gen[0] == '\0' ? "no password" : Typed(type_gen, "typed the password");
+            vault::Wipe(type_gen, sizeof type_gen);
+            Lock();
+            Toast(said);
+            Unlock();
+            continue;
+        }
+        if (job.kind == JobKind::kSaveGen) {
+            const char *said = gen_hooks != nullptr ? gen_hooks->save(job.gen) : nullptr;
+            if (said != nullptr) {
+                Lock();
+                Toast(said);
                 Unlock();
             }
             continue;
@@ -4440,6 +4674,10 @@ void Poll(lv_timer_t *) {
             }
             continue;
         }
+        if (nav_state.mode() == nav::Mode::kGen && input != nav::Input::kHome) {
+            (input == nav::Input::kLeft ? gen_new : gen_type) = true;
+            continue;
+        }
         changed |= nav_state.Apply(input);
     }
     if (open_mode >= 0) {
@@ -4451,12 +4689,17 @@ void Poll(lv_timer_t *) {
         back_tapped = false;
     }
     if (tapped_tab >= 0) {
-        changed |= nav_state.Tab(static_cast<uint8_t>(tapped_tab));
+        if (nav_state.mode() == nav::Mode::kGen) {
+            (tapped_tab == 0 ? gen_new : gen_type) = true;
+        } else {
+            changed |= nav_state.Tab(static_cast<uint8_t>(tapped_tab));
+        }
         tapped_tab = -1;
     }
     const nav::Gesture g = TakeGesture();
-    if (g == nav::Gesture::kLeft || g == nav::Gesture::kRight) {
-        if (nav_state.mode() == nav::Mode::kFido && HomeShown() && !dialog::IsOpen()) {
+    if ((g == nav::Gesture::kLeft || g == nav::Gesture::kRight) &&
+        nav_state.mode() == nav::Mode::kFido) {
+        if (HomeShown() && !dialog::IsOpen()) {
             const uint8_t row = fido_list::RowAt(GestureStart().y - kContentTop, kTitleHeight,
                                                  kFidoRowHeight, fido_rows);
             if (remove_state.Swipe(g, row)) {
@@ -4466,6 +4709,27 @@ void Poll(lv_timer_t *) {
     } else if (g != nav::Gesture::kNone && HomeShown() && !dialog::IsOpen()) {
         changed |= nav_state.Swipe(g);
     }
+    if (nav_state.mode() == nav::Mode::kGen) {
+        if (gen_tapped >= 0 && GenChoose(gen_tapped)) {
+            Job job = MakeJob(JobKind::kSaveGen);
+            job.gen = gen_options;
+            xQueueSend(jobs, &job, 0);  // full: the next choice saves it
+            gen_new = true;
+        }
+        if (gen_new) {
+            GenNew();
+            changed = true;
+        }
+        if (gen_type) {
+            const Job job = MakeJob(JobKind::kTypeGen);
+            if (xQueueSend(jobs, &job, 0) != pdTRUE) {
+                Toast("busy typing");
+            }
+        }
+    }
+    gen_tapped = -1;
+    gen_new = false;
+    gen_type = false;
     if (row_tapped) {
         row_tapped = false;
         if (remove_state.Drop()) {
@@ -4778,6 +5042,8 @@ void SetWifiHooks(const WifiHooks *hooks) { wifi_hooks = hooks; }
 void SetBleHooks(const BleHooks *hooks) { ble_hooks = hooks; }
 
 void SetDisplayHooks(const DisplayHooks *hooks) { display_hooks = hooks; }
+
+void SetGenHooks(const GenHooks *hooks) { gen_hooks = hooks; }
 
 void SetTimeHooks(const TimeHooks *hooks) { time_hooks = hooks; }
 

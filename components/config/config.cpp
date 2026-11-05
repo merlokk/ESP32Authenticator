@@ -85,6 +85,15 @@ const char kDefaultJson[] = R"json({
     "statusMinutes": 10,
     "syncMinutes": 10
   },
+  "generator": {
+    "words": 5,
+    "list": "eff",
+    "separator": "-",
+    "prefix": false,
+    "capitalize": false,
+    "digit": false,
+    "symbol": false
+  },
   "test": {
     "pin": "",
     "autoPresence": false
@@ -376,6 +385,41 @@ bool ParsePin(const cJSON *section, Pin *out, char *error, size_t size) {
     return GetString(section, "wipe", out->wipe, sizeof out->wipe, ValidWipe,
                      "empty or a hash from 'pin wipe set'", "pin", error, size) &&
            GetBool(section, "complexity", &out->complexity, "pin", error, size);
+}
+
+// `generator`: list and separator by their text (passgen.h), the rest as is.
+bool ParseGenerator(const cJSON *section, passgen::Options *out, char *error, size_t size) {
+    passgen::Options o = *out;
+    uint32_t words = o.words;
+    if (!GetUint(section, "words", passgen::kMinWords, passgen::kMaxWords, &words, "generator",
+                 error, size) ||
+        !GetBool(section, "prefix", &o.prefix, "generator", error, size) ||
+        !GetBool(section, "capitalize", &o.capitalize, "generator", error, size) ||
+        !GetBool(section, "digit", &o.digit, "generator", error, size) ||
+        !GetBool(section, "symbol", &o.symbol, "generator", error, size)) {
+        return false;
+    }
+    o.words = static_cast<uint8_t>(words);
+    const cJSON *list = cJSON_GetObjectItemCaseSensitive(section, "list");
+    if (list != nullptr) {
+        const int i = cJSON_IsString(list) ? passgen::FindList(list->valuestring) : -1;
+        if (i < 0) {
+            SetError(error, size, "generator.list: eff, bip39, slip39");
+            return false;
+        }
+        o.list = static_cast<passgen::List>(i);
+    }
+    const cJSON *sep = cJSON_GetObjectItemCaseSensitive(section, "separator");
+    if (sep != nullptr) {
+        const int i = cJSON_IsString(sep) ? passgen::FindSeparator(sep->valuestring) : -1;
+        if (i < 0) {
+            SetError(error, size, "generator.separator: \"-\", \".\", \"_\", \" \" or \"\"");
+            return false;
+        }
+        o.separator = static_cast<uint8_t>(i);
+    }
+    *out = o;
+    return true;
 }
 
 bool ParseTest(const cJSON *section, Test *out, char *error, size_t size) {
@@ -697,6 +741,16 @@ bool ParseSections(const cJSON *root, Data *staged, char *error, size_t size) {
         }
         parsed.server.sync_minutes = static_cast<uint8_t>(minutes);
     }
+    const cJSON *generator = cJSON_GetObjectItemCaseSensitive(root, "generator");
+    if (generator != nullptr) {
+        if (!cJSON_IsObject(generator)) {
+            SetError(error, size, "generator: expected an object");
+            return false;
+        }
+        if (!ParseGenerator(generator, &parsed.generator, error, size)) {
+            return false;
+        }
+    }
     const cJSON *test = cJSON_GetObjectItemCaseSensitive(root, "test");
     if (test != nullptr) {
         if (!cJSON_IsObject(test)) {
@@ -873,6 +927,15 @@ size_t Serialize(const Data &d, char *out, size_t size) {
     cJSON_AddStringToObject(server, "email", d.server.email);
     cJSON_AddNumberToObject(server, "statusMinutes", d.server.status_minutes);
     cJSON_AddNumberToObject(server, "syncMinutes", d.server.sync_minutes);
+    cJSON *gen = cJSON_AddObjectToObject(root, "generator");
+    const passgen::Options &g = d.generator;
+    cJSON_AddNumberToObject(gen, "words", g.words);
+    cJSON_AddStringToObject(gen, "list", passgen::kListNames[static_cast<uint8_t>(g.list)]);
+    cJSON_AddStringToObject(gen, "separator", passgen::kSeparators[g.separator].text);
+    cJSON_AddBoolToObject(gen, "prefix", g.prefix);
+    cJSON_AddBoolToObject(gen, "capitalize", g.capitalize);
+    cJSON_AddBoolToObject(gen, "digit", g.digit);
+    cJSON_AddBoolToObject(gen, "symbol", g.symbol);
     cJSON *test = cJSON_AddObjectToObject(root, "test");
     cJSON_AddStringToObject(test, "pin", d.test.pin);
     cJSON_AddBoolToObject(test, "autoPresence", d.test.auto_presence);

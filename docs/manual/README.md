@@ -79,7 +79,29 @@ The main screen: the records in your order, 6 a page.
 - Pages: the tabs at the bottom, or Left / Right; Home: page 1.
 - Records are added, edited, deleted and ordered on the web site (below).
 - A swipe **down** from the top opens Settings; a swipe **up** from the
-  bottom opens the FIDO2 keys.
+  bottom opens the FIDO2 keys; a swipe **right** (left to right) the
+  password generator.
+
+<br clear="right">
+
+## Password generator
+
+<img src="img/generator.png" width="240" align="right">
+
+A swipe right on the password list; the back arrow, a swipe left or Home
+closes it. One password of words, as
+[merlokk.com/password-generator](https://merlokk.com/password-generator/)
+makes them (the same word lists, in the firmware; the hardware random
+number generator).
+
+- **Type** (the bar at the bottom, or **Right**) types it on the connected
+  Bluetooth host; **New** (or **Left**) draws another.
+- Under it: its strength (bits) and length, then the choices: *Words* (3 to
+  12), *List* (EFF 7772 words, BIP-39 2048, SLIP-39 1024), *Separator*
+  (`-` `.` `_` space, none), *First 3 letters only*, *Capitalize*, *Add a
+  digit*, *Add a symbol* (`!@#$%&*?+=`). A change draws a new password and
+  is kept on the device.
+- Nothing is stored: the password is gone when the screen closes.
 
 <br clear="right">
 

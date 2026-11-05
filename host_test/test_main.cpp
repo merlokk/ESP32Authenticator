@@ -34,6 +34,7 @@ void RegisterVaultTests(void);
 void RegisterOtaTests(void);
 void RegisterUsbTests(void);
 void RegisterRngTests(void);
+void RegisterPassgenTests(void);
 void RegisterServerTests(void);
 void RegisterSyncTests(void);
 void RegisterFirmwareTests(void);
@@ -95,6 +96,7 @@ int main(int argc, char **argv) {
     if (Wanted("ota")) RegisterOtaTests();
     if (Wanted("usb")) RegisterUsbTests();
     if (Wanted("rng")) RegisterRngTests();
+    if (Wanted("passgen")) RegisterPassgenTests();
     if (Wanted("server")) RegisterServerTests();
     if (Wanted("sync")) RegisterSyncTests();
     if (Wanted("firmware")) RegisterFirmwareTests();

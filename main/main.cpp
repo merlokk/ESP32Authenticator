@@ -1442,6 +1442,16 @@ const char *DisplaySet(ui::display_view::Setting setting, uint16_t value) {
 
 const ui::DisplayHooks kDisplayHooks = {DisplayView, DisplaySet};
 
+// The password generator's choices: config.json `generator`.
+void GenGet(passgen::Options *out) { *out = config::Get().generator; }
+
+const char *GenSave(const passgen::Options &options) {
+    config::Get().generator = options;
+    return config::Save() == ESP_OK ? nullptr : "the choices are not saved";
+}
+
+const ui::GenHooks kGenHooks = {GenGet, GenSave};
+
 // The e-ink refresh plan, read before each refresh: changes apply at once.
 void RefreshSource(uint16_t *fast, uint8_t *full_from_percent) {
     const config::Display &d = config::Get().display;
@@ -1824,6 +1834,7 @@ extern "C" void app_main() {
     ui::SetWifiHooks(&kWifiHooks);
     ui::SetBleHooks(&kBleHooks);
     ui::SetDisplayHooks(&kDisplayHooks);
+    ui::SetGenHooks(&kGenHooks);
     ui::SetRefreshSource(RefreshSource);
     ui::SetTimeHooks(&kTimeHooks);
     ui::SetSecurityHooks(&kSecurityHooks);

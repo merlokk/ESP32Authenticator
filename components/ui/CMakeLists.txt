@@ -3,7 +3,7 @@
 # nav_logic.h, list_logic.h and status_logic.h are pure) and the PSRAM allocator.
 idf_component_register(SRCS "ui.cpp" "wallpaper.cpp" "pin_pad.cpp" "screens.cpp" "dialog.cpp" "lv_mem_psram.c"
                     INCLUDE_DIRS "."
-                    REQUIRES lvgl__lvgl epd
+                    REQUIRES lvgl__lvgl epd passgen
                     PRIV_REQUIRES touch vault totp fido_ctap esp_timer heap freertos esp_app_format esp_hw_support vfs)
 
 # lvgl calls lv_malloc_core & co. from lv_mem_psram.c: link it after lvgl too.

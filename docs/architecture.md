@@ -9,6 +9,7 @@ Target and status. Screen design and the open questions: [x4-design.md](x4-desig
 | FIDO2 key (CTAP 2.3, U2F) over BLE | done |
 | FIDO2 / U2F over USB | done (CTAPHID, `usb.mode` serial+fido) |
 | BLE keyboard: types login / password / TOTP | done (a tap on the password list) |
+| Password generator (as merlokk.com/password-generator) | done (a swipe right on the list; `passgen`: EFF / BIP-39 / SLIP-39 in the firmware, config.json `generator`) |
 | TOTP codes | done (`crypto::Totp`, console `totp`, the list, the site) |
 | PIN lock (6 digits, lockout after 10 tries, wipe PIN); the PIN and the seed phrase derive the storage key | done (PIN pad, console `pin`, the site) |
 | Password records (site, user, password, TOTP): add / edit / delete | done on the console (`pass`) and the site; the screen shows and types them |
@@ -41,7 +42,7 @@ Reference ESP-IDF + LVGL project: `../../ai-remote/approver-esp32` ([GitHub](htt
 | Path | Contents |
 |---|---|
 | `main/` | `app_main`: OTA trial boot, NVS, SPIFFS, config, console, Wi-Fi manager + web server, BLE autostart |
-| `components/` | app components (`cli`: USB command line; `config`: config.json; `wifimgr`: Wi-Fi policy + manager; `web`: configuration site, see Wi-Fi and web; `fido_ctap`: CTAP 2.3 core, see FIDO2; `timesync`, `timezone`: see Time; `totp`: Base32 / Base64 secrets and the previous/current/next windows, codes from `crypto::Totp`; `ui`: LVGL and the power-off wallpaper, see UI; `power`: power-off, see UI; `pin_policy`: PIN complexity rules (pure C); `storefile`: store file header, load/save with the rollback check; `vault`: passwords, see Passwords; `ota`: firmware updates, see Flash layout; `server`: the authentication server, see Server) |
+| `components/` | app components (`cli`: USB command line; `config`: config.json; `wifimgr`: Wi-Fi policy + manager; `web`: configuration site, see Wi-Fi and web; `fido_ctap`: CTAP 2.3 core, see FIDO2; `timesync`, `timezone`: see Time; `totp`: Base32 / Base64 secrets and the previous/current/next windows, codes from `crypto::Totp`; `ui`: LVGL and the power-off wallpaper, see UI; `power`: power-off, see UI; `pin_policy`: PIN complexity rules (pure C); `storefile`: store file header, load/save with the rollback check; `vault`: passwords, see Passwords; `ota`: firmware updates, see Flash layout; `server`: the authentication server, see Server; `passgen`: the password generator, `passgen.h` pure, the EFF and SLIP-39 word lists, BIP-39 from `vault`) |
 | `lib/` | third-party git submodules (`lionkey`: our fork, see FIDO2) |
 | `host_test/` | host tests (Unity, MSVC), no board: see Tests |
 | `utils/` | host-side Python tools over the USB console (`device.py`: console session; `console.py`: any command, the raw log; `spiffs.py`: ls/info/rm/get/put; `wallpaper.py`: wallpapers on the card; `firmware.py`: `/sdcard/firmware.bin`, `ota sd`; `ble.py`: ble commands, `kb` text quoting; `screenshot.py`: the screen as a PNG), see [utils/README.md](../utils/README.md) |
@@ -112,9 +113,14 @@ An example (the built-in default has no networks):
   "pin": {"lockMinutes": 10, "wipe": "", "complexity": true},
   "usb": {"mode": "jtag"},
   "server": {"host": "auth.merlokk.com", "email": "", "statusMinutes": 10, "syncMinutes": 10},
+  "generator": {"words": 5, "list": "eff", "separator": "-", "prefix": false, "capitalize": false, "digit": false, "symbol": false},
   "test": {"pin": "", "autoPresence": false}
 }
 ```
+
+`generator`: the password generator's choices, set on its screen: `words`
+3..12, `list` eff / bip39 / slip39, `separator` one of `-` `.` `_` space or
+empty, `prefix` (3-letter starts), `capitalize`, `digit`, `symbol`.
 
 `wifi.active` / `ble.active` start the radio at boot. `ble.name`: the
 advertised and GAP name, 1..29 bytes of UTF-8 (the scan response); empty:

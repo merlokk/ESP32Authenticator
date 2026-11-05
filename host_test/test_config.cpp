@@ -933,9 +933,86 @@ void test_reload_failure_keeps_values() {
     TEST_ASSERT_NOT_NULL(std::strstr(config::LastError(), "not valid JSON"));
 }
 
+void test_generator() {
+    config::Data d;
+    config::FillDefaults(&d);
+    TEST_ASSERT_TRUE(passgen::Equal(passgen::Options{}, d.generator));
+    char error[config::kErrorSize] = {};
+    TEST_ASSERT_TRUE_MESSAGE(
+        ParseText(R"({"generator": {"words": 12, "list": "slip39", "separator": " ",
+                    "prefix": true, "capitalize": true, "digit": true, "symbol": true}})",
+                  &d, error, sizeof error),
+        error);
+    TEST_ASSERT_EQUAL_UINT8(12, d.generator.words);
+    TEST_ASSERT_TRUE(d.generator.list == passgen::List::kSlip39);
+    TEST_ASSERT_EQUAL_UINT8(3, d.generator.separator);
+    TEST_ASSERT_TRUE(d.generator.prefix && d.generator.capitalize && d.generator.digit &&
+                     d.generator.symbol);
+    // Round trip, "" (none) too.
+    d.generator.separator = 4;
+    static char json[config::kMaxFileSize];
+    TEST_ASSERT_GREATER_THAN(0, config::Serialize(d, json, sizeof json));
+    config::Data back;
+    config::FillDefaults(&back);
+    TEST_ASSERT_TRUE(config::Parse(json, std::strlen(json), &back, error, sizeof error));
+    TEST_ASSERT_TRUE(passgen::Equal(d.generator, back.generator));
+
+    AssertParseFails(R"({"generator": {"words": 2}})", "generator.words");
+    AssertParseFails(R"({"generator": {"words": 13}})", "generator.words");
+    AssertParseFails(R"({"generator": {"list": "diceware"}})", "generator.list");
+    AssertParseFails(R"({"generator": {"separator": "/"}})", "generator.separator");
+    AssertParseFails(R"({"generator": {"separator": 1}})", "generator.separator");
+    AssertParseFails(R"({"generator": []})", "generator: expected an object");
+}
+
+// Every field at its longest still fits the file.
+void test_largest_fits() {
+    static config::Data d;
+    config::FillDefaults(&d);
+    const auto fill = [](char *s, size_t size) {
+        std::memset(s, 'x', size - 1);
+        s[size - 1] = '\0';
+    };
+    fill(d.wifi.hostname, sizeof d.wifi.hostname);
+    fill(d.wifi.ap_ssid, sizeof d.wifi.ap_ssid);
+    fill(d.wifi.ap_password, sizeof d.wifi.ap_password);
+    d.wifi.network_count = config::kMaxNetworks;
+    for (config::Network &n : d.wifi.networks) {
+        fill(n.ssid, sizeof n.ssid);
+        fill(n.password, sizeof n.password);
+        n.ip.enabled = true;
+        fill(n.ip.address, sizeof n.ip.address);
+        fill(n.ip.netmask, sizeof n.ip.netmask);
+        fill(n.ip.gateway, sizeof n.ip.gateway);
+        fill(n.ip.dns1, sizeof n.ip.dns1);
+        fill(n.ip.dns2, sizeof n.ip.dns2);
+    }
+    d.internet.target_count = config::kMaxProbeTargets;
+    for (auto &t : d.internet.targets) {
+        fill(t, sizeof t);
+    }
+    fill(d.ble.name, sizeof d.ble.name);
+    fill(d.web.user, sizeof d.web.user);
+    fill(d.web.password, sizeof d.web.password);
+    fill(d.time.zone, sizeof d.time.zone);
+    fill(d.time.server, sizeof d.time.server);
+    fill(d.pin.wipe, sizeof d.pin.wipe);
+    fill(d.server.host, sizeof d.server.host);
+    fill(d.server.email, sizeof d.server.email);
+    fill(d.test.pin, sizeof d.test.pin);
+    d.generator.list = passgen::List::kSlip39;
+    static char json[config::kMaxFileSize];
+    const size_t n = config::Serialize(d, json, sizeof json);
+    TEST_ASSERT_GREATER_THAN(0, n);
+    printf("largest config.json: %u of %u bytes\n", static_cast<unsigned>(n),
+           static_cast<unsigned>(config::kMaxFileSize));
+}
+
 }  // namespace
 
 void RegisterConfigTests(void) {
+    RUN_TEST(test_generator);
+    RUN_TEST(test_largest_fits);
     RUN_TEST(test_defaults_parse);
     RUN_TEST(test_fill_defaults_values);
     RUN_TEST(test_parse_full);

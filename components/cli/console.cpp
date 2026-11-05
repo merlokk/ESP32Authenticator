@@ -189,14 +189,14 @@ int CmdUi(int argc, char **argv) {
         return 1;
     }
     if (argc == 3 && strcmp(argv[1], "show") == 0) {
-        const char *names[] = {"list", "settings", "fido"};  // nav::Mode's order
-        for (int i = 0; i < 3; ++i) {
+        const char *names[] = {"list", "settings", "fido", "gen"};  // nav::Mode's order
+        for (int i = 0; i < 4; ++i) {
             if (strcmp(argv[2], names[i]) == 0) {
                 ui::ShowScreen(static_cast<ui::nav::Mode>(i));
                 return 0;
             }
         }
-        printf("usage: ui show list|settings|fido\n");
+        printf("usage: ui show list|settings|fido|gen\n");
         return 1;
     }
     if (argc >= 3 && strcmp(argv[1], "demo") == 0 && strcmp(argv[2], "fido") == 0) {
@@ -718,7 +718,7 @@ const esp_console_cmd_t kCommands[] = {
                 "number n as `sd ls wallpapers` lists them; prints how many and which), as "
                 "display.wallpaper in config.json or as given (stays on; card: the built-in one, "
                 "name and version) | demo prompt [n]: the FIDO2 prompt, made up (n accounts) | demo fido [n] / demo off: n (10) made-up keys in the "
-                "U2F / FIDO2 list, on the screen only | show list|settings|fido: that screen | "
+                "U2F / FIDO2 list, on the screen only | show list|settings|fido|gen: that screen | "
                 "click <x> <y> [hold ms] / swipe <x0> <y0> <x1> <y1>: a made-up finger (portrait "
                 "px) | "
                 "key left|right|home: as the button | "
