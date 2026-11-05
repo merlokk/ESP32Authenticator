@@ -4014,7 +4014,8 @@ void GenChip(lv_obj_t *row, int32_t x, int32_t w, const char *text, bool on, int
     lv_obj_set_style_border_color(b, lv_color_black(), 0);
     lv_obj_set_style_bg_opa(b, LV_OPA_COVER, 0);
     lv_obj_set_style_bg_color(b, on ? lv_color_black() : lv_color_white(), 0);
-    lv_obj_t *l = Label(b, &lv_font_montserrat_20);
+    // A separator's one character large.
+    lv_obj_t *l = Label(b, strlen(text) == 1 ? &lv_font_montserrat_32 : &lv_font_montserrat_20);
     lv_label_set_text(l, text);
     lv_obj_set_style_text_color(l, on ? lv_color_white() : lv_color_black(), 0);
     lv_obj_center(l);
@@ -4033,10 +4034,23 @@ lv_obj_t *GenRow(int32_t y, const char *name) {
 
 // Chips across the row's right part, the one at `on` filled.
 void GenChips(lv_obj_t *row, const char *const *labels, uint8_t count, uint8_t on, int base) {
+    // A one-character label gets kNarrow, the others share the rest.
     constexpr int32_t kGap = 6;
-    const int32_t w = (kRowWidth - 12 - kGenChipX - (count - 1) * kGap) / count;
+    constexpr int32_t kNarrow = 50;
+    int32_t rest = kRowWidth - 12 - kGenChipX - (count - 1) * kGap;
+    uint8_t wide = 0;
     for (uint8_t i = 0; i < count; ++i) {
-        GenChip(row, kGenChipX + i * (w + kGap), w, labels[i], i == on, base + i);
+        if (strlen(labels[i]) == 1) {
+            rest -= kNarrow;
+        } else {
+            ++wide;
+        }
+    }
+    int32_t x = kGenChipX;
+    for (uint8_t i = 0; i < count; ++i) {
+        const int32_t w = strlen(labels[i]) == 1 ? kNarrow : rest / (wide != 0 ? wide : 1);
+        GenChip(row, x, w, labels[i], i == on, base + i);
+        x += w + kGap;
     }
 }
 
