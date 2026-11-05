@@ -311,7 +311,8 @@ tries, *Reset FIDO2* (held 4 s: **every key and the FIDO2 PIN erased**).
 When a site asks for the key, the device shows what is asked (create a key,
 sign in, U2F), the site and the account(s).
 
-- **Left** or **Home**: allow. **Right**: reject.
+- **Left** or **Home** pressed once: allow. **Right** or **Home** pressed
+  twice: reject. A FIDO2 reset: hold Left or Home 5 s.
 - Nothing pressed: the request times out on the computer.
 - FIDO2 works only while the device is on and unlocked: not while it is
   off (the idle timer turns it off), and not after a restart until the PIN

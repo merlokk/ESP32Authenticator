@@ -90,6 +90,10 @@ const char *StorageDir() {
 
 // A FIDO2 request waits for the user: Left / Right answer it, not the screens.
 std::atomic<bool> fido_waiting{false};
+// Home's answer while FIDO2 waits (OnKey), taken by the core's next look.
+std::atomic<bool> fido_home_yes{false};
+std::atomic<bool> fido_home_no{false};
+std::atomic<bool> fido_long_touch{false};  // the reset's hold: Home held counts too
 
 // What a request asks, for the prompt on the screen (ui::SetFidoRequest),
 // before the core takes it: a sign-in also counts the store's keys it may use
@@ -128,9 +132,11 @@ void PromptFor(const uint8_t *msg, size_t len) {
 // FIDO2: the LionKey CTAP core behind two transports, BLE (ble_fido) and USB
 // HID (usb_fido, usb.mode serial+fido); one request at a time (the core's
 // lock), the hooks go to the transport whose worker runs it. User presence:
-// the board's Left button (BOOT on the dev board) or Home (the touch key
-// under the glass), debounced by the keypad task, which owns the pins; Right
-// refuses.
+// the board's Left button (BOOT on the dev board) pressed, or Home (the touch
+// key under the glass) clicked once; Right pressed or Home clicked twice
+// refuses. Debounced by the keypad task, which owns the pins; a Home answer
+// counts once (an edge to the core) and only within the wait; the reset's
+// 5 s hold takes Left or Home held.
 const char *fido_file = nullptr;  // the store file (the sync), nullptr: none
 
 void InitFido(const char *dir) {
@@ -149,8 +155,8 @@ void InitFido(const char *dir) {
         },
         [] { return usb::fido::InWorker() ? usb::fido::Cancelled() : ble_fido::Cancelled(); },
         [] {
-            return keypad::Pressed(boards::ButtonId::kLeft) ||
-                   keypad::Pressed(boards::ButtonId::kHome);
+            return keypad::Pressed(boards::ButtonId::kLeft) || fido_home_yes.exchange(false) ||
+                   (fido_long_touch && keypad::Pressed(boards::ButtonId::kHome));
         },
         [](fido_ctap_client_t *out) {
             if (usb::fido::InWorker()) {
@@ -161,11 +167,15 @@ void InitFido(const char *dir) {
             return ble::PeerIdentity(&out->addr_type, out->addr);
         },
         [](fido_ctap_wait_t what) {
+            fido_home_yes = false;  // an answer from before the wait does not count
+            fido_home_no = false;
             fido_waiting = what != FIDO_CTAP_WAIT_NONE;
+            fido_long_touch = what == FIDO_CTAP_WAIT_LONG_TOUCH ||
+                              what == FIDO_CTAP_WAIT_LONG_TOUCH_HELD;
             boards::LedWaitingForUser(static_cast<boards::UserWait>(what));
         },
         [] { return config::Get().test.auto_presence; },
-        [] { return keypad::Pressed(boards::ButtonId::kRight); }};
+        [] { return keypad::Pressed(boards::ButtonId::kRight) || fido_home_no.exchange(false); }};
     static_assert(static_cast<int>(boards::UserWait::kLongTouchHeld) ==
                   FIDO_CTAP_WAIT_LONG_TOUCH_HELD);
     fido_ctap_set_reset_window(boards::kBoard.fido_reset_window_s);
@@ -311,7 +321,8 @@ void StatusSource(ui::status::Status *s) {
 }
 
 // Button bindings, from the keypad task; any key is activity. Left / Right /
-// Home pressed, Home x1 / x2: the screens (ui::Navigate), unless FIDO2 waits for them. Power x2: the
+// Home pressed: the screens (ui::Navigate), unless FIDO2 waits for them; Home
+// x1 / x2: an answer (buttons::ClickAnswer), FIDO2's while it waits. Power x2: the
 // frontlight on / off; Power held: off (wallpaper, deep sleep); Power x3: off
 // locked (the PIN after the wake, whatever power.keepPinHours says).
 void OnKey(const buttons::KeyEvent &e) {
@@ -324,10 +335,16 @@ void OnKey(const buttons::KeyEvent &e) {
             default: break;
         }
     }
-    // Home's clicks too (the generator: a click types, a double click goes back).
-    if (e.kind == buttons::Kind::kClick && !fido_waiting &&
-        e.key == static_cast<uint8_t>(boards::ButtonId::kHome) && e.count <= 2) {
-        ui::Navigate(e.count == 2 ? ui::nav::Input::kHomeDouble : ui::nav::Input::kHomeClick);
+    // Home's clicks as an answer: FIDO2's while it waits, else the screens'.
+    const buttons::Answer answer = buttons::ClickAnswer(e);
+    if (answer != buttons::Answer::kNone &&
+        e.key == static_cast<uint8_t>(boards::ButtonId::kHome)) {
+        const bool yes = answer == buttons::Answer::kYes;
+        if (fido_waiting) {
+            (yes ? fido_home_yes : fido_home_no) = true;
+        } else {
+            ui::Navigate(yes ? ui::nav::Input::kHomeYes : ui::nav::Input::kHomeNo);
+        }
     }
     if (e.key != static_cast<uint8_t>(boards::ButtonId::kPower)) {
         return;

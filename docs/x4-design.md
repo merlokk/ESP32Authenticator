@@ -8,7 +8,7 @@ touch, Left / Right / Power buttons, frontlight, microSD). Status per function:
 
 | Function | |
 |---|---|
-| FIDO2 key | CTAP 2.3 and U2F over BLE and USB; user presence: Left or Home (Right refuses) |
+| FIDO2 key | CTAP 2.3 and U2F over BLE and USB; user presence: Left or Home x1 (Right or Home x2 refuses) |
 | PIN lock | the screen is locked by a PIN; the PIN and the seed phrase derive the storage key (option B in [storage-encryption.md](storage-encryption.md)), so nothing opens without it |
 | Password manager | records: site (name), login, password, TOTP secret; typed into the host over the BLE keyboard |
 | Password generator | one word password at a time (as merlokk.com/password-generator), typed over the BLE keyboard |
@@ -34,12 +34,12 @@ Portrait, 480x800. The panel scans landscape (hardware.md): `ui_logic.h` turns t
 ```
 
 - **Status bar**: Wi-Fi, Bluetooth (host connected), SD card, time,
-  battery; later the sync storage. While FIDO2 waits: Left or Home yes, Right no; a window
+  battery; later the sync storage. While FIDO2 waits: Left or Home x1 yes, Right or Home x2 no; a window
   over everything says what is asked (create a key / sign in / U2F / reset /
   selection), the site, the account (a sign-in: the store's key in the allowList,
   else for the site; of several the first 4 names and "+N more"), whether the PIN was given, with "< Allow" and "Reject >" by
   the buttons (the edges, at the password list's second row) and "Home:
-  allow" at the bottom (`fido_prompt_logic.h` reads the request); a reset
+  yes, x2: no" at the bottom (`fido_prompt_logic.h` reads the request); a reset
   shows "< Hold" and "Hold Left 5 s" instead.
 - **List**: the records in the user's order, set on the web site (up /
   down, to the top / bottom per record, "Sort A to Z") or the console (`pass move`, `pass sort`);

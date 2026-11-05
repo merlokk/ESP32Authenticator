@@ -340,9 +340,20 @@ void test_keys_held_ms(void) {
     TEST_ASSERT_EQUAL_UINT32(75, k.HeldMs(100));
 }
 
+void test_click_answer(void) {
+    using buttons::Answer;
+    using buttons::Kind;
+    TEST_ASSERT_TRUE(buttons::ClickAnswer({3, Kind::kClick, 1}) == Answer::kYes);
+    TEST_ASSERT_TRUE(buttons::ClickAnswer({3, Kind::kClick, 2}) == Answer::kNo);
+    TEST_ASSERT_TRUE(buttons::ClickAnswer({3, Kind::kClick, 3}) == Answer::kNone);
+    TEST_ASSERT_TRUE(buttons::ClickAnswer({3, Kind::kPressed, 0}) == Answer::kNone);
+    TEST_ASSERT_TRUE(buttons::ClickAnswer({3, Kind::kLong, 0}) == Answer::kNone);
+}
+
 }  // namespace
 
 void RegisterButtonTests(void) {
+    RUN_TEST(test_click_answer);
     RUN_TEST(test_debounce_adopts_a_level_without_an_edge);
     RUN_TEST(test_debounce_waits_out_the_window);
     RUN_TEST(test_debounce_reports_a_press_once);

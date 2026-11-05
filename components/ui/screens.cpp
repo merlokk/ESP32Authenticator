@@ -319,7 +319,7 @@ void ShowPrompt() {
     snprintf(text, sizeof text, "%s%s", note, r.verify ? "\nThe PIN was given." : "");
     PromptLabel(prompt, &lv_font_montserrat_20, text, y);
     if (!reset) {
-        PromptHint(prompt, LV_SYMBOL_DOWN " Home: allow", LV_ALIGN_BOTTOM_MID, -8, 260, 60);
+        PromptHint(prompt, LV_SYMBOL_DOWN " Home: yes, x2: no", LV_ALIGN_BOTTOM_MID, -8, 340, 60);
     }
 }
 
@@ -4690,7 +4690,7 @@ void Poll(lv_timer_t *) {
         }
         if (nav_state.mode() == nav::Mode::kGen) {
             gen_new |= input == nav::Input::kLeft;
-            gen_type |= input == nav::Input::kRight || input == nav::Input::kHomeClick;
+            gen_type |= input == nav::Input::kRight || input == nav::Input::kHomeYes;
         }
         changed |= nav_state.Apply(input);
     }

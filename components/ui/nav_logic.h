@@ -28,9 +28,9 @@ enum class Mode : uint8_t {
 enum class Input : uint8_t {
     kLeft,
     kRight,
-    kHome,        // pressed (at once)
-    kHomeClick,   // a single click (400 ms after the release)
-    kHomeDouble,  // a double click
+    kHome,     // pressed (at once)
+    kHomeYes,  // clicked once (400 ms after the release): buttons::Answer::kYes
+    kHomeNo,   // clicked twice: buttons::Answer::kNo
 };
 
 // A finger's path on the screen, from where it went down to where it lifted.
@@ -145,13 +145,13 @@ class Nav {
     // double click of Home goes back (Left, Right and a click are its own).
     constexpr bool Apply(Input in) {
         if (mode_ == Mode::kGen) {
-            if (in != Input::kHomeDouble) {
+            if (in != Input::kHomeNo) {
                 return false;
             }
             mode_ = Mode::kList;
             return true;
         }
-        if (in == Input::kHomeClick || in == Input::kHomeDouble) {
+        if (in == Input::kHomeYes || in == Input::kHomeNo) {
             return false;  // Home acts when pressed
         }
         if (in == Input::kHome) {

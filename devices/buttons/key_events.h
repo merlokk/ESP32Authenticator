@@ -29,6 +29,17 @@ struct KeyEvent {
     uint8_t count = 0;  // kClick: 1 single, 2 double, ...
 };
 
+// A click as an answer, where a screen asks (Home: the generator types or goes
+// back, FIDO2 allows or refuses): one click yes, two no, anything else none.
+enum class Answer : uint8_t { kNone, kYes, kNo };
+
+constexpr Answer ClickAnswer(const KeyEvent &e) {
+    if (e.kind != Kind::kClick) {
+        return Answer::kNone;
+    }
+    return e.count == 1 ? Answer::kYes : e.count == 2 ? Answer::kNo : Answer::kNone;
+}
+
 // At most two events per update (an edge and a gesture). Times are uint32_t
 // milliseconds, only ever subtracted.
 struct KeyEvents {

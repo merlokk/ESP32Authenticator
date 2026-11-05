@@ -434,18 +434,18 @@ void test_nav_swipes(void) {
     // screens.cpp), a double click goes back.
     n.Swipe(Gesture::kRight);
     TEST_ASSERT_FALSE(n.Apply(ui::nav::Input::kHome));
-    TEST_ASSERT_FALSE(n.Apply(ui::nav::Input::kHomeClick));
+    TEST_ASSERT_FALSE(n.Apply(ui::nav::Input::kHomeYes));
     TEST_ASSERT_TRUE(n.mode() == Mode::kGen);
-    TEST_ASSERT_TRUE(n.Apply(ui::nav::Input::kHomeDouble));
+    TEST_ASSERT_TRUE(n.Apply(ui::nav::Input::kHomeNo));
     TEST_ASSERT_TRUE(n.mode() == Mode::kList);
     // Elsewhere Home acts when pressed; its clicks do nothing (no page flip).
     n.Apply(ui::nav::Input::kRight);
     TEST_ASSERT_EQUAL_UINT8(1, n.page());
-    TEST_ASSERT_FALSE(n.Apply(ui::nav::Input::kHomeClick));
-    TEST_ASSERT_FALSE(n.Apply(ui::nav::Input::kHomeDouble));
+    TEST_ASSERT_FALSE(n.Apply(ui::nav::Input::kHomeYes));
+    TEST_ASSERT_FALSE(n.Apply(ui::nav::Input::kHomeNo));
     TEST_ASSERT_EQUAL_UINT8(1, n.page());
     n.Swipe(Gesture::kUpFromBottom);
-    TEST_ASSERT_FALSE(n.Apply(ui::nav::Input::kHomeDouble));
+    TEST_ASSERT_FALSE(n.Apply(ui::nav::Input::kHomeNo));
     TEST_ASSERT_TRUE(n.mode() == Mode::kFido);
     TEST_ASSERT_TRUE(n.Apply(ui::nav::Input::kHome));
     TEST_ASSERT_TRUE(n.mode() == Mode::kList);

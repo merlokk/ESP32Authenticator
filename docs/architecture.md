@@ -354,7 +354,7 @@ ui's own task; Bluetooth: `ble_view_logic.h`, `ui::BleHooks`; Devices
 FIDO2 / U2F under Security (`fido_ctap_info`, Reset: `fido_ctap_reset`); the
 FIDO2 prompt (`fido_prompt_logic.h` reads the request's CBOR / APDU before
 the core, `main.cpp` adds the store's account, the window while the core
-waits; Home allows as Left does); the
+waits; Home x1 allows as Left does, x2 refuses as Right does); the
 dialogs: `dialog.h` (`dialog_logic.h` the held Yes); the touch's
 calibration: `touch_cal_logic.h`, applied to every real touch in `ui.cpp`), up from the bottom quarter the U2F / FIDO2
 keys (`fido_ctap_list`, by site A to Z, 6 a page: site, user, made / alg /
@@ -365,12 +365,13 @@ typing task: `fido_list_logic.h` `Remove`), a swipe right the password generator
 (`components/passgen`: `passgen.h` pure; one password, its bits, the
 choices from `ui::GenHooks` = config.json `generator`, saved in the typing
 task; the bar New / Type, Left / Right the same, Home: a click types, a
-double click goes back (`Input::kHomeClick` / `kHomeDouble` from the
-keypad's click events, 400 ms after the release; Home pressed does nothing there); typed by the typing task
+double click goes back (`Input::kHomeYes` / `kHomeNo` from the keypad's
+click events, 400 ms after the release, `buttons::ClickAnswer` as for FIDO2;
+Home pressed does nothing there); typed by the typing task
 from a copy, wiped with the screen), all with a back
 arrow and the name over them; the arrow (the list at
 its page), the opposite swipe or Home closes them (`nav::Classify`; a slid tap
-is no tap). FIDO2 presence: Left or Home allows, Right refuses
+is no tap). FIDO2 presence: Left or Home x1 allows, Right or Home x2 refuses
 (OPERATION_DENIED, `deny_pressed` hook).
 
 PIN pad (`pin_pad.cpp`, `pin_pad_logic.h` pure): shown while the vault is
@@ -646,8 +647,9 @@ our fork [merlokk/lionkey](https://github.com/merlokk/lionkey), branch
   is not loaded or touched: FIDO2 stays off.
   The signature counter is in NVS (`fido/sign_count`), kept by reset.
 - User presence: a fresh press of Left (GPIO0, BOOT on the dev board) or
-  Home (debounced by the keypad task) within 30 s; a fresh Right press
-  refuses (OPERATION_DENIED); KEEPALIVE every 300 ms; CANCEL aborts the wait.
+  Home clicked once (debounced by the keypad task; `buttons::ClickAnswer`,
+  400 ms after the release, counted only within the wait) within 30 s; a
+  fresh Right press or Home clicked twice refuses (OPERATION_DENIED); KEEPALIVE every 300 ms; CANCEL aborts the wait.
 - Reset (authenticatorReset): the dev board (no display) only within 10 s
   after the core starts (boot or PIN unlock; lionkey; the window restarts
   after a successful reset), the X4 Pro any time (the screen says a reset is

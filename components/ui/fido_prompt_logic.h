@@ -2,7 +2,7 @@
 
 // What a FIDO2 / U2F request asks the user to allow (x4-design.md): read
 // from the request before the core takes it, shown while the core waits for
-// the button (Left or Home allow, Right refuses). CTAP2 requests are CBOR
+// the button (Left or Home x1 allow, Right or Home x2 refuse). CTAP2 requests are CBOR
 // (a command byte, then a map with integer keys); U2F ones are APDUs (CLA 0).
 // Only what the prompt shows is read; anything malformed is "a request".
 // Pure (host-tested).
