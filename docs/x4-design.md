@@ -91,9 +91,10 @@ Portrait, 480x800. The panel scans landscape (hardware.md): `ui_logic.h` turns t
   time now. Security: the stores (Passwords: open, records, version;
   Passkeys: keys, version, its PIN, a tap: FIDO2 / U2F), Change the
   PIN (on a pad of its own: the current PIN, a new one twice; vault.bin and
-  fido.bin re-keyed), 10 wrong PINs: lock (1 min .. a day), PIN complexity
+  fido.bin re-keyed), 10 wrong PINs: lock (1 min .. a day), PIN after sleep
+  (always .. a week), PIN complexity
   (the vault at once, FIDO2 from the next start), Wipe PIN (set twice /
-  change / off), Lock now; its FIDO2 row opens FIDO2 / U2F: running or why
+  change / off), Lock now; its Passkeys row opens FIDO2 / U2F: running or why
   not, the keys (of how many, resident), its PIN and tries, the shortest PIN,
   complexity, always verify, the store, the signatures, how presence is
   given; Show the keys (the list), Reset FIDO2 (held 4 s: every key and its

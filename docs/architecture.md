@@ -342,7 +342,8 @@ at most 4: the row scrolls with the page, arrows where pages are hidden.
 Left / Right pressed flip the pages (round), Home: page 1 (`ui::Navigate`,
 queued from the keypad task; nothing under the PIN pad or while FIDO2
 waits). The touch reports the finger's moves too: a swipe down from the top
-quarter opens Settings (the frontlight, then pages; `settings_logic.h`, the
+quarter opens Settings (the frontlight, then a row per page, two pages of
+them flipped by Left / Right; `settings_logic.h`, the
 texts and actions from `main.cpp` through `ui::SettingsHooks`; the Wi-Fi
 window: `wifi_view_logic.h`, `ui::WifiHooks`, the scan and the saves in the
 ui's own task; Bluetooth: `ble_view_logic.h`, `ui::BleHooks`; USB, Display

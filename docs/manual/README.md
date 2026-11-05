@@ -295,7 +295,7 @@ Open the site, then **Passwords**. A locked device asks for the PIN first.
 <img src="img/fido.png" width="240" align="right">
 
 A swipe up from the bottom quarter of the password list (or Settings >
-Security > FIDO2 > *Show the keys*).
+Security > Passkeys > *Show the keys*).
 
 - The keys by site: the site, the account, when it was made, the
   algorithm, *resident* (a passkey) or not.
@@ -309,7 +309,7 @@ Security > FIDO2 > *Show the keys*).
 <img src="img/fido-delete.png" width="240">
 <img src="img/fido2-settings.png" width="240">
 
-Settings > Security > **FIDO2**: the state, the keys, the FIDO2 PIN and its
+Settings > Security > **Passkeys** (the FIDO2 / U2F page): the state, the keys, the FIDO2 PIN and its
 tries, *Reset FIDO2* (held 4 s: **every key and the FIDO2 PIN erased**).
 
 ### Signing in
